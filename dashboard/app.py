@@ -1,18 +1,18 @@
-# This file is part of NeuraSelf-UwU.
-# Copyright (c) 2025-Present Routo
+# This file is part of Limey.
+# Copyright (c) 2025-Present Limey
 #
-# NeuraSelf-UwU is free software: you can redistribute it and/or modify
+# Limey is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # You should have received a copy of the GNU General Public License
-# along with NeuraSelf-UwU. If not, see <https://www.gnu.org/licenses/>.
+# along with Limey. If not, see <https://www.gnu.org/licenses/>.
 
 
 """
-Author: Routo
-NeuraSelf-UwU - https://github.com/routo-loop/neura-self
+Author: Limey
+Limey - https://github.com/cubiced0/owo-discord-bot
 """
 
 
@@ -77,7 +77,7 @@ def load_auth_config():
 
 auth_cfg = load_auth_config()
 if auth_cfg:
-    app.secret_key = auth_cfg.get('secret_key', 'neuraself_fallback_secret')
+    app.secret_key = auth_cfg.get('secret_key', 'limey_fallback_secret')
 else:
     app.secret_key = 'temporary_secret_key'
 
@@ -540,7 +540,7 @@ def test_security():
     sec = bot.get_cog('Security')
     if sec:
         asyncio.run_coroutine_threadsafe(sec.play_beep(), bot.loop)
-        sec._show_desktop_notification("Test: Neura Security Alert working!")
+        sec._show_desktop_notification("Test: Limey Security Alert working!")
         sec._send_webhook("SYSTEM TEST", "This is a test of your security notification system. All systems are operational.")
         return jsonify({'status': 'success', 'message': 'Test signals sent'})
     

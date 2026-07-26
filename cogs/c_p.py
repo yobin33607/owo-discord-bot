@@ -1,18 +1,18 @@
-# This file is part of NeuraSelf-UwU.
-# Copyright (c) 2025-Present Routo
+# This file is part of Limey.
+# Copyright (c) 2025-Present Limey
 #
-# NeuraSelf-UwU is free software: you can redistribute it and/or modify
+# Limey is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # You should have received a copy of the GNU General Public License
-# along with NeuraSelf-UwU. If not, see <https://www.gnu.org/licenses/>.
+# along with Limey. If not, see <https://www.gnu.org/licenses/>.
 
 
 """
-Author: Routo
-NeuraSelf-UwU - https://github.com/routo-loop/neura-self
+Author: Limey
+Limey - https://github.com/cubiced0/owo-discord-bot
 """
 
 
@@ -25,7 +25,7 @@ import re
 import json
 import os
 
-class NeuraCursePray(commands.Cog):
+class LimeyCursePray(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.state_file = "data/cp_state.json"
@@ -120,16 +120,16 @@ class NeuraCursePray(commands.Cog):
     async def register_actions(self):
         cmds_cfg = self.bot.config.get("commands", {})
         if cmds_cfg.get("curse", {}).get("enabled", False) or cmds_cfg.get("pray", {}).get("enabled", False):
-            self.bot.log("SYS", "NeuraCursePray Module configured.")
+            self.bot.log("SYS", "LimeyCursePray Module configured.")
             
             delay = 305
             rb_cfg = self.bot.config.get('reactionBot', {})
             if rb_cfg.get('enabled', False) and rb_cfg.get('pray_and_curse', False):
                 delay += 5
                 
-            await self.bot.neura_register_command("cursepray", "curse", priority=self.bot.get_cmd_priority("cursepray", 3), delay=delay, initial_offset=20)
+            await self.bot.limey_register_command("cursepray", "curse", priority=self.bot.get_cmd_priority("cursepray", 3), delay=delay, initial_offset=20)
             self.trigger_action()
 
 async def setup(bot):
-    cog = NeuraCursePray(bot)
+    cog = LimeyCursePray(bot)
     await bot.add_cog(cog)

@@ -1,18 +1,18 @@
-# This file is part of NeuraSelf-UwU.
-# Copyright (c) 2025-Present Routo
+# This file is part of Limey.
+# Copyright (c) 2025-Present Limey
 #
-# NeuraSelf-UwU is free software: you can redistribute it and/or modify
+# Limey is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # You should have received a copy of the GNU General Public License
-# along with NeuraSelf-UwU. If not, see <https://www.gnu.org/licenses/>.
+# along with Limey. If not, see <https://www.gnu.org/licenses/>.
 
 
 """
-Author: Routo
-NeuraSelf-UwU - https://github.com/routo-loop/neura-self
+Author: Limey
+Limey - https://github.com/cubiced0/owo-discord-bot
 """
 
 
@@ -39,7 +39,7 @@ class Security(commands.Cog):
         cfg = bot.config.get('security', {})
         self.enabled = cfg.get('enabled', True)
         self.notifications_enabled = cfg.get('notifications', {}).get('enabled', True)
-        self.notification_title = cfg.get('notifications', {}).get('desktop', {}).get('title', "Neura Security Alert")
+        self.notification_title = cfg.get('notifications', {}).get('desktop', {}).get('title', "Limey Security Alert")
         self.webhook_url = cfg.get('webhook_url')
         self.monitor_id = str(bot.config.get('core', {}).get('monitor_bot_id', '408785106942164992'))
         self.beep_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "beeps", "security_beep.mp3")
@@ -76,7 +76,7 @@ class Security(commands.Cog):
         cfg = self.bot.config.get('security', {})
         self.enabled = cfg.get('enabled', True)
         self.notifications_enabled = cfg.get('notifications', {}).get('enabled', True)
-        self.notification_title = cfg.get('notifications', {}).get('desktop', {}).get('title', "Neura Security Alert")
+        self.notification_title = cfg.get('notifications', {}).get('desktop', {}).get('title', "Limey Security Alert")
         self.webhook_url = cfg.get('webhook_url')
         self.monitor_id = str(self.bot.config.get('core', {}).get('monitor_bot_id', '408785106942164992'))
         self.bot.log("SYS", "Security Module settings refreshed (Live Sync).")
@@ -133,10 +133,10 @@ class Security(commands.Cog):
                 "description": message,
                 "color": 0xFF3B3B,
                 "author": {
-                    "name": f"NeuraSelf Security - {self.bot.username}",
-                    "icon_url": "https://media.discordapp.net/attachments/1357951011456684252/1524069544401047773/neuralogo.png?ex=6a4e67df&is=6a4d165f&hm=21deba052462f712808661dc8aac4204eecb781cfcaa1ff189861b79c7db0c92"
+                    "name": f"Limey Security - {self.bot.username}",
+                    "icon_url": "https://media.discordapp.net/attachments/1357951011456684252/1524069544401047773/limeylogo.png?ex=6a4e67df&is=6a4d165f&hm=21deba052462f712808661dc8aac4204eecb781cfcaa1ff189861b79c7db0c92"
                 },
-                "footer": {"text": f"NeuraSelf • Account: {self.bot.username}"},
+                "footer": {"text": f"Limey • Account: {self.bot.username}"},
                 "timestamp": time.strftime('%Y-%m-%dT%H:%M:%S')
             }]
         }

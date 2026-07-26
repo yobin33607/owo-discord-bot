@@ -211,7 +211,7 @@
             "desktop": {
                 "enabled": true,
                 "sound": true,
-                "title": "Neura Security Alert"
+                "title": "Limey Security Alert"
             },
             "mobile": {
                 "enabled": true,

@@ -1,18 +1,18 @@
-# This file is part of NeuraSelf-UwU.
-# Copyright (c) 2025-Present Routo
+# This file is part of Limey.
+# Copyright (c) 2025-Present Limey
 #
-# NeuraSelf-UwU is free software: you can redistribute it and/or modify
+# Limey is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # You should have received a copy of the GNU General Public License
-# along with NeuraSelf-UwU. If not, see <https://www.gnu.org/licenses/>.
+# along with Limey. If not, see <https://www.gnu.org/licenses/>.
 
 
 """
-Author: Routo
-NeuraSelf-UwU - https://github.com/routo-loop/neura-self
+Author: Limey
+Limey - https://github.com/cubiced0/owo-discord-bot
 """
 
 import json
@@ -22,7 +22,7 @@ import sqlite3
 from datetime import datetime
 import calendar
 
-HISTORY_FILE = 'data/neura_history.db'
+HISTORY_FILE = 'data/limey_history.db'
 LEGACY_HISTORY_FILE = 'data/history.json'
 
 def get_db():

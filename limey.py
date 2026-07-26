@@ -1,18 +1,18 @@
-# This file is part of NeuraSelf-UwU.
-# Copyright (c) 2025-Present Routo
+# This file is part of Limey.
+# Copyright (c) 2025-Present Limey
 #
-# NeuraSelf-UwU is free software: you can redistribute it and/or modify
+# Limey is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # You should have received a copy of the GNU General Public License
-# along with NeuraSelf-UwU. If not, see <https://www.gnu.org/licenses/>.
+# along with Limey. If not, see <https://www.gnu.org/licenses/>.
 
 
 """
-Author: Routo
-NeuraSelf-UwU - https://github.com/routo-loop/neura-self
+Author: Limey
+Limey - https://github.com/cubiced0/owo-discord-bot
 """
 
 import sys
@@ -34,26 +34,26 @@ from rich.align import Align
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from neura_engines.setup_engine import NeuraSetupEngine
-from core.bot import NeuraBot
+from limey_engines.setup_engine import LimeySetupEngine
+from core.bot import LimeyBot
 from dashboard.app import app as flask_app
 import core.state as state
 from utils import proxy_manager
 
 console = Console()
-engine = NeuraSetupEngine()
+engine = LimeySetupEngine()
 
 if not engine.environment_healthy():
     console.print("[yellow]Environment not healthy – running setup...[/yellow]")
     if not engine.run_full_setup(force_bootstrap=True):
-        console.print("[red]Setup failed. Please run 'python neura_setup.py' manually.[/red]")
+        console.print("[red]Setup failed. Please run 'python limey_setup.py' manually.[/red]")
         sys.exit(1)
     console.print("[green]Setup complete. Restarting...[/green]")
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
 def show_banner():
-    from neuraself_ascii import neura_ascii
-    neura_ascii.show_banner('main')
+    from limey_ascii import limey_ascii
+    limey_ascii.show_banner('main')
 
 def detect_platform():
     if "TERMUX_VERSION" in os.environ or "com.termux" in os.environ.get("PREFIX", ""):
@@ -85,14 +85,14 @@ async def main():
         state.load_account_stats()
         console.print(f"[cyan]Config Directory:[/cyan] {state.CONFIG_DIR}")
         console.print(f"[cyan]Accounts File:[/cyan] {os.path.join(state.CONFIG_DIR, 'accounts.json')}\n")
-        console.print("\n[bold cyan]1.[/bold cyan] Start NeuraSelf")
+        console.print("\n[bold cyan]1.[/bold cyan] Start Limey")
         console.print("[bold cyan]2.[/bold cyan] Manage Accounts")
         console.print("[bold cyan]3.[/bold cyan] Exit")
         from rich.prompt import Prompt
         choice = Prompt.ask("\nSelect option", choices=["1", "2", "3"], default="1")
         if choice == "2":
-            import neura_setup
-            await neura_setup.account_manager()
+            import limey_setup
+            await limey_setup.account_manager()
             continue
         elif choice == "3":
             console.print("\n[yellow]Shutting down. See you next time![/yellow]")
@@ -127,7 +127,7 @@ async def main():
                         valid_channels.append(ch)
             try:
                 proxy_url, proxy_auth, proxy_label = proxy_manager.resolve_account_proxy(acc)
-                bot = NeuraBot(
+                bot = LimeyBot(
                     token=token,
                     channels=valid_channels,
                     proxy_url=proxy_url,

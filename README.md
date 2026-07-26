@@ -1,10 +1,10 @@
 <div align="center">
-  <img src="./dashboard/static/assets/neuraselfbanner.png" alt="NeuraSelf Banner">
+  <img src="./dashboard/static/assets/limeybanner.png" alt="Limey Banner">
   
   <br/>
   <br/>
 
-  <img src="https://readme-typing-svg.herokuapp.com/?font=Pacifico&size=40&pause=1000&color=FF0000&center=true&vCenter=true&random=false&width=600&lines=Advanced+OwO+Automation;Built+by+ROUTO;Star+the+repo" alt="NeuraSelf">
+  <img src="https://readme-typing-svg.herokuapp.com/?font=Pacifico&size=40&pause=1000&color=FF0000&center=true&vCenter=true&random=false&width=600&lines=Advanced+OwO+Automation;Built+by+LIMEY;Star+the+repo" alt="Limey">
   
   <br/>
   <br/>
@@ -16,7 +16,7 @@
   <br/>
   <br/>
 
-  <img src="https://img.shields.io/badge/NeuraSelf-Advanced_Automation-red?style=for-the-badge&logo=discord&logoColor=white" />
+  <img src="https://img.shields.io/badge/Limey-Advanced_Automation-red?style=for-the-badge&logo=discord&logoColor=white" />
   <img src="https://img.shields.io/badge/Python-3.10+-blue?style=for-the-badge&logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/License-Private-green?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Status-Active-success?style=for-the-badge" />
@@ -31,9 +31,9 @@
 > [!IMPORTANT]
 > WE ARE NOT responsible if you get banned using our selfbots. Selfbots are against Discord ToS and break OwO bot rules. Use only in private servers and do not openly share that you are using automation.
 
-## What is NeuraSelf?
+## What is Limey?
 
-**NeuraSelf** is a powerful, fully-featured OWO-BOT automation tool offering a premium web dashboard. It allows you to monitor all your data in real-time through an easy-to-manage, beautifully designed interface.
+**Limey** is a powerful, fully-featured OWO-BOT automation tool offering a premium web dashboard. It allows you to monitor all your data in real-time through an easy-to-manage, beautifully designed interface.
 
 ---
 
@@ -72,18 +72,18 @@ Instead of sending just gambling commands, it has strategies (martingale ,flat) 
 ### Windows
 
 ```bash
-curl -o "%TEMP%\install_neuraself.bat" https://raw.githubusercontent.com/routo-loop/neura-self/main/install_neuraself.bat && "%TEMP%\install_neuraself.bat"
+curl -o "%TEMP%\install_limey.bat" https://raw.githubusercontent.com/cubiced0/owo-discord-bot/main/install_limey.bat && "%TEMP%\install_limey.bat"
 ```
 
 ### Termux / Linux / MacOS
 
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/routo-loop/neura-self/main/install_neuraself.sh)
+bash <(curl -s https://raw.githubusercontent.com/cubiced0/owo-discord-bot/main/install_limey.sh)
 ```
 
 #### For Termux
 
-Make sure to install the **Termux** and **Termux:API** apps from F-Droid or GitHub (grant the API app notifications permission). After the installation script finishes, follow the setup steps prompted by `neura_setup.py`. If you face issues with the basic installation, try the manual installation method.
+Make sure to install the **Termux** and **Termux:API** apps from F-Droid or GitHub (grant the API app notifications permission). After the installation script finishes, follow the setup steps prompted by `limey_setup.py`. If you face issues with the basic installation, try the manual installation method.
 
 ---
 
@@ -101,9 +101,9 @@ This tool is for **educational purposes only**. Using self-bots violates Discord
 
 <div align="center">
 
-### NeuraSelf
+### Limey
 
-**Advanced OwO Bot Grinder** • Built by **ROUTO** • Made with ❤️
+**Advanced OwO Bot Grinder** • Built by **LIMEY** • Made with ❤️
 
 **Star this project if you find it useful!**
 
@@ -112,10 +112,10 @@ This tool is for **educational purposes only**. Using self-bots violates Discord
 ## Screenshots
 
 ### Login Page Screenshot
-![Login](dashboard/static/assets/neura-auth.jpg)
+![Login](dashboard/static/assets/limey-auth.jpg)
 
 ### Dashboard
-![Dashboard](dashboard/static/assets/neura-desktop-dash.jpg)
+![Dashboard](dashboard/static/assets/limey-desktop-dash.jpg)
 
 ### Dashboard Mobile
-![Dashboard](dashboard/static/assets/neura-mob.jpg)
+![Dashboard](dashboard/static/assets/limey-mob.jpg)

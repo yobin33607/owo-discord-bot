@@ -1,18 +1,18 @@
-# This file is part of NeuraSelf-UwU.
-# Copyright (c) 2025-Present Routo
+# This file is part of Limey.
+# Copyright (c) 2025-Present Limey
 #
-# NeuraSelf-UwU is free software: you can redistribute it and/or modify
+# Limey is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # You should have received a copy of the GNU General Public License
-# along with NeuraSelf-UwU. If not, see <https://www.gnu.org/licenses/>.
+# along with Limey. If not, see <https://www.gnu.org/licenses/>.
 
 
 """
-Author: Routo
-NeuraSelf-UwU - https://github.com/routo-loop/neura-self
+Author: Limey
+Limey - https://github.com/cubiced0/owo-discord-bot
 """
 
 
@@ -170,17 +170,17 @@ class Gambling(commands.Cog):
         cfg_cf = self._get_cmd_cfg('coinflip')
         if cfg_cf.get('enabled', False):
             self.bot.log("SYS", "Gambling (Coinflip) Module configured.")
-            await self.bot.neura_register_command("coinflip", "cf", priority=self.bot.get_cmd_priority("coinflip", 3), delay=random.uniform(30, 60), initial_offset=15)
+            await self.bot.limey_register_command("coinflip", "cf", priority=self.bot.get_cmd_priority("coinflip", 3), delay=random.uniform(30, 60), initial_offset=15)
             self.trigger_coinflip()
         cfg_slots = self._get_cmd_cfg('slots')
         if cfg_slots.get('enabled', False):
             self.bot.log("SYS", "Gambling (Slots) Module configured.")
-            await self.bot.neura_register_command("slots", "slots", priority=self.bot.get_cmd_priority("slots", 3), delay=random.uniform(25, 50), initial_offset=20)
+            await self.bot.limey_register_command("slots", "slots", priority=self.bot.get_cmd_priority("slots", 3), delay=random.uniform(25, 50), initial_offset=20)
             self.trigger_slots()
         cfg_bj = self._get_cmd_cfg('blackjack')
         if cfg_bj.get('enabled', False):
             self.bot.log("SYS", "Gambling (Blackjack) Module configured.")
-            await self.bot.neura_register_command("blackjack", "bj", priority=self.bot.get_cmd_priority("blackjack", 3), delay=random.uniform(40, 70), initial_offset=25)
+            await self.bot.limey_register_command("blackjack", "bj", priority=self.bot.get_cmd_priority("blackjack", 3), delay=random.uniform(40, 70), initial_offset=25)
             self.trigger_blackjack()
 
     @commands.Cog.listener()

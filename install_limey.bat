@@ -1,18 +1,18 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-title NeuraSelf Installer
+title Limey Installer
 cd /d "%~dp0"
 chcp 65001 >nul
 
-set "INSTALL_DIR=%USERPROFILE%\Desktop\NeuraSelf"
-set "REPO_URL=https://github.com/routo-loop/neura-self.git"
+set "INSTALL_DIR=%USERPROFILE%\Desktop\Limey"
+set "REPO_URL=https://github.com/cubiced0/owo-discord-bot.git"
 set "PYTHON_VER=3.10.11"
 set "PYTHON_URL=https://www.python.org/ftp/python/%PYTHON_VER%/python-%PYTHON_VER%-amd64.exe"
 
 color 0B
 
 echo.
-echo  [SYSTEM] NeuraSelf Installer
+echo  [SYSTEM] Limey Installer
 echo.
 
 set "PY_CMD="
@@ -139,7 +139,7 @@ echo  [#] Launching setup...
 
 pushd "%INSTALL_DIR%"
 
-%PY_CMD% neura_setup.py --quick
+%PY_CMD% limey_setup.py --quick
 
 if errorlevel 1 (
     popd
@@ -158,7 +158,7 @@ echo  Installed to:
 echo  %INSTALL_DIR%
 echo.
 echo  Run:
-echo  %INSTALL_DIR%\neura.py
+echo  %INSTALL_DIR%\limey.py
 echo.
 
 pause

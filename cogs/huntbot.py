@@ -1,18 +1,18 @@
-# This file is part of NeuraSelf-UwU.
-# Copyright (c) 2025-Present Routo
+# This file is part of Limey.
+# Copyright (c) 2025-Present Limey
 #
-# NeuraSelf-UwU is free software: you can redistribute it and/or modify
+# Limey is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # You should have received a copy of the GNU General Public License
-# along with NeuraSelf-UwU. If not, see <https://www.gnu.org/licenses/>.
+# along with Limey. If not, see <https://www.gnu.org/licenses/>.
 
 
 """
-Author: Routo
-NeuraSelf-UwU - https://github.com/routo-loop/neura-self
+Author: Limey
+Limey - https://github.com/cubiced0/owo-discord-bot
 """
 
 
@@ -53,7 +53,7 @@ class HuntBot(commands.Cog):
         cfg = self.bot.config.get('commands', {}).get('huntbot', {})
         if cfg.get('enabled', False):
             self.bot.log("SYS", "HuntBot Module configured.")
-            await self.bot.neura_register_command("huntbot", "huntbot 16000", priority=self.bot.get_cmd_priority("huntbot", 4), delay=900, initial_offset=20)
+            await self.bot.limey_register_command("huntbot", "huntbot 16000", priority=self.bot.get_cmd_priority("huntbot", 4), delay=900, initial_offset=20)
             self.trigger_action()
 
     @commands.Cog.listener()
@@ -155,7 +155,7 @@ class HuntBot(commands.Cog):
                         self.last_upgrade_essence = essence
                         self.last_upgrade_time = time.time()
                         for trait, amount in allocations.items():
-                            await self.bot.neura_enqueue(f"upgrade {trait} {amount}", priority=2)
+                            await self.bot.limey_enqueue(f"upgrade {trait} {amount}", priority=2)
                             self.bot.log("SUCCESS", f"HuntBot: Enqueued upgrade for {trait.capitalize()} ({amount:,} essence).")
                 elif enabled and essence == 0:
                     self.bot.log("AutoHunt", "HuntBot: No essence available — skipping upgrade.")
@@ -217,13 +217,13 @@ class HuntBot(commands.Cog):
             try:
                 import modules.nhuntbotsolver as solver
                 if self.bot.session and img_url:
-                    self.bot.log("AutoHunt", "Attempting NeuraSolver auto-solve...")
+                    self.bot.log("AutoHunt", "Attempting LimeySolver auto-solve...")
                     answer = await solver.solveHbCaptcha(img_url, self.bot.session)
                     
                     if answer and len(answer) > 0:
                         self.bot.log("SUCCESS", f"Captcha Solved: {answer}")
                         cash = cfg.get('cash_to_spend', 15000)
-                        await self.bot.neura_enqueue(f"autohunt {cash} {answer}", priority=1)
+                        await self.bot.limey_enqueue(f"autohunt {cash} {answer}", priority=1)
                         
                         uid = str(self.bot.user.id)
                         if uid in state.account_stats:

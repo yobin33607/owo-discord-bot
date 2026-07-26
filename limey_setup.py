@@ -1,18 +1,18 @@
-# This file is part of NeuraSelf-UwU.
-# Copyright (c) 2025-Present Routo
+# This file is part of Limey.
+# Copyright (c) 2025-Present Limey
 #
-# NeuraSelf-UwU is free software: you can redistribute it and/or modify
+# Limey is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # You should have received a copy of the GNU General Public License
-# along with NeuraSelf-UwU. If not, see <https://www.gnu.org/licenses/>.
+# along with Limey. If not, see <https://www.gnu.org/licenses/>.
 
 
 """
-Author: Routo
-NeuraSelf-UwU - https://github.com/routo-loop/neura-self
+Author: Limey
+Limey - https://github.com/cubiced0/owo-discord-bot
 """
 
 import asyncio
@@ -32,12 +32,12 @@ if sys.stdout.encoding != 'utf-8':
         pass
 
 import core.state as state
-from neura_engines.setup_engine import NeuraSetupEngine, console, Confirm, Prompt, Table, Panel
+from limey_engines.setup_engine import LimeySetupEngine, console, Confirm, Prompt, Table, Panel
 from utils import proxy_manager
 
-engine = NeuraSetupEngine()
+engine = LimeySetupEngine()
 
-from neuraself_ascii.neura_ascii import show_banner
+from limey_ascii.limey_ascii import show_banner
 
 def clean_screen():
     os.system("cls" if os.name == "nt" else "clear")
@@ -336,7 +336,7 @@ async def setup_menu():
             try:
                 with open(auth_path, "r", encoding="utf-8") as f:
                     auth = json.load(f)
-                if auth.get("password") == "neuraself_default_password_change_me":
+                if auth.get("password") == "limey_default_password_change_me":
                     if Confirm.ask("change default dashboard password?", default=False):
                         new_pass = Prompt.ask("new password", password=True)
                         if new_pass:
@@ -350,10 +350,10 @@ async def setup_menu():
             if not proxies:
                 if Confirm.ask("import proxies now? (optional)", default=False):
                     await proxy_manager_cli(bulk_only=True)
-            console.print("\n[green]launching neura...[/green]")
+            console.print("\n[green]launching limey...[/green]")
             time.sleep(1)
-            import neura
-            await neura.main()
+            import limey
+            await limey.main()
             break
         elif choice == "2":
             await account_manager()
@@ -370,7 +370,7 @@ async def setup_menu():
                 console.print("[dim]no setup log yet.[/dim]")
             input("\npress enter...")
         else:
-            console.print("\n[magenta]thank you for using neuraself.[/magenta]")
+            console.print("\n[magenta]thank you for using limey.[/magenta]")
             break
 
 async def quick_start():
@@ -390,12 +390,12 @@ async def quick_start():
     proxies = engine.load_proxies()
     if not proxies:
         console.print("[yellow]No proxies found. You can run without proxies (direct connection).[/yellow]")
-    console.print("[green]Launching NeuraSelf...[/green]")
-    import neura
-    await neura.main()
+    console.print("[green]Launching Limey...[/green]")
+    import limey
+    await limey.main()
 
 def main():
-    parser = argparse.ArgumentParser(description="NeuraSelf Setup")
+    parser = argparse.ArgumentParser(description="Limey Setup")
     parser.add_argument("--quick", action="store_true", help="Run quick setup and launch bot")
     parser.add_argument("--setup-only", action="store_true", help="Run setup only (no launch)")
     args = parser.parse_args()

@@ -1,15 +1,15 @@
 /* 
 
-# This file is part of NeuraSelf-UwU.
-# Copyright (c) 2025-Present Routo
+# This file is part of Limey.
+# Copyright (c) 2025-Present Limey
 #
-# NeuraSelf-UwU is free software: you can redistribute it and/or modify
+# Limey is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # You should have received a copy of the GNU General Public License
-# along with NeuraSelf-UwU. If not, see <https://www.gnu.org/licenses/>.
+# along with Limey. If not, see <https://www.gnu.org/licenses/>.
 
 
 
@@ -190,7 +190,7 @@ function applyDisabledPanelState(root) {
     if (!root) return;
     root.querySelectorAll('.cfg-panel-disabled, .cfg-section-disabled').forEach(block => {
         block.querySelectorAll('input, button').forEach(el => { el.disabled = true; });
-        block.querySelectorAll('.neura-toggle:not([data-master-toggle])').forEach(el => {
+        block.querySelectorAll('.limey-toggle:not([data-master-toggle])').forEach(el => {
             el.style.pointerEvents = 'none';
         });
     });
@@ -365,13 +365,13 @@ window.removeListItem = function (path, index, ev) {
     checkDirty();
 };
 
-function renderNeuraToggle(path, v, parentEnabled = true, isMaster = false) {
+function renderLimeyToggle(path, v, parentEnabled = true, isMaster = false) {
     const click = parentEnabled ? `onclick="toggleMod('${path}', this, event)"` : '';
     const master = isMaster ? ' data-master-toggle="1"' : '';
     return `
-        <div class="neura-toggle ${v ? 'is-on' : ''}" role="switch" aria-checked="${v}" ${master} ${click}>
-            <div class="neura-toggle-track">
-                <span class="neura-toggle-thumb"></span>
+        <div class="limey-toggle ${v ? 'is-on' : ''}" role="switch" aria-checked="${v}" ${master} ${click}>
+            <div class="limey-toggle-track">
+                <span class="limey-toggle-thumb"></span>
             </div>
         </div>
     `;
@@ -392,7 +392,7 @@ function renderField(path, f, v, highlight = false, parentEnabled = true) {
                     <span class="cfg-label-text">${label}</span>
                 </div>
                 <div class="cfg-row-control">
-                    ${renderNeuraToggle(path, v, parentEnabled, f.master)}
+                    ${renderLimeyToggle(path, v, parentEnabled, f.master)}
                 </div>
             </div>
         `;
@@ -498,12 +498,12 @@ function renderStepperInner(path, label, value, unit = '', parentEnabled = true)
         ${labelHtml}
         <div class="cfg-stepper">
             <button type="button" class="cfg-stepper-btn" ${parentEnabled ? `onclick="updateStepper('${path}', -1, event)"` : 'disabled'}>
-                <span class="icon-svg" style="--icon: url('/static/assets/neura_icons/minus.svg');"></span>
+                <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/minus.svg');"></span>
             </button>
             <input type="number" class="cfg-stepper-val" value="${value}"${dis} onchange="updateValueFromInput('${path}', this)">
             ${unit ? `<span class="cfg-stepper-unit">${unit}</span>` : ''}
             <button type="button" class="cfg-stepper-btn" ${parentEnabled ? `onclick="updateStepper('${path}', 1, event)"` : 'disabled'}>
-                <span class="icon-svg" style="--icon: url('/static/assets/neura_icons/plus.svg');"></span>
+                <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/plus.svg');"></span>
             </button>
         </div>
     `;
@@ -542,17 +542,17 @@ window.updateStepper = function (path, delta, ev) {
 function toggleMod(p, el, ev) {
     if (ev) ev.stopPropagation();
     const isGemTier = el.classList.contains('gem-tier-item');
-    const isNeuraToggle = el.classList.contains('neura-toggle');
+    const isLimeyToggle = el.classList.contains('limey-toggle');
     const v = isGemTier
         ? !el.classList.contains('selected')
-        : isNeuraToggle
+        : isLimeyToggle
             ? !el.classList.contains('is-on')
             : !el.classList.contains('on');
     setDeep(currentConfig, p.split('.'), v);
     if (isGemTier) {
         el.classList.toggle('selected', v);
         el.setAttribute('aria-pressed', v);
-    } else if (isNeuraToggle) {
+    } else if (isLimeyToggle) {
         el.classList.toggle('is-on', v);
         el.setAttribute('aria-checked', v);
         if (p.endsWith('.enabled') || p.split('.').pop() === 'enabled') {
@@ -563,7 +563,7 @@ function toggleMod(p, el, ev) {
         el.setAttribute('aria-checked', v);
     } else {
         el.className = `module-toggle ${v ? 'on' : 'off'}`;
-        el.innerHTML = `<span class="icon-svg" style="--icon: url('/static/assets/neura_icons/toggle-${v ? 'on' : 'off'}.svg');"></span> ${v ? 'ON' : 'OFF'}`;
+        el.innerHTML = `<span class="icon-svg" style="--icon: url('/static/assets/limey_icons/toggle-${v ? 'on' : 'off'}.svg');"></span> ${v ? 'ON' : 'OFF'}`;
     }
     checkDirty();
 }

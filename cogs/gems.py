@@ -1,18 +1,18 @@
-# This file is part of NeuraSelf-UwU.
-# Copyright (c) 2025-Present Routo
+# This file is part of Limey.
+# Copyright (c) 2025-Present Limey
 #
-# NeuraSelf-UwU is free software: you can redistribute it and/or modify
+# Limey is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # You should have received a copy of the GNU General Public License
-# along with NeuraSelf-UwU. If not, see <https://www.gnu.org/licenses/>.
+# along with Limey. If not, see <https://www.gnu.org/licenses/>.
 
 
 """
-Author: Routo
-NeuraSelf-UwU - https://github.com/routo-loop/neura-self
+Author: Limey
+Limey - https://github.com/cubiced0/owo-discord-bot
 """
 
 
@@ -24,7 +24,7 @@ import random
 import core.state as state
 from discord.ext import commands
 
-class NeuraGems(commands.Cog):
+class LimeyGems(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.active = True
@@ -172,13 +172,13 @@ class NeuraGems(commands.Cog):
                         if state.checking_gems.get(self.bot.user_id):
                             return
 
-                        self.bot.log("SYS", "[NeuraGems] No active gems detected! Triggering inventory check.")
+                        self.bot.log("SYS", "[LimeyGems] No active gems detected! Triggering inventory check.")
                         state.checking_gems[self.bot.user_id] = {
                             "time": time.time(),
                             "types": actually_missing
                         }
                         self.last_inv_time = now
-                        await self.bot.neura_enqueue("owo inv", priority=2)
+                        await self.bot.limey_enqueue("owo inv", priority=2)
             return
 
         activation_match = re.search(r":(\w+): \| .* activated a\(n\) (.*) gem!", content)
@@ -199,7 +199,7 @@ class NeuraGems(commands.Cog):
                 if g_type in state.missing_gems_cache[self.bot.user_id]:
                     state.missing_gems_cache[self.bot.user_id].remove(g_type)
                 
-                self.bot.log("SUCCESS", f"[NeuraGems] Confirmation: {g_type} activated. Cache updated.")
+                self.bot.log("SUCCESS", f"[LimeyGems] Confirmation: {g_type} activated. Cache updated.")
 
                 self.last_inv_time = time.time()
                 state.checking_gems[self.bot.user_id] = False
@@ -233,12 +233,12 @@ class NeuraGems(commands.Cog):
                     if state.checking_gems.get(self.bot.user_id):
                         return
 
-                    self.bot.log("SYS", f"[NeuraGems] Active gems detected, but missing: {', '.join(actually_missing)}. Checking inventory...")
+                    self.bot.log("SYS", f"[LimeyGems] Active gems detected, but missing: {', '.join(actually_missing)}. Checking inventory...")
                     state.checking_gems[self.bot.user_id] = {
                         "time": time.time(),
                         "types": actually_missing
                     }
-                    await self.bot.neura_enqueue("owo inv", priority=2)
+                    await self.bot.limey_enqueue("owo inv", priority=2)
                 else:
                     pass
             return
@@ -297,11 +297,11 @@ class NeuraGems(commands.Cog):
                     if has_any:
                         if g_type in state.missing_gems_cache[self.bot.user_id]:
                             state.missing_gems_cache[self.bot.user_id].remove(g_type)
-                            self.bot.log("SYS", f"[NeuraGems] {g_type} found in inventory, removed from missing cache.")
+                            self.bot.log("SYS", f"[LimeyGems] {g_type} found in inventory, removed from missing cache.")
                     else:
                         if g_type not in state.missing_gems_cache[self.bot.user_id]:
                             state.missing_gems_cache[self.bot.user_id].append(g_type)
-                            self.bot.log("WARN", f"[NeuraGems] {g_type} not found in inventory, added to missing cache.")
+                            self.bot.log("WARN", f"[LimeyGems] {g_type} not found in inventory, added to missing cache.")
 
                 if to_use:
                     cmd_ids = [gid if not gid.startswith('0') else gid[1:] for gid in to_use]
@@ -311,16 +311,16 @@ class NeuraGems(commands.Cog):
                         st = state.account_stats[uid]
                         st['gems_used'] = st.get('gems_used', 0) + len(to_use)
                         state.save_account_stats()
-                    await self.bot.neura_enqueue(use_cmd, priority=2)
-                    self.bot.log("SUCCESS", f"[NeuraGems] Equipped: {use_cmd}")
+                    await self.bot.limey_enqueue(use_cmd, priority=2)
+                    self.bot.log("SUCCESS", f"[LimeyGems] Equipped: {use_cmd}")
                     self.last_inv_time = time.time()
                 else:
-                    self.bot.log("WARN", f"[NeuraGems] Inventory checked, but no matching gems found for: {missing_types}")
+                    self.bot.log("WARN", f"[LimeyGems] Inventory checked, but no matching gems found for: {missing_types}")
 
     async def register_actions(self):
         pass
 
 async def setup(bot):
-    cog = NeuraGems(bot)
+    cog = LimeyGems(bot)
     bot.add_listener(cog.on_message, 'on_message')
     await bot.add_cog(cog)

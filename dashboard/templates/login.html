@@ -1,14 +1,14 @@
 <!--
-  This file is part of NeuraSelf-UwU.
-  Copyright (c) 2025-Present Routo
+  This file is part of Limey.
+  Copyright (c) 2025-Present Limey
 
-  NeuraSelf-UwU is free software: you can redistribute it and/or modify
+  Limey is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
   You should have received a copy of the GNU General Public License
-  along with NeuraSelf-UwU. If not, see <https://www.gnu.org/licenses/>.
+  along with Limey. If not, see <https://www.gnu.org/licenses/>.
 -->
 
 
@@ -17,7 +17,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>NeuraSelf — Auth</title>
+    <title>Limey — Auth</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -398,7 +398,7 @@
     <script>
         // ─── typing effect ─────────────────────────────────
         (function () {
-            const text = "NEURA AUTH";
+            const text = "LIMEY AUTH";
             const el = document.getElementById('heading');
             const cursor = document.getElementById('cur');
             let i = 0;
@@ -442,7 +442,7 @@
 
 
                         successTriggered = true;
-                        spawnNeuralLines();
+                        spawnLimeylLines();
 
                         setTimeout(() => { window.location.href = '/'; }, 1900);
                     } else {
@@ -495,8 +495,8 @@
 
         const DOTS = Array.from({ length: 55 }, () => new Dot());
 
-        const neural = [];
-        function spawnNeuralLines() {
+        const limeyl = [];
+        function spawnLimeylLines() {
             const cx = W / 2, cy = H / 2;
             const generators = [
                 () => ({ sx: Math.random() * W, sy: 0 }),
@@ -507,7 +507,7 @@
             for (let i = 0; i < 80; i++) {
                 const g = generators[Math.floor(Math.random() * generators.length)]();
                 const delay = i * 18;                         // stagger
-                neural.push({
+                limeyl.push({
                     sx: g.sx, sy: g.sy,
                     cx: g.sx + (cx - g.sx) * (0.3 + Math.random() * 0.4),
                     cy: g.sy + (cy - g.sy) * (0.3 + Math.random() * 0.4),
@@ -522,9 +522,9 @@
         }
 
         let rafTime = 0;
-        function drawNeuralLines(dt) {
+        function drawLimeylLines(dt) {
             ctx.lineWidth = 1.2;
-            neural.forEach(n => {
+            limeyl.forEach(n => {
                 n.elapsed += dt;
                 if (n.elapsed < n.delay) return;
                 if (!n.active) n.active = true;
@@ -577,7 +577,7 @@
                     ctx.fill();
                 }
             } else {
-                drawNeuralLines(dt);
+                drawLimeylLines(dt);
             }
 
             requestAnimationFrame(loop);

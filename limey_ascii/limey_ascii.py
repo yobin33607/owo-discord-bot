@@ -1,17 +1,17 @@
-# This file is part of NeuraSelf-UwU.
-# Copyright (c) 2025-Present Routo
+# This file is part of Limey.
+# Copyright (c) 2025-Present Limey
 #
-# NeuraSelf-UwU is free software: you can redistribute it and/or modify
+# Limey is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # You should have received a copy of the GNU General Public License
-# along with NeuraSelf-UwU. If not, see <https://www.gnu.org/licenses/>.
+# along with Limey. If not, see <https://www.gnu.org/licenses/>.
 
 """
-Author: Routo
-NeuraSelf-UwU - https://github.com/routo-loop/neura-self
+Author: Limey
+Limey - https://github.com/cubiced0/owo-discord-bot
 """
 
 
@@ -25,9 +25,9 @@ from rich.console import Console
 from rich.align import Align
 from rich.live import Live
 
-AUTHOR = "ROUTO"
+AUTHOR = "LIMEY"
 
-NEURA_MAIN_LOGO = f"""[#ff0000]      ▄      ▄███▄     ▄   █▄▄▄▄ ██  [/#ff0000]
+LIMEY_MAIN_LOGO = f"""[#ff0000]      ▄      ▄███▄     ▄   █▄▄▄▄ ██  [/#ff0000]
 [#ff0000]      █      █▀   ▀     █  █  ▄▀ █ █ [/#ff0000]
 [#ff0000]      ██   █ ██▄▄    █   █ █▀▀▌  █▄▄█[/#ff0000]
 [#ff0000]      █ █  █ █▄   ▄▀ █   █ █  █  █  █[/#ff0000]
@@ -38,7 +38,7 @@ NEURA_MAIN_LOGO = f"""[#ff0000]      ▄      ▄███▄     ▄   █▄�
 [bold cyan]   N E U R A   S E L F[/bold cyan]  [white]•[/white]  [bold cyan]Made by {AUTHOR}[/bold cyan]
 [#ff0000]┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈[/#ff0000]"""
 
-NEURA_SETUP_LOGO = f"""[red]      ▄      ▄███▄     ▄   █▄▄▄▄ ██  [/red]
+LIMEY_SETUP_LOGO = f"""[red]      ▄      ▄███▄     ▄   █▄▄▄▄ ██  [/red]
 [red]      █      █▀   ▀     █  █  ▄▀ █ █ [/red]
 [red]      ██   █ ██▄▄    █   █ █▀▀▌  █▄▄█[/red]
 [red]      █ █  █ █▄   ▄▀ █   █ █  █  █  █[/red]
@@ -111,9 +111,9 @@ def show_banner(banner_type='main', animate=True):
     os.system('cls' if os.name == 'nt' else 'clear')
     
     if banner_type == 'setup':
-        raw_logo = NEURA_SETUP_LOGO
+        raw_logo = LIMEY_SETUP_LOGO
     else:
-        raw_logo = NEURA_MAIN_LOGO
+        raw_logo = LIMEY_MAIN_LOGO
         
     logo_lines = raw_logo.splitlines()
 

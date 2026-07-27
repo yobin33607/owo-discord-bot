@@ -35,7 +35,7 @@ LIMEY_MAIN_LOGO = f"""[#ff0000]      ▄      ▄███▄     ▄   █▄�
 [#ff0000]      █   ██          ▀▀▀   ▀      █ [/#ff0000]
 [#ff0000]                                    ▀  [/#ff0000]
 [#ff0000]┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈[/#ff0000]
-[bold cyan]   N E U R A   S E L F[/bold cyan]  [white]•[/white]  [bold cyan]Made by {AUTHOR}[/bold cyan]
+[bold cyan]        L I M E Y         [/bold cyan]  [white]•[/white]  [bold cyan]Made by {AUTHOR}[/bold cyan]
 [#ff0000]┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈[/#ff0000]"""
 
 LIMEY_SETUP_LOGO = f"""[red]      ▄      ▄███▄     ▄   █▄▄▄▄ ██  [/red]
@@ -46,7 +46,7 @@ LIMEY_SETUP_LOGO = f"""[red]      ▄      ▄███▄     ▄   █▄▄�
 [red]      █   ██          ▀▀▀   ▀      █ [/red]
 [red]                                    ▀  [/red]
 [bold blue]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold blue]
-[bold cyan]      n e u r a   s e t u p      Made by {AUTHOR}      [/bold cyan]
+[bold cyan]      l i m e y   s e t u p      Made by {AUTHOR}      [/bold cyan]
 [bold blue]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold blue]"""
 
 NOISE = "█▓▒░@#$%&/=+*<>"

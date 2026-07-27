@@ -32,7 +32,7 @@ if sys.stdout.encoding != 'utf-8':
         pass
 
 import core.state as state
-from limey_engines.setup_engine import LimeySetupEngine, console, Confirm, Prompt, Table, Panel
+from limey_engines.neura_engines.setup_engine import LimeySetupEngine, console, Confirm, Prompt, Table, Panel
 from utils import proxy_manager
 
 engine = LimeySetupEngine()

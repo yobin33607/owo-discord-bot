@@ -34,7 +34,7 @@ from rich.align import Align
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from limey_engines.setup_engine import LimeySetupEngine
+from limey_engines.neura_engines.setup_engine import LimeySetupEngine
 from core.bot import LimeyBot
 from dashboard.app import app as flask_app
 import core.state as state

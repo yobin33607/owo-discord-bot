@@ -1,28 +1,5 @@
 <div align="center">
-  <img src="./dashboard/static/assets/limeybanner.png" alt="Limey Banner">
-  
-  <br/>
-  <br/>
-
-  <img src="https://readme-typing-svg.herokuapp.com/?font=Pacifico&size=40&pause=1000&color=FF0000&center=true&vCenter=true&random=false&width=600&lines=Advanced+OwO+Automation;Built+by+LIMEY;Star+the+repo" alt="Limey">
-  
-  <br/>
-  <br/>
-
-  <a href="https://discord.gg/XQS473Scfe">
-    <img src="https://invidget.switchblade.xyz/XQS473Scfe" alt="Discord Community"/>
-  </a>
-  
-  <br/>
-  <br/>
-
-  <img src="https://img.shields.io/badge/Limey-Advanced_Automation-red?style=for-the-badge&logo=discord&logoColor=white" />
-  <img src="https://img.shields.io/badge/Python-3.10+-blue?style=for-the-badge&logo=python&logoColor=white" />
-  <img src="https://img.shields.io/badge/License-Private-green?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/Status-Active-success?style=for-the-badge" />
-  
-  <br/>
-  <br/>
+ # Limey
 
 </div>
 

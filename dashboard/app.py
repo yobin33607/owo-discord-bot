@@ -153,8 +153,14 @@ def protect_large_ints(obj):
     return obj
 
 @app.route('/')
-@login_required
 def home():
+    if 'logged_in' in session:
+        return redirect(url_for('dashboard'))
+    return render_template('homepage.html')
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
     return render_template('index.html')
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -194,7 +200,7 @@ def logout():
     session.pop('logged_in', None)
     session.pop('username', None)
     session.pop('role', None)
-    return redirect(url_for('login'))
+    return redirect(url_for('home'))
 
 @app.route('/api/auth/me')
 @login_required

@@ -89,6 +89,10 @@
                 <span class="brand-sub">SELF</span>
                 <div class="mobile-sidebar-close" onclick="toggleMobileMenu()">&times;</div>
             </div>
+            <div class="user-info" id="userInfo">
+                <span class="user-info-name" id="userName">Loading...</span>
+                <span class="user-info-role" id="userRole"></span>
+            </div>
             <nav class="nav-links">
                 <a class="nav-item active" onclick="nav('accounts', this)"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/users.svg');"></span> Accounts</a>
@@ -104,6 +108,8 @@
                         style="--icon: url('/static/assets/limey_icons/clock-rotate-left.svg');"></span> History</a>
                 <a class="nav-item" onclick="nav('logs', this)"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/terminal.svg');"></span> Terminal</a>
+                <a class="nav-item" id="adminUsersNav" onclick="nav('admin-users', this)" style="display:none;"><span class="icon-svg"
+                        style="--icon: url('/static/assets/limey_icons/users.svg');"></span> Users</a>
                 <a class="nav-item" onclick="location.href='/logout'" style="color: #ff4444 !important;"><span
                         class="icon-svg" style="--icon: url('/static/assets/limey_icons/logout.svg');"></span>
                     Logout</a>
@@ -363,6 +369,39 @@
                 </div>
             </div>
 
+            <!-- Admin Users Tab -->
+            <div id="admin-users" class="view">
+                <h2 style="font-size:1.2rem; color:var(--primary); margin:0 0 20px 0;"><span class="icon-svg"
+                        style="--icon: url('/static/assets/limey_icons/users.svg');"></span> User Management</h2>
+                <p class="accounts-page-hint">Manage users and their permissions. Changes take effect immediately.</p>
+                <div class="account-manage-toolbar">
+                    <button class="btn-control green" onclick="showUserForm()"><span class="icon-svg"
+                            style="--icon: url('/static/assets/limey_icons/plus.svg');"></span> <span
+                            class="btn-text">ADD USER</span></button>
+                </div>
+                <div id="user-list" class="account-config-list"></div>
+                <div id="user-form-modal" class="proxy-modal">
+                    <div class="proxy-modal-inner">
+                        <h3 id="user-form-title">Add User</h3>
+                        <input type="hidden" id="user-form-edit-username" value="">
+                        <label class="form-label">Username</label>
+                        <input type="text" id="user-form-username" class="cfg-input" placeholder="username">
+                        <label class="form-label">Password</label>
+                        <input type="password" id="user-form-password" class="cfg-input" placeholder="password">
+                        <label class="form-label">Role</label>
+                        <select id="user-form-role" class="cfg-input">
+                            <option value="view">View - Read-only access</option>
+                            <option value="manage" selected>Manage - Can control and configure</option>
+                            <option value="admin">Admin - Full access</option>
+                        </select>
+                        <div class="proxy-modal-actions">
+                            <button class="btn-control" onclick="hideUserForm()">Cancel</button>
+                            <button class="btn-control green" onclick="saveUser()">Save</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Security Tab -->
             <div id="security" class="view">
                 <div class="top-controls" style="display:flex; gap:10px; margin-bottom:20px;">
@@ -528,6 +567,146 @@
     <script src="/static/js/dashboard.js"></script>
     <script src="/static/js/history.js"></script>
     <script src="/static/js/init.js"></script>
+    <script>
+        // ─── Role & User Info ─────────────────────────────
+        let currentUserRole = 'view';
+        let currentUsername = 'Unknown';
+
+        fetch('/api/auth/me')
+            .then(r => r.json())
+            .then(data => {
+                if (data.logged_in) {
+                    currentUserRole = data.role || 'view';
+                    currentUsername = data.username || 'Unknown';
+                    document.getElementById('userName').textContent = currentUsername;
+                    const roleEl = document.getElementById('userRole');
+                    roleEl.textContent = currentUserRole.toUpperCase();
+                    roleEl.className = 'user-info-role role-' + currentUserRole;
+
+                    // Show admin-only nav items
+                    if (currentUserRole === 'admin') {
+                        document.getElementById('adminUsersNav').style.display = '';
+                    }
+                }
+            })
+            .catch(() => {
+                document.getElementById('userName').textContent = 'Unavailable';
+            });
+
+        // ─── User Management ──────────────────────────────
+        function showUserForm(username, role) {
+            const modal = document.getElementById('user-form-modal');
+            document.getElementById('user-form-title').textContent = username ? 'Edit User' : 'Add User';
+            document.getElementById('user-form-edit-username').value = username || '';
+            document.getElementById('user-form-username').value = username || '';
+            document.getElementById('user-form-username').disabled = !!username;
+            document.getElementById('user-form-password').value = '';
+            document.getElementById('user-form-role').value = role || 'view';
+            modal.style.display = 'flex';
+        }
+
+        function hideUserForm() {
+            document.getElementById('user-form-modal').style.display = 'none';
+        }
+
+        function saveUser() {
+            const editUsername = document.getElementById('user-form-edit-username').value;
+            const username = document.getElementById('user-form-username').value.trim();
+            const password = document.getElementById('user-form-password').value.trim();
+            const role = document.getElementById('user-form-role').value;
+
+            if (!username) { showToast('Username is required', 'error'); return; }
+            if (!password && !editUsername) { showToast('Password is required for new users', 'error'); return; }
+
+            const payload = { username, password, role };
+
+            fetch('/api/auth/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast('User saved: ' + username);
+                        hideUserForm();
+                        fetchUsers();
+                    } else {
+                        showToast(data.error || 'Failed to save user', 'error');
+                    }
+                })
+                .catch(() => showToast('Error saving user', 'error'));
+        }
+
+        function deleteUser(username) {
+            if (!confirm('Delete user "' + username + '"? This cannot be undone.')) return;
+            fetch('/api/auth/users/' + encodeURIComponent(username), { method: 'DELETE' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast('User deleted: ' + username);
+                        fetchUsers();
+                    } else {
+                        showToast(data.error || 'Failed to delete user', 'error');
+                    }
+                })
+                .catch(() => showToast('Error deleting user', 'error'));
+        }
+
+        function fetchUsers() {
+            fetch('/api/auth/users')
+                .then(r => r.json())
+                .then(data => {
+                    const list = document.getElementById('user-list');
+                    if (!data.users || data.users.length === 0) {
+                        list.innerHTML = '<div class="no-data">No users configured</div>';
+                        return;
+                    }
+                    let html = '';
+                    data.users.forEach(u => {
+                        const roleColor = u.role === 'admin' ? '#ff4444' : u.role === 'manage' ? '#ffaa00' : '#44aaff';
+                        html += '<div class="account-row">' +
+                            '<div style="display:flex;align-items:center;gap:12px;flex:1;">' +
+                            '<span style="font-weight:600;">' + escapeHtml(u.username) + '</span>' +
+                            '<span style="font-size:0.75rem;padding:2px 8px;border-radius:4px;background:' + roleColor + '22;color:' + roleColor + ';border:1px solid ' + roleColor + '44;">' + u.role.toUpperCase() + '</span>' +
+                            '</div>' +
+                            '<div style="display:flex;gap:8px;">' +
+                            '<button class="btn-control" onclick="showUserForm(\'' + escapeHtml(u.username) + '\',\'' + u.role + '\')" style="padding:4px 12px;font-size:0.75rem;">Edit</button>' +
+                            '<button class="btn-control red" onclick="deleteUser(\'' + escapeHtml(u.username) + '\')" style="padding:4px 12px;font-size:0.75rem;">Delete</button>' +
+                            '</div>' +
+                            '</div>';
+                    });
+                    list.innerHTML = html;
+                })
+                .catch(() => {});
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // Override nav to handle admin-users tab
+        const origNav = window.nav;
+        window.nav = function(id, el) {
+            if (id === 'admin-users') {
+                document.querySelectorAll('.view').forEach(v => v.classList.remove('active-view'));
+                document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+                const target = document.getElementById('admin-users');
+                if (target) target.classList.add('active-view');
+                if (el) el.classList.add('active');
+                checkDirty();
+                fetchUsers();
+                if (window.innerWidth <= 768) {
+                    const sidebar = document.querySelector('.sidebar');
+                    if (sidebar && sidebar.classList.contains('active')) toggleMobileMenu();
+                }
+                return;
+            }
+            origNav(id, el);
+        };
+    </script>
 </body>
 
 </html>

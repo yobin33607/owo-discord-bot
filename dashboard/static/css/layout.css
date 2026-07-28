@@ -187,6 +187,41 @@
 .top-controls { display: flex; gap: 10px; align-items: center; }
 
 
+.user-info {
+    display: flex;
+    flex-direction: column;
+    padding: 10px 20px;
+    margin: 4px 0 12px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+}
+.user-info-name {
+    font-family: var(--font-heading);
+    font-size: 0.85rem;
+    color: #e0e0e0;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+.user-info-role {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    letter-spacing: 1px;
+    margin-top: 2px;
+}
+.user-info-role.role-admin {
+    color: #ff4444;
+    text-shadow: 0 0 8px rgba(255,68,68,0.4);
+}
+.user-info-role.role-manage {
+    color: #ffaa00;
+    text-shadow: 0 0 8px rgba(255,170,0,0.3);
+}
+.user-info-role.role-view {
+    color: #44aaff;
+    text-shadow: 0 0 8px rgba(68,170,255,0.3);
+}
+
 .status-indicator {
     display: flex;
     align-items: center;

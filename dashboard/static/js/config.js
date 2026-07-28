@@ -248,7 +248,7 @@ function renderCategoryFlat(obj, path, categoryName, depth = 0, parentEnabled = 
         } else if (isSelectField(fullPath)) {
             h += renderSelectDropdown(fullPath, val, selfEnabled);
         } else {
-            h += renderField(fullPath, { l: key, type: key.includes('url') ? 'password' : 'text' }, val, false, selfEnabled);
+            h += renderField(fullPath, { l: key, type: (key.includes('url') || key.includes('token')) ? 'password' : 'text' }, val, false, selfEnabled);
         }
     });
     return h;

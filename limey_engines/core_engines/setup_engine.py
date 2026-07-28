@@ -200,6 +200,12 @@ class LimeySetupEngine:
                 "core": {"monitor_bot_id": "408785106942164992"},
                 "commands": {},
                 "gambling": {"bet_strategy": "flat", "max_bet": 100000},
+                "manager_bot": {
+                    "token": "",
+                    "guild_id": "",
+                    "allowed_channels": [],
+                    "prefix": "!"
+                },
             }
             with open(settings_path, "w", encoding="utf-8") as f:
                 json.dump(default_settings, f, indent=4)

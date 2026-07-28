@@ -40,6 +40,14 @@ from dashboard.app import app as flask_app
 import core.state as state
 from utils import proxy_manager
 
+# Import the manager bot if we can
+_manager_bot_instance = None
+try:
+    from modules.manager_bot import run_manager_bot as _run_mgr
+    _manager_bot_available = True
+except ImportError:
+    _manager_bot_available = False
+
 console = Console()
 engine = LimeySetupEngine()
 
@@ -112,6 +120,12 @@ async def main():
         ht.start_session()
         dashboard_thread = threading.Thread(target=run_dashboard, daemon=True)
         dashboard_thread.start()
+
+        # Start the manager bot (official Discord bot) in background if configured
+        if _manager_bot_available:
+            console.print("[dim]Checking Manager Bot configuration...[/dim]")
+            asyncio.create_task(_run_mgr())
+
         console.print(f"[bold yellow]Initializing {len(accounts)} accounts...[/bold yellow]")
         bots = []
         tasks = []

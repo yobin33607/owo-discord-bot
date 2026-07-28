@@ -104,6 +104,8 @@
                         style="--icon: url('/static/assets/limey_icons/layers.svg');"></span> Proxies</a>
                 <a class="nav-item" onclick="nav('security', this)"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/shield-halved.svg');"></span> Security</a>
+                <a class="nav-item" id="apiKeysNav" onclick="nav('api-keys', this)" style="display:none;"><span class="icon-svg"
+                        style="--icon: url('/static/assets/limey_icons/key.svg');"></span> API Keys</a>
                 <a class="nav-item" onclick="nav('history', this)"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/clock-rotate-left.svg');"></span> History</a>
                 <a class="nav-item" onclick="nav('logs', this)"><span class="icon-svg"
@@ -369,6 +371,53 @@
                 </div>
             </div>
 
+            <!-- API Keys Tab -->
+            <div id="api-keys" class="view">
+                <h2 style="font-size:1.2rem; color:var(--primary); margin:0 0 20px 0;"><span class="icon-svg"
+                        style="--icon: url('/static/assets/limey_icons/key.svg');"></span> API Keys</h2>
+                <p class="accounts-page-hint">Generate API keys for external access to dashboard data. Keys inherit the role you assign.</p>
+                <div class="account-manage-toolbar">
+                    <button class="btn-control green" onclick="showApiKeyForm()"><span class="icon-svg"
+                            style="--icon: url('/static/assets/limey_icons/plus.svg');"></span> <span
+                            class="btn-text">GENERATE KEY</span></button>
+                </div>
+                <div id="api-key-list" class="account-config-list"></div>
+
+                <!-- New Key Display Modal -->
+                <div id="api-key-new-modal" class="proxy-modal">
+                    <div class="proxy-modal-inner">
+                        <h3 style="color:var(--warning);">⚠️ Save Your API Key</h3>
+                        <p style="color:#aaa; font-size:0.85rem; margin-bottom:12px;">
+                            This is the <strong>only time</strong> you'll see the full key. Save it somewhere safe!
+                        </p>
+                        <div style="background:#0a0a0c; border:1px solid #333; border-radius:8px; padding:12px 16px; font-family:var(--font-mono); font-size:0.85rem; word-break:break-all; color:#fff;" id="api-key-new-display"></div>
+                        <div class="proxy-modal-actions">
+                            <button class="btn-control" onclick="copyApiKey()">📋 Copy</button>
+                            <button class="btn-control green" onclick="closeApiKeyNew()">Done</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Generate Key Form Modal -->
+                <div id="api-key-form-modal" class="proxy-modal">
+                    <div class="proxy-modal-inner">
+                        <h3 id="api-key-form-title">Generate API Key</h3>
+                        <label class="form-label">Label / Name</label>
+                        <input type="text" id="api-key-form-label" class="cfg-input" placeholder="e.g. My Monitoring Script">
+                        <label class="form-label">Permission Role</label>
+                        <select id="api-key-form-role" class="cfg-input">
+                            <option value="view">View - Read-only access (stats, logs, accounts)</option>
+                            <option value="manage" selected>Manage - Can control and configure</option>
+                            <option value="admin">Admin - Full access</option>
+                        </select>
+                        <div class="proxy-modal-actions">
+                            <button class="btn-control" onclick="hideApiKeyForm()">Cancel</button>
+                            <button class="btn-control green" onclick="generateApiKey()">Generate</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Admin Users Tab -->
             <div id="admin-users" class="view">
                 <h2 style="font-size:1.2rem; color:var(--primary); margin:0 0 20px 0;"><span class="icon-svg"
@@ -568,6 +617,141 @@
     <script src="/static/js/history.js"></script>
     <script src="/static/js/init.js"></script>
     <script>
+        // ─── API Key Management ────────────────────────────
+        let _lastGeneratedKey = null;
+
+        function showApiKeyForm() {
+            document.getElementById('api-key-form-modal').style.display = 'flex';
+            document.getElementById('api-key-form-label').value = '';
+            document.getElementById('api-key-form-role').value = 'view';
+        }
+
+        function hideApiKeyForm() {
+            document.getElementById('api-key-form-modal').style.display = 'none';
+        }
+
+        function closeApiKeyNew() {
+            document.getElementById('api-key-new-modal').style.display = 'none';
+            _lastGeneratedKey = null;
+        }
+
+        function copyApiKey() {
+            if (_lastGeneratedKey) {
+                navigator.clipboard.writeText(_lastGeneratedKey).then(() => {
+                    showToast('API key copied to clipboard!');
+                }).catch(() => {
+                    // Fallback for older browsers
+                    const ta = document.createElement('textarea');
+                    ta.value = _lastGeneratedKey;
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    showToast('API key copied!');
+                });
+            }
+        }
+
+        function generateApiKey() {
+            const label = document.getElementById('api-key-form-label').value.trim();
+            const role = document.getElementById('api-key-form-role').value;
+
+            if (!label) {
+                showToast('Please enter a label for the API key', 'error');
+                return;
+            }
+
+            fetch('/api/api-keys', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ label, role })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        hideApiKeyForm();
+                        _lastGeneratedKey = data.key.key;
+                        document.getElementById('api-key-new-display').textContent = data.key.key;
+                        document.getElementById('api-key-new-modal').style.display = 'flex';
+                        fetchApiKeys();
+                    } else {
+                        showToast(data.error || 'Failed to generate key', 'error');
+                    }
+                })
+                .catch(() => showToast('Error generating key', 'error'));
+        }
+
+        function revokeApiKey(keyId) {
+            if (!confirm('Revoke this API key? It will stop working immediately.')) return;
+            fetch(`/api/api-keys/${keyId}/revoke`, { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast('API key revoked');
+                        fetchApiKeys();
+                    } else {
+                        showToast(data.error || 'Failed to revoke', 'error');
+                    }
+                })
+                .catch(() => showToast('Error revoking key', 'error'));
+        }
+
+        function deleteApiKey(keyId) {
+            if (!confirm('Permanently delete this API key? This cannot be undone.')) return;
+            fetch(`/api/api-keys/${keyId}`, { method: 'DELETE' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast('API key deleted');
+                        fetchApiKeys();
+                    } else {
+                        showToast(data.error || 'Failed to delete', 'error');
+                    }
+                })
+                .catch(() => showToast('Error deleting key', 'error'));
+        }
+
+        function fetchApiKeys() {
+            fetch('/api/api-keys?include_revoked=true')
+                .then(r => r.json())
+                .then(data => {
+                    const list = document.getElementById('api-key-list');
+                    if (!data.keys || data.keys.length === 0) {
+                        list.innerHTML = '<div class="no-data">No API keys created yet.</div>';
+                        return;
+                    }
+                    let html = '';
+                    data.keys.forEach(k => {
+                        const roleColor = k.role === 'admin' ? '#ff4444' : k.role === 'manage' ? '#ffaa00' : '#44aaff';
+                        const statusBadge = k.revoked
+                            ? '<span style="color:#ff4444;font-size:0.75rem;padding:2px 8px;border-radius:4px;border:1px solid #ff444444;">REVOKED</span>'
+                            : '<span style="color:#00ff88;font-size:0.75rem;padding:2px 8px;border-radius:4px;border:1px solid #00ff8844;">ACTIVE</span>';
+                        const created = k.created_at ? new Date(k.created_at * 1000).toLocaleString() : 'Unknown';
+                        const lastUsed = k.last_used_at ? new Date(k.last_used_at * 1000).toLocaleString() : 'Never';
+
+                        html += '<div class="account-row" style="' + (k.revoked ? 'opacity:0.5;' : '') + '">' +
+                            '<div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:0;">' +
+                            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+                            '<span style="font-weight:600;">' + escapeHtml(k.label) + '</span>' +
+                            '<span style="font-size:0.7rem;font-family:var(--font-mono);color:#666;">' + escapeHtml(k.key_prefix) + '</span>' +
+                            '<span style="font-size:0.75rem;padding:2px 8px;border-radius:4px;background:' + roleColor + '22;color:' + roleColor + ';border:1px solid ' + roleColor + '44;">' + k.role.toUpperCase() + '</span>' +
+                            statusBadge +
+                            '</div>' +
+                            '<div style="font-size:0.75rem;color:#666;">Created: ' + created + ' · Last used: ' + lastUsed + '</div>' +
+                            '</div>' +
+                            '<div style="display:flex;gap:8px;align-items:center;">' +
+                            (!k.revoked
+                                ? '<button class="btn-control" onclick="revokeApiKey(\'' + k.id + '\')" style="padding:4px 12px;font-size:0.75rem;">Revoke</button>'
+                                : '') +
+                            '<button class="btn-control red" onclick="deleteApiKey(\'' + k.id + '\')" style="padding:4px 12px;font-size:0.75rem;">Delete</button>' +
+                            '</div>' +
+                            '</div>';
+                    });
+                    list.innerHTML = html;
+                })
+                .catch(() => {});
+        }
+
         // ─── Role & User Info ─────────────────────────────
         let currentUserRole = 'view';
         let currentUsername = 'Unknown';
@@ -586,6 +770,7 @@
                     // Show admin-only nav items
                     if (currentUserRole === 'admin') {
                         document.getElementById('adminUsersNav').style.display = '';
+                        document.getElementById('apiKeysNav').style.display = '';
                     }
                 }
             })
@@ -687,17 +872,18 @@
             return div.innerHTML;
         }
 
-        // Override nav to handle admin-users tab
+        // Override nav to handle admin-users and api-keys tabs
         const origNav = window.nav;
         window.nav = function(id, el) {
-            if (id === 'admin-users') {
+            if (id === 'admin-users' || id === 'api-keys') {
                 document.querySelectorAll('.view').forEach(v => v.classList.remove('active-view'));
                 document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-                const target = document.getElementById('admin-users');
+                const target = document.getElementById(id);
                 if (target) target.classList.add('active-view');
                 if (el) el.classList.add('active');
                 checkDirty();
-                fetchUsers();
+                if (id === 'admin-users') fetchUsers();
+                if (id === 'api-keys') fetchApiKeys();
                 if (window.innerWidth <= 768) {
                     const sidebar = document.querySelector('.sidebar');
                     if (sidebar && sidebar.classList.contains('active')) toggleMobileMenu();

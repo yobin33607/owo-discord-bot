@@ -18,7 +18,7 @@ Limey - https://github.com/cubiced0/owo-discord-bot
 
 
 
-from flask import Flask, render_template, jsonify, request, session, redirect, url_for
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for, g
 from functools import wraps
 import threading
 import time
@@ -60,6 +60,20 @@ MAX_ATTEMPTS = 5
 
 ROLE_HIERARCHY = {'view': 10, 'manage': 20, 'admin': 30}
 
+# ── API Key Authentication ────────────────────────────
+from utils import api_keys as api_key_manager
+
+def _get_api_key_from_request():
+    """Extract an API key from request headers/params."""
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header[7:]
+    api_key = request.headers.get("X-API-Key", "")
+    if api_key:
+        return api_key
+    return request.args.get("api_key", "")
+
+
 def load_auth_config():
     if os.path.exists(AUTH_FILE):
         try:
@@ -95,9 +109,35 @@ if auth_cfg:
 else:
     app.secret_key = 'temporary_secret_key'
 
+def _authenticate_request():
+    """Try to authenticate using an API key from the request.
+    Uses Flask's request-local `g` object instead of session
+    to avoid leaking persistent cookies on API key requests.
+    Returns True if authenticated via API key, False otherwise."""
+    api_key = _get_api_key_from_request()
+    if not api_key:
+        return False
+    key_info = api_key_manager.validate_key(api_key)
+    if key_info:
+        g.api_key_auth = True
+        g.api_key_role = key_info['role']
+        g.api_key_user = key_info['label']
+        return True
+    return False
+
+def _get_effective_role():
+    """Get the effective user role, checking API key auth first."""
+    if getattr(g, 'api_key_auth', False):
+        return getattr(g, 'api_key_role', 'view')
+    return session.get('role', 'view')
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        # Check API key first (no session cookie leak)
+        if _authenticate_request():
+            return f(*args, **kwargs)
+        # Fall back to session
         if 'logged_in' not in session:
             if request.is_json or request.path.startswith('/api/'):
                 return jsonify({'success': False, 'error': 'Authentication required'}), 401
@@ -107,10 +147,18 @@ def login_required(f):
 
 def require_permission(min_role='manage'):
     """Decorator requiring the user to have at least the specified role.
-    Hierarchy: view < manage < admin"""
+    Hierarchy: view < manage < admin
+    Supports both session-based auth and API key auth."""
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
+            # Check API key first (no session cookie leak)
+            if _authenticate_request():
+                user_role = _get_effective_role()
+                if ROLE_HIERARCHY.get(user_role, 0) < ROLE_HIERARCHY.get(min_role, 20):
+                    return jsonify({'success': False, 'error': 'Insufficient permissions', 'role': user_role, 'required': min_role}), 403
+                return f(*args, **kwargs)
+            # Fall back to session
             if 'logged_in' not in session:
                 if request.is_json or request.path.startswith('/api/'):
                     return jsonify({'success': False, 'error': 'Authentication required'}), 401
@@ -151,6 +199,79 @@ def protect_large_ints(obj):
     elif isinstance(obj, int) and (obj > 9007199254740991 or obj < -9007199254740991):
         return str(obj)
     return obj
+
+
+# ── API Key Management ──────────────────────────────────
+
+@app.route('/api/api-keys', methods=['GET', 'POST'])
+@require_permission('admin')
+def manage_api_keys():
+    """List or create API keys."""
+    if request.method == 'POST':
+        data = request.json or {}
+        label = data.get('label', '').strip()
+        role = data.get('role', 'view').strip()
+
+        if role not in ('view', 'manage', 'admin'):
+            return jsonify({'success': False, 'error': 'Invalid role. Must be view, manage, or admin'}), 400
+
+        username = session.get('username', 'admin')
+        new_key = api_key_manager.generate_key(label=label, role=role, created_by=username)
+
+        return jsonify({
+            'success': True,
+            'key': new_key,  # Full key only shown once on creation
+            'message': f'API key "{new_key["label"]}" created. Save it now — it won\'t be shown again.'
+        })
+
+    # GET: list all keys (without exposing full keys)
+    include_revoked = request.args.get('include_revoked', '').lower() == 'true'
+    keys = api_key_manager.list_keys(include_revoked=include_revoked)
+    return jsonify({'success': True, 'keys': keys})
+
+
+@app.route('/api/api-keys/<key_id>/revoke', methods=['POST'])
+@require_permission('admin')
+def revoke_api_key(key_id):
+    """Revoke an API key."""
+    if api_key_manager.revoke_key(key_id):
+        return jsonify({'success': True, 'message': 'API key revoked'})
+    return jsonify({'success': False, 'error': 'API key not found'}), 404
+
+
+@app.route('/api/api-keys/<key_id>', methods=['DELETE'])
+@require_permission('admin')
+def delete_api_key(key_id):
+    """Permanently delete an API key."""
+    if api_key_manager.delete_key(key_id):
+        return jsonify({'success': True, 'message': 'API key deleted'})
+    return jsonify({'success': False, 'error': 'API key not found'}), 404
+
+
+@app.route('/api/api-keys/verify', methods=['GET', 'POST'])
+def verify_api_key():
+    """Verify an API key and return its role.
+    This endpoint is publicly accessible (no login required)
+    because it's used for key validation.
+    """
+    api_key = _get_api_key_from_request()
+    if not api_key:
+        # Also allow passing key in body for POST
+        if request.method == 'POST':
+            api_key = (request.json or {}).get('api_key', '')
+
+    if not api_key:
+        return jsonify({'success': False, 'error': 'No API key provided'}), 400
+
+    key_info = api_key_manager.validate_key(api_key)
+    if key_info:
+        return jsonify({
+            'success': True,
+            'valid': True,
+            'label': key_info['label'],
+            'role': key_info['role'],
+        })
+    return jsonify({'success': False, 'valid': False, 'error': 'Invalid or revoked API key'}), 401
 
 @app.route('/')
 def home():
@@ -496,16 +617,35 @@ def settings():
             if os.path.exists(config_path):
                 with open(config_path, 'r') as f:
                     data = json.load(f)
-                    return jsonify(protect_large_ints(data))
-
             elif account_id:
                 global_path = os.path.join(state.CONFIG_DIR, 'settings.json')
                 if os.path.exists(global_path):
                     with open(global_path, 'r') as f:
-                        return jsonify(protect_large_ints(json.load(f)))
-            return jsonify({})
+                        data = json.load(f)
+                else:
+                    data = {}
+            else:
+                data = {}
+            
+            # Ensure manager_bot section always appears in the config UI
+            if 'manager_bot' not in data:
+                data['manager_bot'] = {
+                    'token': '',
+                    'guild_id': '',
+                    'allowed_channels': [],
+                    'prefix': '!'
+                }
+            
+            return jsonify(protect_large_ints(data))
         except:
-            return jsonify({})
+            return jsonify({
+                'manager_bot': {
+                    'token': '',
+                    'guild_id': '',
+                    'allowed_channels': [],
+                    'prefix': '!'
+                }
+            })
 
 @app.route('/api/accounts/config', methods=['GET', 'POST'])
 @login_required

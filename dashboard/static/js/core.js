@@ -41,7 +41,8 @@ const CONFIG_CATEGORY_HINTS = {
     boss: 'Boss fight automation',
     level_grind: 'XP grinding behavior',
     utilities: 'Extra helper utilities',
-    commands: 'Per-command automation modules'
+    commands: 'Per-command automation modules',
+    manager_bot: 'Official Discord bot that controls your self-bots'
 };
 
 const CONFIG_CMD_HINTS = {

@@ -23,7 +23,7 @@ import random
 import json
 import core.state as state
 from discord.ext import commands
-from limey_engines.quest_engine import LimeyQuestEngine
+from limey_engines.core_engines.quest_engine import LimeyQuestEngine
 from component_v2_limey import parse_v2_message
 
 class Quest(commands.Cog):

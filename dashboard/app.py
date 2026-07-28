@@ -58,15 +58,29 @@ LOGIN_ATTEMPTS = {}
 BLOCK_DURATION = 300  
 MAX_ATTEMPTS = 5
 
+ROLE_HIERARCHY = {'view': 10, 'manage': 20, 'admin': 30}
+
 def load_auth_config():
     if os.path.exists(AUTH_FILE):
         try:
             with open(AUTH_FILE, 'r') as f:
                 cfg = json.load(f)
-                
-            if cfg.get('secret_key', '').startswith("generate_a_random_long_secret_key_here_please"):
-                new_secret = secrets.token_hex(32)
-                cfg['secret_key'] = new_secret
+            
+            # Migrate old single-user schema to new multi-user schema
+            changed = False
+            if 'users' not in cfg:
+                old_user = cfg.get('username', 'admin')
+                old_pass = cfg.get('password', '')
+                cfg['users'] = [{'username': old_user, 'password': old_pass, 'role': 'admin'}]
+                cfg.pop('username', None)
+                cfg.pop('password', None)
+                changed = True
+            
+            if cfg.get('secret_key', '').startswith("generate_a_random_long_secret_key_here_please") or not cfg.get('secret_key'):
+                cfg['secret_key'] = secrets.token_hex(32)
+                changed = True
+            
+            if changed:
                 with open(AUTH_FILE, 'w') as f:
                     json.dump(cfg, f, indent=4)
                 
@@ -85,9 +99,28 @@ def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'logged_in' not in session:
+            if request.is_json or request.path.startswith('/api/'):
+                return jsonify({'success': False, 'error': 'Authentication required'}), 401
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
+
+def require_permission(min_role='manage'):
+    """Decorator requiring the user to have at least the specified role.
+    Hierarchy: view < manage < admin"""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'logged_in' not in session:
+                if request.is_json or request.path.startswith('/api/'):
+                    return jsonify({'success': False, 'error': 'Authentication required'}), 401
+                return redirect(url_for('login'))
+            user_role = session.get('role', 'view')
+            if ROLE_HIERARCHY.get(user_role, 0) < ROLE_HIERARCHY.get(min_role, 20):
+                return jsonify({'success': False, 'error': 'Insufficient permissions', 'role': user_role, 'required': min_role}), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
 
 def check_rate_limit(ip):
     now = time.time()
@@ -139,21 +172,100 @@ def login():
         if not cfg:
              return jsonify({'success': False, 'error': 'Auth config missing'})
              
-        if data.get('username') == cfg.get('username') and data.get('password') == cfg.get('password'):
-            session['logged_in'] = True
-            session.permanent = True
-            if ip in LOGIN_ATTEMPTS: del LOGIN_ATTEMPTS[ip]
-            return jsonify({'success': True})
-        else:
-            fail_login(ip)
-            return jsonify({'success': False, 'error': 'Invalid Credentials'})
+        username = data.get('username', '')
+        password = data.get('password', '')
+        
+        for user in cfg.get('users', []):
+            if user.get('username') == username and user.get('password') == password:
+                session['logged_in'] = True
+                session['username'] = username
+                session['role'] = user.get('role', 'view')
+                session.permanent = True
+                if ip in LOGIN_ATTEMPTS: del LOGIN_ATTEMPTS[ip]
+                return jsonify({'success': True, 'role': user.get('role', 'view'), 'username': username})
+        
+        fail_login(ip)
+        return jsonify({'success': False, 'error': 'Invalid Credentials'})
             
     return render_template('login.html')
 
 @app.route('/logout')
 def logout():
     session.pop('logged_in', None)
+    session.pop('username', None)
+    session.pop('role', None)
     return redirect(url_for('login'))
+
+@app.route('/api/auth/me')
+@login_required
+def auth_me():
+    return jsonify({
+        'logged_in': True,
+        'username': session.get('username', 'Unknown'),
+        'role': session.get('role', 'view')
+    })
+
+@app.route('/api/auth/users', methods=['GET', 'POST'])
+@require_permission('admin')
+def auth_users():
+    cfg = load_auth_config()
+    if not cfg:
+        return jsonify({'success': False, 'error': 'Auth config missing'}), 500
+    
+    if request.method == 'POST':
+        data = request.json or {}
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        role = data.get('role', 'view').strip()
+        
+        if not username or not password:
+            return jsonify({'success': False, 'error': 'Username and password required'}), 400
+        if role not in ROLE_HIERARCHY:
+            return jsonify({'success': False, 'error': 'Invalid role. Must be view, manage, or admin'}), 400
+        
+        users = cfg.get('users', [])
+        for user in users:
+            if user['username'] == username:
+                user['password'] = password
+                user['role'] = role
+                break
+        else:
+            users.append({'username': username, 'password': password, 'role': role})
+        
+        cfg['users'] = users
+        with open(AUTH_FILE, 'w') as f:
+            json.dump(cfg, f, indent=4)
+        
+        return jsonify({'success': True, 'message': f'User {username} saved'})
+    
+    users = []
+    for user in cfg.get('users', []):
+        users.append({
+            'username': user.get('username', ''),
+            'role': user.get('role', 'view'),
+            'has_password': bool(user.get('password', ''))
+        })
+    return jsonify({'users': users})
+
+@app.route('/api/auth/users/<username>', methods=['DELETE'])
+@require_permission('admin')
+def auth_users_delete(username):
+    cfg = load_auth_config()
+    if not cfg:
+        return jsonify({'success': False, 'error': 'Auth config missing'}), 500
+    
+    users = cfg.get('users', [])
+    # Don't allow deleting the last admin
+    admin_count = sum(1 for u in users if u.get('role') == 'admin')
+    user_to_delete = next((u for u in users if u['username'] == username), None)
+    if user_to_delete and user_to_delete.get('role') == 'admin' and admin_count <= 1:
+        return jsonify({'success': False, 'error': 'Cannot delete the last admin user'}), 400
+    
+    cfg['users'] = [u for u in users if u['username'] != username]
+    with open(AUTH_FILE, 'w') as f:
+        json.dump(cfg, f, indent=4)
+    
+    return jsonify({'success': True, 'message': f'User {username} deleted'})
 
 @app.route('/api/accounts/list')
 @login_required
@@ -324,12 +436,12 @@ def get_analytics():
 def settings():
     account_id = request.args.get('id')
     
-    if account_id:
-        config_path = os.path.join(state.CONFIG_DIR, f'settings_{account_id}.json')
-    else:
-        config_path = os.path.join(state.CONFIG_DIR, 'settings.json')
-        
     if request.method == 'POST':
+        # Write operations require manage permissions
+        user_role = session.get('role', 'view')
+        if ROLE_HIERARCHY.get(user_role, 0) < ROLE_HIERARCHY.get('manage', 20):
+            return jsonify({'success': False, 'error': 'Insufficient permissions'}), 403
+        
         new_config = request.json
         try:
             save_to_all = request.args.get('all_accounts') == 'true' or request.args.get('all') == 'true'
@@ -350,6 +462,11 @@ def settings():
                 
                 state.log_command("SYS", "Settings updated for ALL accounts", "success")
             else:
+                if account_id:
+                    config_path = os.path.join(state.CONFIG_DIR, f'settings_{account_id}.json')
+                else:
+                    config_path = os.path.join(state.CONFIG_DIR, 'settings.json')
+                
                 with open(config_path, 'w') as f:
                     json.dump(new_config, f, indent=4)
                 
@@ -364,6 +481,11 @@ def settings():
             state.log_command("ERROR", f"Failed to save settings: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500
     else:
+        if account_id:
+            config_path = os.path.join(state.CONFIG_DIR, f'settings_{account_id}.json')
+        else:
+            config_path = os.path.join(state.CONFIG_DIR, 'settings.json')
+        
         try:
             if os.path.exists(config_path):
                 with open(config_path, 'r') as f:
@@ -384,6 +506,9 @@ def settings():
 def accounts_config_api():
     accounts_path = os.path.join(state.CONFIG_DIR, 'accounts.json')
     if request.method == 'POST':
+        user_role = session.get('role', 'view')
+        if ROLE_HIERARCHY.get(user_role, 0) < ROLE_HIERARCHY.get('manage', 20):
+            return jsonify({'success': False, 'error': 'Insufficient permissions'}), 403
         payload = request.json or {}
         accounts = payload.get('accounts', payload if isinstance(payload, list) else [])
         try:
@@ -415,6 +540,9 @@ def accounts_config_api():
 @login_required
 def accounts_api():
     if request.method == 'POST':
+        user_role = session.get('role', 'view')
+        if ROLE_HIERARCHY.get(user_role, 0) < ROLE_HIERARCHY.get('manage', 20):
+            return jsonify({'success': False, 'error': 'Insufficient permissions'}), 403
         new_accounts = request.json
         try:
             accounts_path = os.path.join(state.CONFIG_DIR, 'accounts.json')
@@ -442,6 +570,9 @@ def accounts_api():
 def proxies_api():
     from utils import proxy_manager
     if request.method == 'POST':
+        user_role = session.get('role', 'view')
+        if ROLE_HIERARCHY.get(user_role, 0) < ROLE_HIERARCHY.get('manage', 20):
+            return jsonify({'success': False, 'error': 'Insufficient permissions'}), 403
         payload = request.json or {}
         proxies = payload.get('proxies', [])
         proxy_manager.save_proxies(proxies)
@@ -452,7 +583,7 @@ def proxies_api():
 
 
 @app.route('/api/proxies/bulk', methods=['POST'])
-@login_required
+@require_permission('manage')
 def proxies_bulk():
     from utils import proxy_manager
     text = (request.json or {}).get('text', '')
@@ -467,7 +598,7 @@ def proxies_bulk():
 
 
 @app.route('/api/proxies/test', methods=['POST'])
-@login_required
+@require_permission('manage')
 def proxies_test():
     from utils import proxy_manager
     payload = request.json or {}
@@ -494,7 +625,7 @@ def proxies_test():
 
 
 @app.route('/api/proxies/assign', methods=['POST'])
-@login_required
+@require_permission('manage')
 def proxies_assign():
     from utils import proxy_manager
     assigned = proxy_manager.auto_assign()
@@ -503,7 +634,7 @@ def proxies_assign():
 
 
 @app.route('/api/proxies/<proxy_id>', methods=['DELETE'])
-@login_required
+@require_permission('manage')
 def proxies_delete(proxy_id):
     from utils import proxy_manager
     proxy_manager.remove_proxy(proxy_id)
@@ -512,7 +643,7 @@ def proxies_delete(proxy_id):
 
 
 @app.route('/api/proxies/all', methods=['DELETE'])
-@login_required
+@require_permission('manage')
 def proxies_delete_all():
     from utils import proxy_manager
     proxy_manager.remove_all_proxies()
@@ -521,7 +652,7 @@ def proxies_delete_all():
 
 
 @app.route('/api/proxies/failed', methods=['DELETE'])
-@login_required
+@require_permission('manage')
 def proxies_delete_failed():
     from utils import proxy_manager
     count = proxy_manager.remove_failed_proxies()
@@ -530,7 +661,7 @@ def proxies_delete_failed():
 
 
 @app.route('/api/security/test', methods=['POST'])
-@login_required
+@require_permission('manage')
 def test_security():
     account_id = request.args.get('id')
     bot = get_bot(account_id)
@@ -547,7 +678,7 @@ def test_security():
     return jsonify({'status': 'error', 'message': 'Security module not loaded'}), 500
 
 @app.route('/api/control', methods=['POST'])
-@login_required
+@require_permission('manage')
 def control():
     data = request.json
     action = data.get('action')
@@ -575,7 +706,7 @@ def control():
     return jsonify({'success': True})
 
 @app.route('/api/security', methods=['POST'])
-@login_required
+@require_permission('manage')
 def security():
     data = request.json
     action = data.get('action')
@@ -618,7 +749,7 @@ def captcha_current():
     return jsonify({'success': False, 'message': 'No active captcha'})
 
 @app.route('/api/captcha/submit', methods=['POST'])
-@login_required
+@require_permission('manage')
 def captcha_submit():
     data = request.json
     code = data.get('code', '').strip()
@@ -721,7 +852,7 @@ def captcha_stats():
     })
 
 @app.route('/api/bot/command', methods=['POST'])
-@login_required
+@require_permission('manage')
 def bot_command():
     data = request.json
     command = data.get('command', '').strip()
@@ -757,7 +888,7 @@ def get_captcha_challenge():
     return jsonify({'success': False, 'message': 'No captcha pending'})
 
 @app.route('/api/captcha_solve', methods=['POST'])
-@login_required
+@require_permission('manage')
 def submit_captcha_solution():
     """Submit hCaptcha solution from dashboard."""
     import socket

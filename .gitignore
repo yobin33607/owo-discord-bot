@@ -9,6 +9,33 @@ __pycache__/
 *.so
 
 # ===============================
+# Runtime-generated data files
+# ===============================
+data/*.json
+
+# ===============================
+# Sensitive config (tokens, passwords)
+# ===============================
+config/accounts.json
+config/auth.json
+config/settings.json
+
+# ===============================
+# Per-account auto-generated settings
+# ===============================
+config/settings_*.json
+
+# ===============================
+# Downloaded ML models
+# ===============================
+models/best.onnx
+
+# ===============================
+# Background process output
+# ===============================
+nohup.out
+
+# ===============================
 # Distribution / packaging
 # ===============================
 .Python

@@ -153,20 +153,26 @@ function searchMatchScore(cat, query) {
     return 4;
 }
 
+function escapeHtml_js(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function renderConfigSearchResults(cfg, query) {
     const grid = document.getElementById('settings-grid');
     const cats = buildConfigCategories(cfg);
     const matching = cats.filter(cat => categoryMatchesSearch(cat, query));
     matching.sort((a, b) => searchMatchScore(a, query) - searchMatchScore(b, query));
     const titles = document.getElementById('config-panel-titles');
+    const safeQuery = escapeHtml_js(query);
     if (titles) {
         titles.innerHTML = `
             <h2>Search results</h2>
-            <p>Full panels matching "${query.replace(/</g, '')}"</p>
+            <p>Full panels matching "${safeQuery}"</p>
         `;
     }
     if (!matching.length) {
-        grid.innerHTML = `<div class="cfg-empty">No settings match <mark>${query}</mark>. Try <mark>gem</mark>, <mark>hunt</mark>, or <mark>giveaway</mark>.</div>`;
+        grid.innerHTML = `<div class="cfg-empty">No settings match <mark>${safeQuery}</mark>. Try <mark>gem</mark>, <mark>hunt</mark>, or <mark>giveaway</mark>.</div>`;
         return;
     }
     let html = '';

@@ -33,6 +33,9 @@ from datetime import datetime, timedelta
 
 
 import socket
+import urllib.parse
+import requests
+import re
 
 _original_getaddrinfo = socket.getaddrinfo
 
@@ -208,6 +211,281 @@ def protect_large_ints(obj):
     elif isinstance(obj, int) and (obj > 9007199254740991 or obj < -9007199254740991):
         return str(obj)
     return obj
+
+
+# ── Discord Account Linking ────────────────────────────
+
+DISCORD_LINKS_FILE = os.path.join(state.CONFIG_DIR, 'discord_links.json')
+
+
+def load_discord_links():
+    """Load Discord account links from file."""
+    if os.path.exists(DISCORD_LINKS_FILE):
+        try:
+            with open(DISCORD_LINKS_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return {"links": []}
+
+
+def save_discord_links(data):
+    """Save Discord account links to file."""
+    with open(DISCORD_LINKS_FILE, 'w') as f:
+        json.dump(data, f, indent=4)
+
+
+def get_discord_oauth_config():
+    """Load Discord OAuth config from settings.json."""
+    try:
+        settings_path = os.path.join(state.CONFIG_DIR, 'settings.json')
+        with open(settings_path, 'r') as f:
+            cfg = json.load(f)
+        return cfg.get('discord_oauth', {})
+    except:
+        return {}
+
+
+@app.route('/api/auth/discord/login')
+def discord_login():
+    """Initiate Discord OAuth login flow."""
+    oauth_cfg = get_discord_oauth_config()
+    client_id = oauth_cfg.get('client_id', '')
+    if not client_id:
+        return jsonify({'success': False, 'error': 'Discord OAuth not configured'}), 400
+
+    redirect_uri = oauth_cfg.get('redirect_uri', 'http://localhost:8000/api/auth/discord/callback')
+    state_token = secrets.token_urlsafe(32)
+    session['discord_oauth_state'] = state_token
+    session['discord_oauth_action'] = 'login'
+
+    authorize_url = (
+        "https://discord.com/api/v10/oauth2/authorize"
+        f"?client_id={client_id}"
+        f"&redirect_uri={redirect_uri}"
+        "&response_type=code"
+        "&scope=identify"
+        f"&state={state_token}"
+    )
+    return redirect(authorize_url)
+
+
+@app.route('/api/auth/discord/callback')
+def discord_callback():
+    """Handle Discord OAuth callback."""
+    code = request.args.get('code')
+    state = request.args.get('state')
+    error = request.args.get('error')
+
+    def _redirect_with_msg(msg_type, msg):
+        return redirect(f"/login?{msg_type}={urllib.parse.quote(msg)}")
+
+    if error:
+        return _redirect_with_msg('oauth_error', f'Discord login cancelled or failed: {error}')
+
+    if not code or not state:
+        return _redirect_with_msg('oauth_error', 'Invalid OAuth response')
+
+    # Verify state token
+    saved_state = session.pop('discord_oauth_state', None)
+    if not saved_state or saved_state != state:
+        return _redirect_with_msg('oauth_error', 'State mismatch — try again')
+
+    action = session.pop('discord_oauth_action', 'login')
+
+    oauth_cfg = get_discord_oauth_config()
+    client_id = oauth_cfg.get('client_id', '')
+    client_secret = oauth_cfg.get('client_secret', '')
+    redirect_uri = oauth_cfg.get('redirect_uri', 'http://localhost:8000/api/auth/discord/callback')
+
+    if not client_id or not client_secret:
+        return _redirect_with_msg('oauth_error', 'Discord OAuth not configured')
+
+    # Exchange code for token
+    token_data = {
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'grant_type': 'authorization_code',
+        'code': code,
+        'redirect_uri': redirect_uri,
+    }
+    token_headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+
+    try:
+        token_resp = requests.post(
+            'https://discord.com/api/v10/oauth2/token',
+            data=token_data,
+            headers=token_headers,
+            timeout=10
+        )
+        if token_resp.status_code != 200:
+            return _redirect_with_msg('oauth_error', 'Failed to get Discord token')
+
+        token_json = token_resp.json()
+        access_token = token_json.get('access_token')
+
+        # Get user info
+        user_resp = requests.get(
+            'https://discord.com/api/v10/users/@me',
+            headers={'Authorization': f'Bearer {access_token}'},
+            timeout=10
+        )
+        if user_resp.status_code != 200:
+            return _redirect_with_msg('oauth_error', 'Failed to get Discord user info')
+
+        discord_user = user_resp.json()
+        discord_id = discord_user['id']
+        discord_username = discord_user.get('username', 'Unknown')
+        discord_avatar_hash = discord_user.get('avatar', '')
+        discord_avatar_url = f"https://cdn.discordapp.com/avatars/{discord_id}/{discord_avatar_hash}.png" if discord_avatar_hash else None
+
+        links = load_discord_links()
+
+        if action == 'login':
+            # Find the dashboard user linked to this Discord account
+            for link in links.get('links', []):
+                if link['discord_id'] == discord_id:
+                    dashboard_user = link['dashboard_username']
+                    auth_cfg = load_auth_config()
+                    if auth_cfg:
+                        for user in auth_cfg.get('users', []):
+                            if user['username'] == dashboard_user:
+                                session['logged_in'] = True
+                                session['username'] = dashboard_user
+                                session['role'] = user.get('role', 'view')
+                                session.permanent = True
+                                return redirect(url_for('dashboard'))
+
+            return _redirect_with_msg('oauth_error', f'Discord account {discord_username} is not linked to any dashboard user. Link it in My Account settings first.')
+
+        elif action == 'link':
+            # Linking flow — user is already logged into dashboard
+            if 'logged_in' not in session:
+                return redirect(url_for('login'))
+
+            dashboard_username = session.get('username')
+
+            # Check if this Discord ID is already linked to another user
+            for link in links.get('links', []):
+                if link['discord_id'] == discord_id and link['dashboard_username'] != dashboard_username:
+                    return _redirect_with_msg('oauth_error', f'Discord account {discord_username} is already linked to another user. Unlink it first.')
+
+            # Remove existing link for this dashboard user (if any)
+            links['links'] = [l for l in links.get('links', []) if l['dashboard_username'] != dashboard_username]
+
+            # Add new link
+            links['links'].append({
+                'discord_id': discord_id,
+                'discord_username': discord_username,
+                'discord_avatar': discord_avatar_url,
+                'dashboard_username': dashboard_username,
+                'linked_at': time.time()
+            })
+            save_discord_links(links)
+
+            return redirect(url_for('dashboard'))
+
+    except Exception:
+        return _redirect_with_msg('oauth_error', 'OAuth error encountered. Please try again.')
+
+    return _redirect_with_msg('oauth_error', 'Unknown error')
+
+
+@app.route('/api/auth/discord/link')
+@login_required
+def discord_link():
+    """Initiate Discord OAuth linking flow."""
+    oauth_cfg = get_discord_oauth_config()
+    client_id = oauth_cfg.get('client_id', '')
+    if not client_id:
+        return jsonify({'success': False, 'error': 'Discord OAuth not configured'}), 400
+
+    redirect_uri = oauth_cfg.get('redirect_uri', 'http://localhost:8000/api/auth/discord/callback')
+    state_token = secrets.token_urlsafe(32)
+    session['discord_oauth_state'] = state_token
+    session['discord_oauth_action'] = 'link'
+
+    authorize_url = (
+        "https://discord.com/api/v10/oauth2/authorize"
+        f"?client_id={client_id}"
+        f"&redirect_uri={redirect_uri}"
+        "&response_type=code"
+        "&scope=identify"
+        f"&state={state_token}"
+    )
+    return redirect(authorize_url)
+
+
+@app.route('/api/auth/discord/status')
+def discord_status():
+    """Get linked Discord account info for the current user."""
+    if 'logged_in' not in session:
+        return jsonify({'linked': False})
+
+    dashboard_username = session.get('username')
+    links = load_discord_links()
+
+    for link in links.get('links', []):
+        if link['dashboard_username'] == dashboard_username:
+            return jsonify({
+                'linked': True,
+                'discord_username': link.get('discord_username'),
+                'discord_avatar': link.get('discord_avatar'),
+                'discord_id': link.get('discord_id'),
+                'linked_at': link.get('linked_at')
+            })
+
+    return jsonify({'linked': False})
+
+
+@app.route('/api/auth/discord/unlink', methods=['POST'])
+@login_required
+def discord_unlink():
+    """Unlink Discord account from current user."""
+    dashboard_username = session.get('username')
+    links = load_discord_links()
+    links['links'] = [l for l in links.get('links', []) if l['dashboard_username'] != dashboard_username]
+    save_discord_links(links)
+    return jsonify({'success': True, 'message': 'Discord account unlinked'})
+
+
+@app.route('/api/auth/change-password', methods=['POST'])
+@login_required
+def change_password():
+    """Change password for the current user."""
+    data = request.json or {}
+    current_password = data.get('current_password', '')
+    new_password = data.get('new_password', '')
+
+    if not current_password or not new_password:
+        return jsonify({'success': False, 'error': 'Current and new password required'}), 400
+
+    if len(new_password) < 4:
+        return jsonify({'success': False, 'error': 'New password must be at least 4 characters'}), 400
+
+    username = session.get('username')
+    auth_cfg = load_auth_config()
+    if not auth_cfg:
+        return jsonify({'success': False, 'error': 'Auth config missing'}), 500
+
+    users = auth_cfg.get('users', [])
+    found = False
+    for user in users:
+        if user['username'] == username:
+            if user['password'] != current_password:
+                return jsonify({'success': False, 'error': 'Current password is incorrect'}), 403
+            user['password'] = new_password
+            found = True
+            break
+
+    if not found:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+
+    auth_cfg['users'] = users
+    with open(AUTH_FILE, 'w') as f:
+        json.dump(auth_cfg, f, indent=4)
+
+    return jsonify({'success': True, 'message': 'Password changed successfully'})
 
 
 # ── API Key Management ──────────────────────────────────
@@ -572,10 +850,8 @@ def get_analytics():
         dat = history_tracker.get_analytics_data(start_date=start_date, end_date=end_date)
         dat['recent_logs'] = list(state.full_session_history)[-500:]
         return jsonify(dat)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return jsonify({"error": "Failed to load analytics data"}), 500
 
 @app.route('/api/settings', methods=['GET', 'POST'])
 @login_required
@@ -609,7 +885,8 @@ def settings():
                 state.log_command("SYS", "Settings updated for ALL accounts", "success")
             else:
                 if account_id:
-                    config_path = os.path.join(state.CONFIG_DIR, f'settings_{account_id}.json')
+                    safe_id = re.sub(r'[^a-zA-Z0-9_-]', '', account_id) if account_id else ''
+                    config_path = os.path.join(state.CONFIG_DIR, f'settings_{safe_id}.json')
                 else:
                     config_path = os.path.join(state.CONFIG_DIR, 'settings.json')
                 
@@ -623,12 +900,12 @@ def settings():
                 state.log_command("SYS", f"Settings updated for {'Account ' + account_id if account_id else 'Global'}", "success")
             
             return jsonify({"status": "success"})
-        except Exception as e:
-            state.log_command("ERROR", f"Failed to save settings: {e}")
-            return jsonify({"status": "error", "message": str(e)}), 500
+        except Exception:
+            return jsonify({"status": "error", "message": "Failed to save settings"}), 500
     else:
         if account_id:
-            config_path = os.path.join(state.CONFIG_DIR, f'settings_{account_id}.json')
+            safe_id = re.sub(r'[^a-zA-Z0-9_-]', '', account_id)
+            config_path = os.path.join(state.CONFIG_DIR, f'settings_{safe_id}.json')
         else:
             config_path = os.path.join(state.CONFIG_DIR, 'settings.json')
         
@@ -646,11 +923,17 @@ def settings():
             else:
                 data = {}
             
-            # Ensure manager_bot section always appears in the config UI
+            # Ensure manager_bot and discord_oauth sections appear in the config UI
             if 'manager_bot' not in data:
                 data['manager_bot'] = {
                     'token': '',
                     'prefix': '!'
+                }
+            if 'discord_oauth' not in data:
+                data['discord_oauth'] = {
+                    'client_id': '',
+                    'client_secret': '',
+                    'redirect_uri': 'http://localhost:8000/api/auth/discord/callback'
                 }
             
             return jsonify(protect_large_ints(data))
@@ -659,6 +942,11 @@ def settings():
                 'manager_bot': {
                     'token': '',
                     'prefix': '!'
+                },
+                'discord_oauth': {
+                    'client_id': '',
+                    'client_secret': '',
+                    'redirect_uri': 'http://localhost:8000/api/auth/discord/callback'
                 }
             })
 
@@ -681,8 +969,8 @@ def accounts_config_api():
                 bot.accounts = accounts
             state.log_command("SYS", "Accounts config updated. Restart recommended.", "success")
             return jsonify({"status": "success"})
-        except Exception as e:
-            return jsonify({"status": "error", "message": str(e)}), 500
+        except Exception:
+            return jsonify({"status": "error", "message": "Failed to save accounts config"}), 500
 
     try:
         from utils import proxy_manager
@@ -715,8 +1003,8 @@ def accounts_api():
 
             state.log_command("SYS", "Accounts updated successfully. Restart recommended.", "success")
             return jsonify({"status": "success"})
-        except Exception as e:
-            return jsonify({"status": "error", "message": str(e)}), 500
+        except Exception:
+            return jsonify({"status": "error", "message": "Failed to save accounts config"}), 500
     else:
         try:
             accounts_path = os.path.join(state.CONFIG_DIR, 'accounts.json')
@@ -993,8 +1281,8 @@ def captcha_balance():
         future = asyncio.run_coroutine_threadsafe(temp_solver.get_balance(), bot.loop)
         balance = future.result(timeout=10)
         return jsonify({'balance': balance, 'service': service, 'enabled': cfg.get('enabled', False)})
-    except Exception as e:
-        return jsonify({'balance': None, 'service': service, 'error': str(e)})
+    except Exception:
+        return jsonify({'balance': None, 'service': service, 'error': 'Failed to get balance'})
 
 @app.route('/api/captcha/stats')
 @login_required
@@ -1085,7 +1373,7 @@ def submit_captcha_solution():
     
     try:
         verify_url = "https://owobot.com/api/captcha/verify"
-        response = requests.post(verify_url, json=payload, headers=headers, verify=False, timeout=10)
+        response = requests.post(verify_url, json=payload, headers=headers, timeout=10)
         
         socket.getaddrinfo = _original_getaddrinfo
         
@@ -1098,10 +1386,10 @@ def submit_captcha_solution():
         else:
             state.log_command("SEC", f"Captcha verification failed: {response.text}", "error")
             return jsonify({'success': False, 'error': 'Invalid captcha token'})
-    except Exception as e:
+    except Exception:
         socket.getaddrinfo = _original_getaddrinfo
-        state.log_command("SEC", f"Verification error: {e}", "error")
-        return jsonify({'success': False, 'error': str(e)})
+        state.log_command("SEC", "Verification error", "error")
+        return jsonify({'success': False, 'error': 'Captcha verification failed'})
     
     
 @app.route('/api/captcha/oauth_url', methods=['POST'])

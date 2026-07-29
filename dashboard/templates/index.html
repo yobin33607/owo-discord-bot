@@ -112,6 +112,8 @@
                         style="--icon: url('/static/assets/limey_icons/users.svg');"></span> Login Users</a>
                 <a class="nav-item" onclick="nav('logs', this)"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/terminal.svg');"></span> Terminal</a>
+                <a class="nav-item" onclick="nav('my-account', this)"><span class="icon-svg"
+                        style="--icon: url('/static/assets/limey_icons/users.svg');"></span> My Account</a>
                 <a class="nav-item" onclick="location.href='/logout'" style="color: #ff4444 !important;"><span
                         class="icon-svg" style="--icon: url('/static/assets/limey_icons/logout.svg');"></span>
                     Logout</a>
@@ -591,6 +593,69 @@
                         class="btn-text">RELOAD LOGS</span></button>
                 <div id="term" class="terminal-window"></div>
             </div>
+
+            <!-- My Account Tab -->
+            <div id="my-account" class="view">
+                <h2 style="font-size:1.2rem; color:var(--primary); margin:0 0 20px 0;"><span class="icon-svg"
+                        style="--icon: url('/static/assets/limey_icons/users.svg');"></span> My Account</h2>
+
+                <div class="module-card" style="margin-bottom:20px;">
+                    <div class="module-header" style="cursor:default;">
+                        <h3 style="color:var(--primary); margin:0; font-family:var(--font-heading);">
+                            <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/shield-halved.svg');"></span>
+                            Change Password
+                        </h3>
+                    </div>
+                    <div style="padding:20px;">
+                        <div style="display:grid; grid-template-columns:1fr; gap:16px; max-width:400px;">
+                            <div>
+                                <label class="form-label">Current Password</label>
+                                <input type="password" id="acct-current-password" class="cfg-input" placeholder="Current password">
+                            </div>
+                            <div>
+                                <label class="form-label">New Password</label>
+                                <input type="password" id="acct-new-password" class="cfg-input" placeholder="New password (min 4 chars)">
+                            </div>
+                            <div>
+                                <label class="form-label">Confirm New Password</label>
+                                <input type="password" id="acct-confirm-password" class="cfg-input" placeholder="Confirm new password">
+                            </div>
+                            <div>
+                                <button class="btn-control green" onclick="changePassword()">
+                                    <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/floppy-disk.svg');"></span>
+                                    <span class="btn-text">Update Password</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="pw-change-result" style="margin-top:12px; font-size:0.85rem;"></div>
+                    </div>
+                </div>
+
+                <div class="module-card">
+                    <div class="module-header" style="cursor:default;">
+                        <h3 style="color:var(--primary); margin:0; font-family:var(--font-heading);">
+                            <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/discord.svg');"></span>
+                            Discord Account Linking
+                        </h3>
+                    </div>
+                    <div style="padding:20px;">
+                        <div id="discord-link-status">
+                            <div class="no-data">Checking Discord link status...</div>
+                        </div>
+                        <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+                            <button class="btn-control" id="discord-link-btn" onclick="linkDiscordAccount()" style="display:none;">
+                                <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/link.svg');"></span>
+                                <span class="btn-text">Link Discord Account</span>
+                            </button>
+                            <button class="btn-control red" id="discord-unlink-btn" onclick="unlinkDiscordAccount()" style="display:none;">
+                                <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/trash.svg');"></span>
+                                <span class="btn-text">Unlink Discord Account</span>
+                            </button>
+                        </div>
+                        <div id="discord-link-result" style="margin-top:12px; font-size:0.85rem;"></div>
+                    </div>
+                </div>
+            </div>
         </main>
     </div>
 
@@ -868,7 +933,121 @@
             return div.innerHTML;
         }
 
-        // Override nav to handle api-keys tab (admin-users is now handled in navigation.js)
+        // ─── My Account ───────────────────────────────────
+        function loadDiscordStatus() {
+            const statusEl = document.getElementById('discord-link-status');
+            const linkBtn = document.getElementById('discord-link-btn');
+            const unlinkBtn = document.getElementById('discord-unlink-btn');
+            const resultEl = document.getElementById('discord-link-result');
+            resultEl.textContent = '';
+
+            fetch('/api/auth/discord/status')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.linked) {
+                        const avatarHtml = data.discord_avatar
+                            ? `<img src="${data.discord_avatar}" style="width:48px;height:48px;border-radius:50%;border:2px solid #5865F2;" alt="">`
+                            : `<span class="icon-svg" style="--icon: url('/static/assets/limey_icons/discord.svg');width:48px;height:48px;"></span>`;
+                        const linkedDate = data.linked_at ? new Date(data.linked_at * 1000).toLocaleString() : 'Unknown';
+                        statusEl.innerHTML = `
+                            <div style="display:flex;align-items:center;gap:16px;">
+                                ${avatarHtml}
+                                <div>
+                                    <div style="font-weight:600;font-size:1.1rem;">${escapeHtml(data.discord_username)}</div>
+                                    <div style="font-size:0.8rem;color:#888;">ID: ${data.discord_id}</div>
+                                    <div style="font-size:0.75rem;color:#666;">Linked: ${linkedDate}</div>
+                                </div>
+                            </div>
+                        `;
+                        linkBtn.style.display = 'none';
+                        unlinkBtn.style.display = '';
+                    } else {
+                        statusEl.innerHTML = `<div class="no-data">No Discord account linked. Link one to enable Discord login.</div>`;
+                        linkBtn.style.display = '';
+                        unlinkBtn.style.display = 'none';
+                    }
+                })
+                .catch(() => {
+                    statusEl.innerHTML = `<div class="no-data">Failed to check Discord link status.</div>`;
+                });
+        }
+
+        function linkDiscordAccount() {
+            window.location.href = '/api/auth/discord/link';
+        }
+
+        function unlinkDiscordAccount() {
+            if (!confirm('Unlink your Discord account? You will no longer be able to log in with Discord.')) return;
+            const resultEl = document.getElementById('discord-link-result');
+            resultEl.textContent = 'Unlinking...';
+            fetch('/api/auth/discord/unlink', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        resultEl.textContent = '✅ Discord account unlinked successfully.';
+                        resultEl.style.color = '#00ff88';
+                        loadDiscordStatus();
+                    } else {
+                        resultEl.textContent = '❌ ' + (data.error || 'Failed to unlink');
+                        resultEl.style.color = '#ff5555';
+                    }
+                })
+                .catch(() => {
+                    resultEl.textContent = '❌ Error unlinking Discord account.';
+                    resultEl.style.color = '#ff5555';
+                });
+        }
+
+        function changePassword() {
+            const currentPw = document.getElementById('acct-current-password').value;
+            const newPw = document.getElementById('acct-new-password').value;
+            const confirmPw = document.getElementById('acct-confirm-password').value;
+            const resultEl = document.getElementById('pw-change-result');
+
+            if (!currentPw || !newPw) {
+                resultEl.textContent = '❌ Please fill in all fields.';
+                resultEl.style.color = '#ff5555';
+                return;
+            }
+            if (newPw.length < 4) {
+                resultEl.textContent = '❌ New password must be at least 4 characters.';
+                resultEl.style.color = '#ff5555';
+                return;
+            }
+            if (newPw !== confirmPw) {
+                resultEl.textContent = '❌ New passwords do not match.';
+                resultEl.style.color = '#ff5555';
+                return;
+            }
+
+            resultEl.textContent = 'Updating...';
+            resultEl.style.color = '#888';
+
+            fetch('/api/auth/change-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ current_password: currentPw, new_password: newPw })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        resultEl.textContent = '✅ Password changed successfully!';
+                        resultEl.style.color = '#00ff88';
+                        document.getElementById('acct-current-password').value = '';
+                        document.getElementById('acct-new-password').value = '';
+                        document.getElementById('acct-confirm-password').value = '';
+                    } else {
+                        resultEl.textContent = '❌ ' + (data.error || 'Failed to change password');
+                        resultEl.style.color = '#ff5555';
+                    }
+                })
+                .catch(() => {
+                    resultEl.textContent = '❌ Error changing password.';
+                    resultEl.style.color = '#ff5555';
+                });
+        }
+
+        // Override nav to handle api-keys and my-account tabs
         const origNav = window.nav;
         window.nav = function(id, el) {
             if (id === 'api-keys') {
@@ -879,6 +1058,20 @@
                 if (el) el.classList.add('active');
                 checkDirty();
                 fetchApiKeys();
+                if (window.innerWidth <= 768) {
+                    const sidebar = document.querySelector('.sidebar');
+                    if (sidebar && sidebar.classList.contains('active')) toggleMobileMenu();
+                }
+                return;
+            }
+            if (id === 'my-account') {
+                document.querySelectorAll('.view').forEach(v => v.classList.remove('active-view'));
+                document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+                const target = document.getElementById(id);
+                if (target) target.classList.add('active-view');
+                if (el) el.classList.add('active');
+                checkDirty();
+                loadDiscordStatus();
                 if (window.innerWidth <= 768) {
                     const sidebar = document.querySelector('.sidebar');
                     if (sidebar && sidebar.classList.contains('active')) toggleMobileMenu();

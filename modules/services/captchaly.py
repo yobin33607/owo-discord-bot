@@ -18,6 +18,7 @@ Limey - https://github.com/cubiced0/owo-discord-bot
 
 import aiohttp
 import asyncio
+from urllib.parse import quote
 
 class CaptchalyService:
     def __init__(self, bot, api_key, site_key):
@@ -45,7 +46,10 @@ class CaptchalyService:
             self.bot.log("ERROR", "Captchaly API key missing.")
             return None
 
-        url = f"https://v1.captchaly.com/hcaptcha?url=https://owobot.com&sitekey={self.site_key}&apikey={self.api_key}"
+        # Sanitize site_key and api_key to prevent SSRF via URL injection
+        safe_site_key = quote(self.site_key[:128], safe='')
+        safe_api_key = quote(self.api_key[:128], safe='')
+        url = f"https://v1.captchaly.com/hcaptcha?url=https://owobot.com&sitekey={safe_site_key}&apikey={safe_api_key}"
 
         async with aiohttp.ClientSession() as session:
             for attempt in range(retries):

@@ -1,5 +1,12 @@
 <div align="center">
- # Limey
+
+# Limey
+
+**Advanced OwO Bot Automation** • Built by **LIMEY**
+
+[![Version](https://img.shields.io/badge/version-2.4.3-brightgreen.svg)]()
+[![Python](https://img.shields.io/badge/python-3.10+-blue.svg)]()
+[![License](https://img.shields.io/badge/license-GPLv3-red.svg)]()
 
 </div>
 
@@ -16,31 +23,44 @@
 
 ## Features
 
-- **Full Web Dashboard**:
- Real-time stats, charts, and a live configuration editor via an elegant interface.Easy to manage
+- **🖥️ Full Web Dashboard**
+  Real-time stats, charts, live configuration editor, captcha solving, proxy management, and account controls — all from an elegant web interface at `http://localhost:8000`.
 
-- **Mobile Support (Termux)**: Fully functional on Android devices with toast notifications and vibrations.
+- **🤖 Manager Bot**
+  A built-in Discord bot (using standard `discord.py`) that lets you control your self-bots directly from Discord. Commands include `!status`, `!control start/stop`, `!cash`, `!logs`, `!settings`, and `!accounts`.
 
-- **Smart Captcha Solvers**:
- 4captcha services to solve hcaptcha , onnx model to solve letterword captcha and fallback to manual solve
+- **📱 Mobile Support (Termux)**
+  Fully functional on Android devices with toast notifications and vibration support.
 
-- **Multi-Account Manager**:
- Safely run unlimited accounts simultaneously with independent settings.
+- **🧩 Smart Captcha Solvers**
+  Multiple captcha service integrations (YesCaptcha, AntiCaptcha, NopeCHA, Capchaly), ONNX model for letterword captchas, and manual fallback.
 
-- **Advanced Stealth & Security**: Realistic typing simulation, auto-pause on detection, and multi-layer security to keep you safe.
+- **👥 Multi-Account Manager**
+  Run unlimited accounts simultaneously with independent settings, proxy assignments, and channel configurations.
 
-- **Advanced Gambling**:
-Instead of sending just gambling commands, it has strategies (martingale ,flat) also has stoploss and take profit!!
+- **🛡️ Advanced Stealth & Security**
+  Realistic typing simulation, auto-pause on detection, configurable speed presets, webhook alerts, and multi-layer security to keep you safe.
 
-- **Dynamic Quest Intelligence**: Automatically completes checklists and tracks progression.
+- **🎲 Advanced Gambling**
+  Smart betting strategies (Martingale, Flat) with configurable stop-loss, take-profit, max balance limits, and streak tracking.
 
-- **Advanced AutoGems**: Automatically equip gems.
+- **🧠 Dynamic Quest Intelligence**
+  Automatically completes quest checklists and tracks progression with smart timing.
 
-- **Easy to setup** : Setup files make it very easy to download and configure.
+- **💎 Advanced AutoGems**
+  Automatically detect and equip the best gems based on your settings.
 
-- **Many more features........................**
+- **⚡ Smart Command Scheduling**
+  Priority-based queue system with per-command cooldowns, auto-retry, and lazy loading.
 
+- **🌐 Proxy Support**
+  HTTP/HTTPS/SOCKS4/SOCKS5 proxies with per-account assignment, auto-testing, and bulk import.
 
+- **📊 Live Analytics**
+  Real-time CPH (cash per hour), command counters, session stats, and cash history charts.
+
+- **🔧 Easy Setup**
+  One-liner install scripts and an interactive setup wizard for quick configuration.
 
 ---
 
@@ -64,17 +84,78 @@ Make sure to install the **Termux** and **Termux:API** apps from F-Droid or GitH
 
 ---
 
+## Quick Start
+
+1. **Install** using the commands above
+2. **Run** `python limey_setup.py` to configure accounts and settings
+3. **Start** with `python limey.py` and select option `1`
+4. **Dashboard** opens at **http://localhost:8000**
+
+---
+
+## Manager Bot
+
+The Manager Bot is a **regular Discord bot** (not a self-bot) that lets you control your Limey self-bots via Discord commands. It runs as a separate subprocess using standard `discord.py`.
+
+### Setup
+
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
+2. Create a new application and a bot user
+3. Copy the bot token
+4. Add it to your `config/settings.json` under `manager_bot.token`:
+
+```json
+{
+  "manager_bot": {
+    "token": "your-bot-token-here",
+    "prefix": "!"
+  }
+}
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `!status` | Show all self-bots and their current status |
+| `!control start <name>` | Resume a paused self-bot |
+| `!control stop <name>` | Pause a running self-bot |
+| `!cash [name]` | Check cash balance(s) |
+| `!logs [count] [name]` | View recent command logs |
+| `!settings [section]` | View current configuration |
+| `!accounts` | List all accounts |
+| `!help` | Show this help message |
+
+---
+
 ## Dashboard
 
-Once the bot is running, you can access the beautiful dashboard at:
+Once the bot is running, access the dashboard at:
 
-**<http://localhost:8000>**
+**http://localhost:8000**
+
+Default credentials (change immediately):
+- **Username:** `admin`
+- **Password:** `12345678910`
+
+---
+
+## Screenshots
+
+### Login Page
+![Login](dashboard/static/assets/limey-auth.jpg)
+
+### Dashboard Desktop
+![Dashboard](dashboard/static/assets/limey-desktop-dash.jpg)
+
+### Dashboard Mobile
+![Dashboard](dashboard/static/assets/limey-mob.jpg)
 
 ---
 
 ## Disclaimer
 
-This tool is for **educational purposes only**. Using self-bots violates Discord's Terms of Service.
+This tool is for **educational purposes only**. Using self-bots violates Discord's Terms of Service. Use at your own risk in private servers only.
 
 <div align="center">
 
@@ -82,17 +163,6 @@ This tool is for **educational purposes only**. Using self-bots violates Discord
 
 **Advanced OwO Bot Grinder** • Built by **LIMEY** • Made with ❤️
 
-**Star this project if you find it useful!**
+**⭐ Star this project if you find it useful!**
 
 </div>
-
-## Screenshots
-
-### Login Page Screenshot
-![Login](dashboard/static/assets/limey-auth.jpg)
-
-### Dashboard
-![Dashboard](dashboard/static/assets/limey-desktop-dash.jpg)
-
-### Dashboard Mobile
-![Dashboard](dashboard/static/assets/limey-mob.jpg)

@@ -116,6 +116,15 @@ def _authenticate_request():
     Returns True if authenticated via API key, False otherwise."""
     api_key = _get_api_key_from_request()
     if not api_key:
+        # Also check for internal key (used by manager bot subprocess)
+        internal_key = os.environ.get("LIMEY_INTERNAL_KEY")
+        if internal_key:
+            header_key = request.headers.get("X-Internal-Key", "")
+            if header_key == internal_key:
+                g.api_key_auth = True
+                g.api_key_role = "admin"
+                g.api_key_user = "manager_bot"
+                return True
         return False
     key_info = api_key_manager.validate_key(api_key)
     if key_info:

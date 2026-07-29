@@ -29,6 +29,7 @@ import random
 import json
 import threading
 import time
+import secrets
 from rich.console import Console
 from rich.align import Align
 
@@ -40,13 +41,9 @@ from dashboard.app import app as flask_app
 import core.state as state
 from utils import proxy_manager
 
-# Import the manager bot if we can
-_manager_bot_instance = None
-try:
-    from modules.manager_bot import run_manager_bot as _run_mgr
-    _manager_bot_available = True
-except ImportError:
-    _manager_bot_available = False
+# ── Manager Bot (runs as subprocess with standard discord.py) ────
+_manager_bot_proc = None
+_manager_bot_available = os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_manager_bot.py"))
 
 console = Console()
 engine = LimeySetupEngine()
@@ -85,6 +82,55 @@ def detect_platform():
 def run_dashboard():
     flask_app.run(host='0.0.0.0', port=8000, debug=False, use_reloader=False)
 
+
+def _start_manager_bot_subprocess():
+    """Launch the manager bot as a subprocess (uses standard discord.py)."""
+    global _manager_bot_proc
+
+    config_path = os.path.join(state.CONFIG_DIR, 'settings.json')
+    try:
+        with open(config_path, 'r') as f:
+            cfg = json.load(f)
+        mgr_cfg = cfg.get('manager_bot', {})
+        token = mgr_cfg.get('token', '')
+        if not token:
+            console.print("[dim]  Manager Bot not configured — skipping[/dim]")
+            return
+    except Exception:
+        console.print("[dim]  Manager Bot config not found — skipping[/dim]")
+        return
+
+    # Generate internal API key for manager bot to authenticate with dashboard
+    internal_key = secrets.token_hex(32)
+    os.environ["LIMEY_INTERNAL_KEY"] = internal_key
+
+    runner_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_manager_bot.py")
+    env = os.environ.copy()
+    env["LIMEY_INTERNAL_KEY"] = internal_key
+    env["PYTHONUNBUFFERED"] = "1"
+
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, runner_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=env,
+            text=True,
+        )
+        _manager_bot_proc = proc
+        console.print(f"[dim]  Manager Bot subprocess started (PID: {proc.pid})[/dim]")
+
+        # Read output in a daemon thread to show manager bot logs
+        def _read_output():
+            for line in iter(proc.stdout.readline, ''):
+                if line:
+                    console.print(f"[dim]{line.rstrip()}[/dim]")
+            proc.stdout.close()
+
+        threading.Thread(target=_read_output, daemon=True).start()
+    except Exception as e:
+        console.print(f"[dim]  Failed to start Manager Bot: {e}[/dim]")
+
 async def main():
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     while True:
@@ -121,10 +167,10 @@ async def main():
         dashboard_thread = threading.Thread(target=run_dashboard, daemon=True)
         dashboard_thread.start()
 
-        # Start the manager bot (official Discord bot) in background if configured
+        # Start the manager bot as a separate subprocess (uses standard discord.py)
         if _manager_bot_available:
-            console.print("[dim]Checking Manager Bot configuration...[/dim]")
-            asyncio.create_task(_run_mgr())
+            console.print("[dim]Starting Manager Bot subprocess...[/dim]")
+            _start_manager_bot_subprocess()
 
         console.print(f"[bold yellow]Initializing {len(accounts)} accounts...[/bold yellow]")
         bots = []

@@ -31,6 +31,66 @@ function initDashCharts() {
     } catch (e) { console.warn("Dashboard charts blocked"); }
 }
 
+// ─── Auto Cash Check ──────────────────────────────────
+let _lastCashCheckSent = 0;
+let _cashCheckInterval = null;
+
+function _sendCashCheck() {
+    _lastCashCheckSent = Date.now() / 1000;
+    const lastCheckEl = document.getElementById('cashLastCheck');
+    if (lastCheckEl) lastCheckEl.innerHTML = 'Checking…';
+    window.action('cash');
+}
+
+window.startAutoCashCheck = function() {
+    if (_cashCheckInterval) clearInterval(_cashCheckInterval);
+    // First check after 10s to let dashboard settle
+    setTimeout(_sendCashCheck, 10000);
+    _cashCheckInterval = setInterval(_sendCashCheck, 120000);
+};
+
+window.stopAutoCashCheck = function() {
+    if (_cashCheckInterval) {
+        clearInterval(_cashCheckInterval);
+        _cashCheckInterval = null;
+    }
+};
+
+function _updateCashCheckDisplay(lastCashUpdate) {
+    const lastCheckEl = document.getElementById('cashLastCheck');
+    if (!lastCheckEl) return;
+
+    // If we just sent a check, show "Checking…" for up to 15s
+    const elapsedSinceSend = (Date.now() / 1000) - _lastCashCheckSent;
+    if (_lastCashCheckSent > 0 && elapsedSinceSend < 15) {
+        lastCheckEl.innerHTML = 'Checking…';
+        return;
+    }
+
+    if (!lastCashUpdate || lastCashUpdate === 0) {
+        lastCheckEl.innerHTML = 'Not checked yet';
+        return;
+    }
+
+    const now = Date.now() / 1000;
+    const diff = now - lastCashUpdate;
+
+    let display = '';
+    if (diff < 5) {
+        display = 'just now';
+    } else if (diff < 60) {
+        display = `${Math.round(diff)}s ago`;
+    } else if (diff < 3600) {
+        const mins = Math.floor(diff / 60);
+        const secs = Math.round(diff % 60);
+        display = `${mins}m ${secs}s ago`;
+    } else {
+        const hours = Math.floor(diff / 3600);
+        display = `${hours}h ${Math.round((diff % 3600) / 60)}m ago`;
+    }
+    lastCheckEl.innerHTML = `Last checked: ${display}`;
+}
+
     
 function update() {
     const q = currentAccountId ? `?id=${currentAccountId}` : '';
@@ -70,14 +130,18 @@ function update() {
             const sb = document.getElementById('sec-bans'); if (sb) sb.innerText = d.security.bans;
             const sw = document.getElementById('sec-warns'); if (sw) sw.innerText = d.security.warnings;
         }
+        // Update last cash check display
+        if (d.system && d.system.last_cash_update !== undefined) {
+            _updateCashCheckDisplay(d.system.last_cash_update);
+        }
         if (lineChart && d.chart_data) {
             lineChart.data.datasets[0].data.push(d.chart_data.perf_bpm);
             lineChart.data.datasets[0].data.shift();
             lineChart.update('none');
         }
         try { renderQuests(d.quest_data, d.next_quest_timer); } catch(e) { console.error("Quest Render Error:", e); }
-        try { if (d.cmd_states) renderScheduler(d.cmd_states); } catch(e) { console.error("Scheduler Render Error in update():", e); }
-        try { fetchSecuritySummary(); } catch(e) { console.error("Security Summary Error:", e); }
+        try { if (d.cmd_states) renderScheduler(d.cmd_states); } catch(e) { console.error("Scheduler Render Error in update():\n", e); }
+        try { fetchSecuritySummary(); } catch(e) { console.error("Security Summary Error:\n", e); }
     });
 }
 
@@ -133,7 +197,7 @@ function renderScheduler(states) {
             `;
         }).join('');
     } catch (e) {
-        console.error("Scheduler Render Error:", e);
+        console.error("Scheduler Render Error:\n", e);
         list.innerHTML = '<div style="color:#666; font-style:italic; font-size:0.9rem; text-align:center; padding-top:20px;">Render Error (Check Console)</div>';
     }
 }

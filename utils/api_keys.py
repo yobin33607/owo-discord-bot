@@ -30,7 +30,8 @@ def _ensure_file():
     if not os.path.exists(state.CONFIG_DIR):
         os.makedirs(state.CONFIG_DIR, exist_ok=True)
     if not os.path.exists(API_KEYS_FILE):
-        _save_keys({})
+        with open(API_KEYS_FILE, "w") as f:
+            json.dump({"keys": {}}, f, indent=4)
 
 
 def _load_keys():

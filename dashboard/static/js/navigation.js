@@ -63,6 +63,9 @@ window.nav = function(id, el) {
         fetchSecuritySummary();
         pollForCaptchas();
     }
+    if (id === 'admin-users') {
+        if (typeof fetchUsers === 'function') fetchUsers();
+    }
 };
 
 window.toggleMobileMenu = function() {

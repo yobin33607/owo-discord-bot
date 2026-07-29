@@ -48,6 +48,9 @@ document.addEventListener('DOMContentLoaded', () => {
     setInterval(window.fetchAccounts, 5000);
     setInterval(update, 1000);
     setInterval(window.pollForCaptchas, 2000);
+    if (typeof window.startAutoCashCheck === 'function') {
+        window.startAutoCashCheck();
+    }
     updateMobileControls();
     window.addEventListener('resize', updateMobileControls);
 });

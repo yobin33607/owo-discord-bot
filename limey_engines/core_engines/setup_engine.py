@@ -202,8 +202,6 @@ class LimeySetupEngine:
                 "gambling": {"bet_strategy": "flat", "max_bet": 100000},
                 "manager_bot": {
                     "token": "",
-                    "guild_id": "",
-                    "allowed_channels": [],
                     "prefix": "!"
                 },
             }

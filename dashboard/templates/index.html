@@ -108,10 +108,10 @@
                         style="--icon: url('/static/assets/limey_icons/key.svg');"></span> API Keys</a>
                 <a class="nav-item" onclick="nav('history', this)"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/clock-rotate-left.svg');"></span> History</a>
+                <a class="nav-item" onclick="nav('admin-users', this)"><span class="icon-svg"
+                        style="--icon: url('/static/assets/limey_icons/users.svg');"></span> Login Users</a>
                 <a class="nav-item" onclick="nav('logs', this)"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/terminal.svg');"></span> Terminal</a>
-                <a class="nav-item" id="adminUsersNav" onclick="nav('admin-users', this)" style="display:none;"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/users.svg');"></span> Users</a>
                 <a class="nav-item" onclick="location.href='/logout'" style="color: #ff4444 !important;"><span
                         class="icon-svg" style="--icon: url('/static/assets/limey_icons/logout.svg');"></span>
                     Logout</a>
@@ -245,9 +245,10 @@
                     <div class="kpi-card">
                         <div class="kpi-icon cash"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/coins.svg');"></span></div>
-                        <div class="kpi-data" style="cursor:pointer" onclick="action('cash', this)">
+                        <div class="kpi-data">
                             <h3>Balance</h3>
                             <p id="cash">0</p>
+                            <span id="cashLastCheck" style="font-size:0.65rem; color:#888; font-family:var(--font-mono); display:block; margin-top:2px;">Waiting…</span>
                         </div>
                     </div>
                     <div class="kpi-card">
@@ -325,9 +326,7 @@
                     </div>
                 </div>
                 <div class="top-controls" style="display:flex; gap:10px; margin-top:20px; justify-content:flex-end;">
-                    <button class="btn-control gold" onclick="action('cash', this)"><span class="icon-svg"
-                            style="--icon: url('/static/assets/limey_icons/coins.svg');"></span> <span
-                            class="btn-text">CHECK CASH</span></button>
+
                     <button class="btn-control green" onclick="action('start', this)"><span class="icon-svg"
                             style="--icon: url('/static/assets/limey_icons/play.svg');"></span> <span
                             class="btn-text">START</span></button>
@@ -602,9 +601,7 @@
         <button class="mobile-btn red" onclick="action('pause')" title="Pause Bot">
             <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/stop.svg');"></span>
         </button>
-        <button class="mobile-btn gold" onclick="action('checkcash')" title="Check Cash">
-            <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/money.svg');"></span>
-        </button>
+
     </div>
 
     <script src="/static/js/core.js"></script>
@@ -769,7 +766,6 @@
 
                     // Show admin-only nav items
                     if (currentUserRole === 'admin') {
-                        document.getElementById('adminUsersNav').style.display = '';
                         document.getElementById('apiKeysNav').style.display = '';
                     }
                 }
@@ -872,18 +868,17 @@
             return div.innerHTML;
         }
 
-        // Override nav to handle admin-users and api-keys tabs
+        // Override nav to handle api-keys tab (admin-users is now handled in navigation.js)
         const origNav = window.nav;
         window.nav = function(id, el) {
-            if (id === 'admin-users' || id === 'api-keys') {
+            if (id === 'api-keys') {
                 document.querySelectorAll('.view').forEach(v => v.classList.remove('active-view'));
                 document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
                 const target = document.getElementById(id);
                 if (target) target.classList.add('active-view');
                 if (el) el.classList.add('active');
                 checkDirty();
-                if (id === 'admin-users') fetchUsers();
-                if (id === 'api-keys') fetchApiKeys();
+                fetchApiKeys();
                 if (window.innerWidth <= 768) {
                     const sidebar = document.querySelector('.sidebar');
                     if (sidebar && sidebar.classList.contains('active')) toggleMobileMenu();

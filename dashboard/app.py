@@ -333,13 +333,18 @@ def auth_me():
     })
 
 @app.route('/api/auth/users', methods=['GET', 'POST'])
-@require_permission('admin')
+@login_required
 def auth_users():
     cfg = load_auth_config()
     if not cfg:
         return jsonify({'success': False, 'error': 'Auth config missing'}), 500
     
     if request.method == 'POST':
+        # Only admins can add/edit users
+        user_role = session.get('role', 'view')
+        if ROLE_HIERARCHY.get(user_role, 0) < ROLE_HIERARCHY.get('admin', 30):
+            return jsonify({'success': False, 'error': 'Admin permission required'}), 403
+        
         data = request.json or {}
         username = data.get('username', '').strip()
         password = data.get('password', '').strip()
@@ -375,8 +380,13 @@ def auth_users():
     return jsonify({'users': users})
 
 @app.route('/api/auth/users/<username>', methods=['DELETE'])
-@require_permission('admin')
+@login_required
 def auth_users_delete(username):
+    # Only admins can delete users
+    user_role = session.get('role', 'view')
+    if ROLE_HIERARCHY.get(user_role, 0) < ROLE_HIERARCHY.get('admin', 30):
+        return jsonify({'success': False, 'error': 'Admin permission required'}), 403
+    
     cfg = load_auth_config()
     if not cfg:
         return jsonify({'success': False, 'error': 'Auth config missing'}), 500
@@ -631,8 +641,6 @@ def settings():
             if 'manager_bot' not in data:
                 data['manager_bot'] = {
                     'token': '',
-                    'guild_id': '',
-                    'allowed_channels': [],
                     'prefix': '!'
                 }
             
@@ -641,8 +649,6 @@ def settings():
             return jsonify({
                 'manager_bot': {
                     'token': '',
-                    'guild_id': '',
-                    'allowed_channels': [],
                     'prefix': '!'
                 }
             })

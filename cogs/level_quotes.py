@@ -26,17 +26,16 @@ from discord.ext import commands
 class LevelQuotes(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.quotes_file = os.path.join(self.bot.base_dir, 'data', 'limey_quotes.json')
         self.quotes = self._load_quotes()
 
     def _load_quotes(self):
-        if os.path.exists(self.quotes_file):
-            try:
-                with open(self.quotes_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    return [q['quote'] for q in data.get('quotes', [])]
-            except Exception as e:
-                self.bot.log("ERROR", f"Failed to load quotes: {e}")
+        from utils.github_data_store import ghd
+        try:
+            data = ghd.read_json("data/limey_quotes.json", default=None)
+            if data:
+                return [q['quote'] for q in data.get('quotes', [])]
+        except Exception as e:
+            self.bot.log("ERROR", f"Failed to load quotes: {e}")
         return []
 
     def get_random_quote(self, min_len=10, max_len=100):

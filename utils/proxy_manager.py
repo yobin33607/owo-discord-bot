@@ -31,18 +31,10 @@ try:
 except ImportError:
     aiohttp = None
 
-import core.state as state
-
-PROXIES_FILE = os.path.join(state.CONFIG_DIR, "proxies.json")
-ACCOUNTS_FILE = os.path.join(state.CONFIG_DIR, "accounts.json")
+from utils.github_data_store import ghd
 
 DEFAULT_PROXY_TYPE = "socks5"
 SUPPORTED_TYPES = ("http", "https", "socks5", "socks4")
-
-
-def _ensure_config_dir():
-    if not os.path.exists(state.CONFIG_DIR):
-        os.makedirs(state.CONFIG_DIR)
 
 
 def _new_proxy_id():
@@ -50,38 +42,25 @@ def _new_proxy_id():
 
 
 def load_proxies():
-    _ensure_config_dir()
-    if not os.path.exists(PROXIES_FILE):
-        save_proxies([])
+    data = ghd.read_json("config/proxies.json", default={"proxies": []})
+    if data is None:
         return []
-    try:
-        with open(PROXIES_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data.get("proxies", [])
-    except (json.JSONDecodeError, OSError):
-        return []
+    return data.get("proxies", [])
 
 
 def save_proxies(proxies):
-    _ensure_config_dir()
-    with open(PROXIES_FILE, "w", encoding="utf-8") as f:
-        json.dump({"proxies": proxies}, f, indent=4)
+    ghd.write_json("config/proxies.json", {"proxies": proxies}, message="Update proxy list")
 
 
 def load_accounts():
-    if not os.path.exists(ACCOUNTS_FILE):
+    data = ghd.read_json("config/accounts.json", default={"accounts": []})
+    if data is None:
         return []
-    try:
-        with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f).get("accounts", [])
-    except (json.JSONDecodeError, OSError):
-        return []
+    return data.get("accounts", [])
 
 
 def save_accounts(accounts):
-    _ensure_config_dir()
-    with open(ACCOUNTS_FILE, "w", encoding="utf-8") as f:
-        json.dump({"accounts": accounts}, f, indent=4)
+    ghd.write_json("config/accounts.json", {"accounts": accounts}, message="Update accounts")
 
 
 def _normalize_type(proxy_type):

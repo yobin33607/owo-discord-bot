@@ -14,15 +14,9 @@ __pycache__/
 data/*.json
 
 # ===============================
-# Sensitive config (tokens, passwords)
+# All config/data JSON files (stored in GitHub repo yobin33607/data)
 # ===============================
-config/accounts.json
-config/auth.json
-config/settings.json
-
-# ===============================
-# Per-account auto-generated settings
-# ===============================
+config/*.json
 config/settings_*.json
 
 # ===============================
@@ -58,7 +52,6 @@ wheels/
 # ===============================
 # Sensitive / local data
 # ===============================
-
 tokens.txt
 *.local
 
@@ -70,6 +63,7 @@ env/
 ENV/
 .venv/
 .ENV/
+.env
 .env/
 .env.*
 .virtualenv/

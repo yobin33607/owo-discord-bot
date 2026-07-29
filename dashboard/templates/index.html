@@ -35,6 +35,7 @@
     <link rel="stylesheet" href="/static/css/pages/proxies.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/pages/security.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/pages/history.css?v=2.4.0.1">
+    <link rel="stylesheet" href="/static/css/pages/appeals.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/responsive.css?v=2.4.0.1">
 </head>
 
@@ -106,6 +107,8 @@
                         style="--icon: url('/static/assets/limey_icons/shield-halved.svg');"></span> Security</a>
                 <a class="nav-item" id="apiKeysNav" onclick="nav('api-keys', this)" style="display:none;"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/key.svg');"></span> API Keys</a>
+                <a class="nav-item" id="appealsNav" onclick="nav('appeals', this)" style="display:none;"><span class="icon-svg"
+                        style="--icon: url('/static/assets/limey_icons/check-to-slot.svg');"></span> Appeals</a>
                 <a class="nav-item" onclick="nav('history', this)"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/clock-rotate-left.svg');"></span> History</a>
                 <a class="nav-item" onclick="nav('admin-users', this)"><span class="icon-svg"
@@ -448,6 +451,42 @@
                             <button class="btn-control" onclick="hideUserForm()">Cancel</button>
                             <button class="btn-control green" onclick="saveUser()">Save</button>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Appeals Tab -->
+            <div id="appeals" class="view">
+                <div class="appeals-header">
+                    <h2 style="font-size:1.2rem; color:var(--primary); margin:0;"><span class="icon-svg"
+                            style="--icon: url('/static/assets/limey_icons/check-to-slot.svg');"></span> Appeals Management</h2>
+                    <p class="accounts-page-hint">Review and manage user appeals for bans, mutes, and timeouts.</p>
+                </div>
+
+                <div class="appeals-toolbar">
+                    <div class="appeals-filter-group">
+                        <button class="btn-control appeals-filter active" data-status="pending" onclick="filterAppeals('pending')">⏳ Pending</button>
+                        <button class="btn-control appeals-filter" data-status="approved" onclick="filterAppeals('approved')">✅ Approved</button>
+                        <button class="btn-control appeals-filter" data-status="rejected" onclick="filterAppeals('rejected')">❌ Rejected</button>
+                        <button class="btn-control appeals-filter" data-status="all" onclick="filterAppeals('all')">📋 All</button>
+                    </div>
+                </div>
+
+                <div id="appeals-stats" class="appeals-stats-bar">
+                    <div class="proxy-stat-card"><span id="appeal-stat-pending">0</span><label>Pending</label></div>
+                    <div class="proxy-stat-card ok"><span id="appeal-stat-approved">0</span><label>Approved</label></div>
+                    <div class="proxy-stat-card"><span id="appeal-stat-rejected">0</span><label>Rejected</label></div>
+                    <div class="proxy-stat-card"><span id="appeal-stat-total">0</span><label>Total</label></div>
+                </div>
+
+                <div id="appeals-list" class="appeals-list">
+                    <div class="no-data">Loading appeals...</div>
+                </div>
+
+                <!-- Review Modal -->
+                <div id="appeal-review-modal" class="proxy-modal">
+                    <div class="proxy-modal-inner appeal-review-inner">
+                        <div id="appeal-review-content"></div>
                     </div>
                 </div>
             </div>
@@ -830,6 +869,9 @@
                     roleEl.className = 'user-info-role role-' + currentUserRole;
 
                     // Show admin-only nav items
+                    if (currentUserRole === 'admin' || currentUserRole === 'manage') {
+                        document.getElementById('appealsNav').style.display = '';
+                    }
                     if (currentUserRole === 'admin') {
                         document.getElementById('apiKeysNav').style.display = '';
                     }
@@ -1047,9 +1089,280 @@
                 });
         }
 
-        // Override nav to handle api-keys and my-account tabs
+        // ─── Appeals Management ──────────────────────────
+        let currentAppealFilter = 'pending';
+
+        function filterAppeals(status) {
+            currentAppealFilter = status;
+            document.querySelectorAll('.appeals-filter').forEach(b => b.classList.remove('active'));
+            document.querySelector(`.appeals-filter[data-status="${status}"]`)?.classList.add('active');
+            fetchAppeals();
+        }
+
+        function fetchAppeals() {
+            const list = document.getElementById('appeals-list');
+            list.innerHTML = '<div class="no-data">Loading appeals...</div>';
+
+            fetch('/api/appeals?status=' + currentAppealFilter + '&limit=100')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) {
+                        list.innerHTML = '<div class="no-data">❌ Failed to load appeals</div>';
+                        return;
+                    }
+                    renderAppeals(data.appeals);
+                    updateAppealStats();
+                })
+                .catch(() => {
+                    list.innerHTML = '<div class="no-data">❌ Failed to load appeals</div>';
+                });
+        }
+
+        function renderAppeals(appeals) {
+            const list = document.getElementById('appeals-list');
+
+            if (!appeals || appeals.length === 0) {
+                list.innerHTML = '<div class="no-data">No ' + currentAppealFilter + ' appeals found.</div>';
+                return;
+            }
+
+            let html = '';
+            appeals.forEach(a => {
+                const aid = a.id || '?';
+                const user = escapeHtml(a.username || 'Unknown');
+                const ptype = escapeHtml(a.punishment_type || '?').toUpperCase();
+                const reason = escapeHtml(a.reason || 'No reason provided');
+                const explanation = escapeHtml(a.explanation || '');
+                const evidence = escapeHtml(a.evidence || '');
+                const created = a.created_at ? new Date(a.created_at * 1000).toLocaleString() : 'Unknown';
+                const status = a.status || 'pending';
+                const statusIcon = status === 'pending' ? '⏳' : status === 'approved' ? '✅' : '❌';
+                const statusColor = status === 'approved' ? '#00ff88' : status === 'rejected' ? '#ff4444' : '#ffaa00';
+                const reviewedBy = a.reviewed_by ? escapeHtml(a.reviewed_by) : '';
+                const reviewNotes = a.review_notes ? escapeHtml(a.review_notes) : '';
+                const reviewedAt = a.reviewed_at ? new Date(a.reviewed_at * 1000).toLocaleString() : '';
+
+                html += '<div class="appeal-card appeal-' + status + '">' +
+                    '<div class="appeal-card-header" onclick="toggleAppealDetails(this)">' +
+                    '<div class="appeal-card-left">' +
+                    '<span class="appeal-status-badge" style="background:' + statusColor + '22;color:' + statusColor + ';border:1px solid ' + statusColor + '44;">' + statusIcon + ' ' + status.toUpperCase() + '</span>' +
+                    '<span class="appeal-id">#' + aid + '</span>' +
+                    '<span class="appeal-user">' + user + '</span>' +
+                    '<span class="appeal-type">' + ptype + '</span>' +
+                    '</div>' +
+                    '<div class="appeal-card-right">' +
+                    '<span class="appeal-date">' + created + '</span>' +
+                    '<span class="appeal-chevron">▼</span>' +
+                    '</div>' +
+                    '</div>' +
+                    '<div class="appeal-card-body" style="display:none;">' +
+                    '<div class="appeal-section">' +
+                    '<label>Reason for Punishment</label>' +
+                    '<div class="appeal-text">' + reason + '</div>' +
+                    '</div>';
+
+                if (explanation) {
+                    html += '<div class="appeal-section">' +
+                        '<label>Appeal Explanation</label>' +
+                        '<div class="appeal-text">' + explanation + '</div>' +
+                        '</div>';
+                }
+
+                if (evidence && evidence !== 'None provided') {
+                    html += '<div class="appeal-section">' +
+                        '<label>Evidence</label>' +
+                        '<div class="appeal-text">' + evidence + '</div>' +
+                        '</div>';
+                }
+
+                if (status !== 'pending') {
+                    html += '<div class="appeal-review-info">' +
+                        '<div><strong>Reviewed by:</strong> ' + reviewedBy + '</div>' +
+                        '<div><strong>Notes:</strong> ' + (reviewNotes || 'None') + '</div>' +
+                        '<div><strong>Reviewed at:</strong> ' + reviewedAt + '</div>' +
+                        '</div>';
+                }
+
+                if (status === 'pending') {
+                    html += '<div class="appeal-actions">' +
+                        '<button class="btn-control green" onclick="openReviewModal(' + aid + ',\'approve\')">✅ Approve</button>' +
+                        '<button class="btn-control red" onclick="openReviewModal(' + aid + ',\'reject\')">❌ Reject</button>' +
+                        '</div>';
+                }
+
+                html += '</div></div>';
+            });
+
+            list.innerHTML = html;
+        }
+
+        function toggleAppealDetails(header) {
+            const body = header.nextElementSibling;
+            const chevron = header.querySelector('.appeal-chevron');
+            if (body.style.display === 'none' || !body.style.display) {
+                body.style.display = 'block';
+                chevron.textContent = '▲';
+            } else {
+                body.style.display = 'none';
+                chevron.textContent = '▼';
+            }
+        }
+
+        function updateAppealStats() {
+            fetch('/api/appeals?status=all&limit=10000')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) return;
+                    const appeals = data.appeals || [];
+                    let pending = 0, approved = 0, rejected = 0;
+                    appeals.forEach(a => {
+                        if (a.status === 'pending') pending++;
+                        else if (a.status === 'approved') approved++;
+                        else if (a.status === 'rejected') rejected++;
+                    });
+                    document.getElementById('appeal-stat-pending').textContent = pending;
+                    document.getElementById('appeal-stat-approved').textContent = approved;
+                    document.getElementById('appeal-stat-rejected').textContent = rejected;
+                    document.getElementById('appeal-stat-total').textContent = appeals.length;
+                })
+                .catch(() => {});
+        }
+
+        function openReviewModal(appealId, action) {
+            const modal = document.getElementById('appeal-review-modal');
+            const content = document.getElementById('appeal-review-content');
+            const actionLabel = action === 'approve' ? 'Approve' : 'Reject';
+            const actionColor = action === 'approve' ? '#00ff88' : '#ff4444';
+
+            fetch('/api/appeals/' + appealId)
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success || !data.appeal) {
+                        content.innerHTML = '<div class="no-data">Appeal not found.</div>';
+                        modal.style.display = 'flex';
+                        return;
+                    }
+                    const a = data.appeal;
+
+                    // Fetch violations for this user
+                    const userId = a.user_id || '';
+                    const violationsPromise = userId ?
+                        fetch('/api/violations/' + userId).then(r => r.json()).catch(() => ({violations: []})) :
+                        Promise.resolve({violations: []});
+
+                    violationsPromise.then(vdata => {
+                        const violations = vdata.violations || [];
+                        let violationsHtml = '';
+                        if (violations.length > 0) {
+                            const maxShow = 8;
+                            const showV = violations.slice(0, maxShow);
+                            violationsHtml = showV.map(v => {
+                                const ts = v.timestamp ? new Date(v.timestamp * 1000).toLocaleString() : '?';
+                                const type = (v.type || '?').toUpperCase();
+                                const reason = escapeHtml((v.reason || '').substring(0, 80));
+                                const emojis = {warn:'⚠️',kick:'👢',ban:'🔨',timeout:'🔇',mute:'🔇'};
+                                const emoji = emojis[(v.type||'').toLowerCase()] || '📋';
+                                return '<div class="violation-item">' +
+                                    '<span class="violation-type">' + emoji + ' ' + type + '</span>' +
+                                    '<span class="violation-date">' + ts + '</span>' +
+                                    '<span class="violation-reason">' + reason + '</span>' +
+                                    '</div>';
+                            }).join('');
+                            if (violations.length > maxShow) {
+                                violationsHtml += '<div class="violation-more">... and ' + (violations.length - maxShow) + ' more</div>';
+                            }
+                        } else {
+                            violationsHtml = '<div class="violation-none">✅ No violations on record</div>';
+                        }
+
+                        content.innerHTML = '<div class="review-modal-wrap">' +
+                            '<h3 style="color:var(--primary);margin:0 0 16px 0;">' + actionLabel + ' Appeal #' + appealId + '</h3>' +
+                            '<div class="appeal-section">' +
+                            '<label>User</label><div class="appeal-text">' + escapeHtml(a.username || 'Unknown') + '</div>' +
+                            '</div>' +
+                            '<div class="appeal-section">' +
+                            '<label>Punishment Type</label><div class="appeal-text">' + escapeHtml(a.punishment_type || '?') + '</div>' +
+                            '</div>' +
+                            '<div class="appeal-section">' +
+                            '<label>Reason</label><div class="appeal-text">' + escapeHtml(a.reason || '') + '</div>' +
+                            '</div>' +
+                            '<div class="appeal-section">' +
+                            '<label>Explanation</label><div class="appeal-text">' + escapeHtml(a.explanation || '') + '</div>' +
+                            '</div>' +
+                            '<div class="appeal-section">' +
+                            '<label>Evidence</label><div class="appeal-text">' + escapeHtml(a.evidence || 'None') + '</div>' +
+                            '</div>' +
+                            '<div class="appeal-section violations-section">' +
+                            '<label class="violations-header">\ud83d\udccb Violations <span class="violations-count">(' + violations.length + ')</span></label>' +
+                            '<div class="violations-list">' + violationsHtml + '</div>' +
+                            '</div>' +
+                            '<div class="appeal-section">' +
+                            '<label>Review Notes <span style="color:#888;font-weight:400;">(optional)</span></label>' +
+                            '<textarea id="review-notes-input" class="cfg-input appeal-notes-input" placeholder="Add notes about your decision..." rows="3"></textarea>' +
+                            '</div>' +
+                            '<div class="proxy-modal-actions" style="margin-top:16px;">' +
+                            '<button class="btn-control" onclick="closeReviewModal()">Cancel</button>' +
+                            '<button class="btn-control ' + (action === 'approve' ? 'green' : 'red') + '" onclick="submitReview(' + appealId + ',\'' + action + '\')">' +
+                            (action === 'approve' ? '✅ ' : '❌ ') + actionLabel +
+                            '</button>' +
+                            '</div>' +
+                            '</div>';
+                        modal.style.display = 'flex';
+                    });
+                })
+                .catch(() => {
+                    content.innerHTML = '<div class="no-data">Error loading appeal details.</div>';
+                    modal.style.display = 'flex';
+                });
+        }
+
+        function closeReviewModal() {
+            document.getElementById('appeal-review-modal').style.display = 'none';
+        }
+
+        function submitReview(appealId, action) {
+            const notes = document.getElementById('review-notes-input')?.value || '';
+
+            fetch('/api/appeals/' + appealId + '/review', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: action, notes: notes })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast(data.message || 'Appeal reviewed!');
+                        closeReviewModal();
+                        fetchAppeals();
+                    } else {
+                        showToast(data.error || 'Failed to review appeal', 'error');
+                    }
+                })
+                .catch(() => {
+                    showToast('Error reviewing appeal', 'error');
+                });
+        }
+
+        // Override nav to handle appeals, api-keys, and my-account tabs
         const origNav = window.nav;
         window.nav = function(id, el) {
+            if (id === 'appeals') {
+                document.querySelectorAll('.view').forEach(v => v.classList.remove('active-view'));
+                document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+                const target = document.getElementById(id);
+                if (target) target.classList.add('active-view');
+                if (el) el.classList.add('active');
+                checkDirty();
+                currentAppealFilter = 'pending';
+                document.querySelectorAll('.appeals-filter').forEach(b => b.classList.remove('active'));
+                document.querySelector('.appeals-filter[data-status="pending"]')?.classList.add('active');
+                fetchAppeals();
+                if (window.innerWidth <= 768) {
+                    const sidebar = document.querySelector('.sidebar');
+                    if (sidebar && sidebar.classList.contains('active')) toggleMobileMenu();
+                }
+                return;
+            }
             if (id === 'api-keys') {
                 document.querySelectorAll('.view').forEach(v => v.classList.remove('active-view'));
                 document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));

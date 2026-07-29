@@ -31,7 +31,6 @@ import re
 class Boss(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.state_file = "data/boss_state.json"
         self._load_state()
         self.enabled = self.bot.config.get("boss", {}).get("enabled", True)
         self.join_chance = self.bot.config.get("boss", {}).get("join_chance", 100)
@@ -59,28 +58,33 @@ class Boss(commands.Cog):
         self._update_playing_guilds()
         self.bot.log("SYS", f"Boss Battle settings refreshed. Tracking {len(self.playing_guild_ids)} guilds.")
 
+    def _get_state_path(self):
+        return "data/boss_state.json"
+
     def _load_state(self):
+        from utils.github_data_store import ghd
         self.tickets = 3
         self.last_reset = 0
         self.joined_ids = set()
-        if os.path.exists(self.state_file):
-            try:
-                with open(self.state_file, "r") as f:
-                    data = json.load(f)
-                    self.tickets = data.get("tickets", 3)
-                    self.last_reset = data.get("last_reset", 0)
-                    self.joined_ids = set(data.get("joined_ids", []))
-            except: pass
+        try:
+            data = ghd.read_json(self._get_state_path(), default={})
+            if data:
+                self.tickets = data.get("tickets", 3)
+                self.last_reset = data.get("last_reset", 0)
+                self.joined_ids = set(data.get("joined_ids", []))
+        except:
+            pass
 
     def _save_state(self):
+        from utils.github_data_store import ghd
         try:
-            with open(self.state_file, "w") as f:
-                json.dump({
-                    "tickets": self.tickets,
-                    "last_reset": self.last_reset,
-                    "joined_ids": list(self.joined_ids)
-                }, f)
-        except: pass
+            ghd.write_json(self._get_state_path(), {
+                "tickets": self.tickets,
+                "last_reset": self.last_reset,
+                "joined_ids": list(self.joined_ids)
+            }, message="Update boss state")
+        except:
+            pass
 
     def _check_reset(self):
         now = time.time()

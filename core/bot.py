@@ -39,6 +39,7 @@ import copy
 import logging
 from rich.console import Console
 from rich.align import Align
+from utils.github_data_store import ghd
 
 _log = logging.getLogger(__name__)
 
@@ -508,9 +509,9 @@ class LimeyBot(commands.Bot):
 
     def _load_config(self):
         try:
-            if os.path.exists(self.config_file):
-                with open(self.config_file, 'r') as f:
-                    self.config = json.load(f)
+            cfg_data = ghd.read_json("config/settings.json", default={})
+            if cfg_data:
+                self.config = cfg_data
             else:
                 self.config = {}
 
@@ -519,33 +520,24 @@ class LimeyBot(commands.Bot):
                 uid = str(self.user.id)
             
             if uid:
-                user_config_file = os.path.join(state.CONFIG_DIR, f'settings_{uid}.json')
+                user_cfg_path = f'config/settings_{uid}.json'
+                user_cfg = ghd.read_json(user_cfg_path, default=None)
                 
-                if os.path.exists(user_config_file):
-                    try:
-                        with open(user_config_file, 'r') as f:
-                            user_cfg = json.load(f)
-                            self._deep_merge(self.config, user_cfg)
-                        self.log("SYS", f"Using account-specific settings: settings_{uid}.json")
-                    except Exception as e:
-                        self.log("ERROR", f"Failed to load user settings_{uid}.json: {e}")
+                if user_cfg:
+                    self._deep_merge(self.config, user_cfg)
+                    self.log("SYS", f"Using account-specific settings: settings_{uid}.json")
                 else:
                     try:
-                        with open(user_config_file, 'w') as f:
-                            json.dump(self.config, f, indent=4)
+                        ghd.write_json(user_cfg_path, self.config, message=f"Create settings_{uid}.json")
                         self.log("SYS", f"Created personal settings file: settings_{uid}.json")
                     except Exception as e:
                         self.log("ERROR", f"Failed to create settings_{uid}.json: {e}")
             else:
                 self.log("SYS", "Using global settings: settings.json")
 
-            account_file = os.path.join(self.base_dir, 'config', 'accounts.json')
-            if os.path.exists(account_file):
-                try:
-                    with open(account_file, 'r') as f:
-                        self.accounts = json.load(f).get('accounts', [])
-                except:
-                    self.accounts = []
+            account_data = ghd.read_json("config/accounts.json", default={})
+            if account_data:
+                self.accounts = account_data.get('accounts', [])
             else:
                 self.accounts = []
 
@@ -571,13 +563,9 @@ class LimeyBot(commands.Bot):
                     self.channels = primary.get('channels', [])
                     self.channel_id = int(self.channels[0]) if self.channels else None
 
-            shortform_file = os.path.join(self.base_dir, 'config', 'shortform.json')
-            if os.path.exists(shortform_file):
-                try:
-                    with open(shortform_file, 'r') as f:
-                        self.shortforms = json.load(f)
-                except:
-                    self.shortforms = {}
+            shortform_data = ghd.read_json("config/shortform.json", default={})
+            if shortform_data:
+                self.shortforms = shortform_data
             else:
                 self.shortforms = {}
 
@@ -635,12 +623,10 @@ class LimeyBot(commands.Bot):
         return max(0, self.cmd_cooldowns.get(cmd.lower(), 0) - time.time())
 
     def get_cmd_priority(self, cmd_id, default=3):
-        """load priority from cmd_priorities.json, fallback to default."""
+        """load priority from cmd_priorities.json via GitHub, fallback to default."""
         try:
-            prio_file = os.path.join(self.base_dir, 'config', 'cmd_priorities.json')
-            if os.path.exists(prio_file):
-                with open(prio_file, 'r') as f:
-                    priorities = json.load(f)
+            priorities = ghd.read_json("config/cmd_priorities.json", default={})
+            if priorities:
                 return priorities.get(cmd_id, default)
         except Exception:
             pass

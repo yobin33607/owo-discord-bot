@@ -30,13 +30,12 @@ class LimeyLogs:
 
     def _load_config(self):
         try:
-            config_path = os.path.join(os.getcwd(), 'config', 'logmisc.json')
-            if os.path.exists(config_path):
-                with open(config_path, 'r') as f:
-                    self.log_config = json.load(f)
-                    
-                    import core.state as state
-                    state.log_config = self.log_config
+            from utils.github_data_store import ghd
+            data = ghd.read_json("config/logmisc.json", default={})
+            if data:
+                self.log_config = data
+                import core.state as state
+                state.log_config = self.log_config
         except:
             pass
 

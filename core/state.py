@@ -23,16 +23,16 @@ import os
 import datetime
 from collections import deque
 import utils.history_tracker as ht
+from utils.github_data_store import ghd
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_DIR = os.path.join(BASE_DIR, 'config')
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 
 log_config = {}
-LOG_MISC_PATH = os.path.join(CONFIG_DIR, 'logmisc.json')
-if os.path.exists(LOG_MISC_PATH):
-    with open(LOG_MISC_PATH, 'r') as f:
-        log_config = json.load(f)
+_log_config_data = ghd.read_json("config/logmisc.json")
+if _log_config_data:
+    log_config = _log_config_data
 
 bot_instances = []
 bot_paused = False
@@ -114,39 +114,36 @@ def save_account_stats():
                 })
             }
         
-        os.makedirs('config', exist_ok=True)
-        with open(STATS_FILE, 'w') as f:
-            json.dump(serializable_stats, f, indent=4)
+        ghd.write_json("data/stats.json", serializable_stats)
     except Exception as e:
         print(f"Error saving stats: {e}")
 
 def load_account_stats():
-    if os.path.exists(STATS_FILE):
-        try:
-            with open(STATS_FILE, 'r') as f:
-                saved = json.load(f)
-                today = datetime.datetime.now().strftime("%Y-%m-%d")
-                for uid, st in saved.items():
-                    new_st = get_empty_stats()
-                    last_date = st.get('last_reset_date')
-                    if last_date != today:
-                        st['hunt_count'] = 0
-                        st['battle_count'] = 0
-                        st['owo_count'] = 0
-                        st['total_cmd_count'] = 0
-                        st['other_count'] = 0
-                        st['gems_used'] = 0
-                        st['captchas_solved_today'] = 0
-                        st['last_reset_date'] = today
-  
-                    new_st.update(st)
-                    new_st['session_hunt_count'] = 0
-                    new_st['session_battle_count'] = 0
-                    new_st['session_owo_count'] = 0
-                    
-                    account_stats[uid] = new_st
-        except Exception as e:
-            print(f"Error loading stats: {e}")
+    try:
+        saved = ghd.read_json("data/stats.json", default={})
+        if saved:
+            today = datetime.datetime.now().strftime("%Y-%m-%d")
+            for uid, st in saved.items():
+                new_st = get_empty_stats()
+                last_date = st.get('last_reset_date')
+                if last_date != today:
+                    st['hunt_count'] = 0
+                    st['battle_count'] = 0
+                    st['owo_count'] = 0
+                    st['total_cmd_count'] = 0
+                    st['other_count'] = 0
+                    st['gems_used'] = 0
+                    st['captchas_solved_today'] = 0
+                    st['last_reset_date'] = today
+
+                new_st.update(st)
+                new_st['session_hunt_count'] = 0
+                new_st['session_battle_count'] = 0
+                new_st['session_owo_count'] = 0
+
+                account_stats[uid] = new_st
+    except Exception as e:
+        print(f"Error loading stats: {e}")
 
 command_logs = deque(maxlen=1000)
 full_session_history = []

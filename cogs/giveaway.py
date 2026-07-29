@@ -27,25 +27,27 @@ from discord.ext import commands
 class Giveaway(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.db_path = os.path.join(bot.base_dir, 'config', 'giveaway_db.json')
         self.joined_ids = []
         self._load_state()
         
+    def _get_db_path(self):
+        return "config/giveaway_db.json"
+        
     def _load_state(self):
+        from utils.github_data_store import ghd
         try:
-            if os.path.exists(self.db_path):
-                with open(self.db_path, 'r') as f:
-                    data = json.load(f)
-                    self.joined_ids = data.get('joined_ids', [])
+            data = ghd.read_json(self._get_db_path(), default={})
+            if data:
+                self.joined_ids = data.get('joined_ids', [])
         except Exception:
             self.joined_ids = []
             
     def _save_state(self):
+        from utils.github_data_store import ghd
         if len(self.joined_ids) > 100:
             self.joined_ids = self.joined_ids[-100:]
         try:
-            with open(self.db_path, 'w') as f:
-                json.dump({'joined_ids': self.joined_ids}, f)
+            ghd.write_json(self._get_db_path(), {'joined_ids': self.joined_ids}, message="Update giveaway DB")
         except Exception as e:
             self.bot.log("ERROR", f"Failed to save giveaway DB: {e}")
 
@@ -108,7 +110,7 @@ class Giveaway(commands.Cog):
         await asyncio.sleep(5)
         
         sanitized_name = "".join(x for x in self.bot.username if x.isalnum())
-        self.db_path = os.path.join(self.bot.base_dir, 'data', f'giveaway_db_{sanitized_name}.json')
+        self._db_path = None  # Reset path so _get_db_path uses the global one
         self._load_state()
         
         cfg = self.bot.config.get('commands', {}).get('giveaway', {})

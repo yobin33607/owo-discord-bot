@@ -1,10 +1,10 @@
 <div align="center">
 
-# Limey
+# LIMEY
 
-**Advanced OwO Bot Automation** • Built by **LIMEY**
+**Discord Bot Ecosystem** • Moderation • Automation • Dashboard
 
-[![Version](https://img.shields.io/badge/version-2.4.3-brightgreen.svg)]()
+[![Version](https://img.shields.io/badge/version-2.5.0-brightgreen.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)]()
 [![License](https://img.shields.io/badge/license-GPLv3-red.svg)]()
 
@@ -13,54 +13,71 @@
 ---
 
 > [!IMPORTANT]
-> WE ARE NOT responsible if you get banned using our selfbots. Selfbots are against Discord ToS and break OwO bot rules. Use only in private servers and do not openly share that you are using automation.
+> This project is for **educational purposes only**. Using self-bots violates Discord's Terms of Service. Use at your own risk in private servers only.
 
 ## What is Limey?
 
-**Limey** is a powerful, fully-featured OWO-BOT automation tool offering a premium web dashboard. It allows you to monitor all your data in real-time through an easy-to-manage, beautifully designed interface.
+**Limey** is a full-featured Discord bot ecosystem combining a **web dashboard**, a **moderation bot**, and an **automation engine**. It offers real-time monitoring, moderation tools like warn/kick/ban/timeout, an appeals system, Discord AutoMod integration, and a self-bot automation platform — all controllable from a beautifully designed web interface.
 
 ---
 
 ## Features
 
-- **🖥️ Full Web Dashboard**
-  Real-time stats, charts, live configuration editor, captcha solving, proxy management, and account controls — all from an elegant web interface at `http://localhost:8000`.
+### 🤖 Manager Bot
+A full Discord bot (using `discord.py`) with:
+- **Moderation** — `/warn`, `/kick`, `/ban`, `/timeout`, `/mute`, `/unmute`, `/purge`, `/lockdown`, `/slowmode`
+- **Warn thresholds** — Auto-mute/kick/ban when warns reach configurable limits
+- **AutoMod integration** — Listens to Discord's native AutoMod and DMs users when they trigger rules
+- **Violations tracking** — All moderation actions stored with full history (`/violations`, `/clearviolations`)
+- **Mod log channel** — All actions logged to a dedicated channel with rich embeds
+- **Auto-unmute** — Automatically removes timed mutes when they expire
+- **Appeal system** — Users can appeal bans/mutes directly via Discord or the web dashboard
 
-- **🤖 Manager Bot**
-  A built-in Discord bot (using standard `discord.py`) that lets you control your self-bots directly from Discord. Commands include `!status`, `!control start/stop`, `!cash`, `!logs`, `!settings`, and `!accounts`.
+### 🖥️ Web Dashboard
+A premium web interface at `http://localhost:8000` featuring:
+- **Live stats** — Real-time CPH, command counters, session analytics, cash history charts
+- **Account management** — Add/remove/edit bot accounts with proxy assignment
+- **Settings editor** — Full configuration UI with live save
+- **Captcha solving** — Manual captcha solver panel with balance checks
+- **Proxy manager** — Bulk import, auto-testing, health monitoring, auto-assignment
+- **Appeals management** — Review, approve, or reject user appeals with violation history displayed
+- **API key system** — Role-based API keys for external integrations
+- **Discord OAuth** — Sign in or link your Discord account
+- **Multi-user** — Role-based access (View, Manage, Admin)
 
-- **📱 Mobile Support (Termux)**
-  Fully functional on Android devices with toast notifications and vibration support.
+### 🛡️ Moderation System
+- **Warn** — Track and threshold users with auto-punishment
+- **Kick / Ban** — With reason logging and violation storage
+- **Timeout / Mute** — Duration-based with auto-unmute
+- **Purge** — Bulk delete messages
+- **Lockdown** — Lock/unlock channels
+- **Slowmode** — Set channel slowmode
+- **Mod log** — All actions logged with colored embeds
+- **Violations** — Centralized violation history across all punishment types
 
-- **🧩 Smart Captcha Solvers**
-  Multiple captcha service integrations (YesCaptcha, AntiCaptcha, NopeCHA, Capchaly), ONNX model for letterword captchas, and manual fallback.
+### 📋 Appeals System
+- **Submit appeals** — Via Discord with punishment type dropdown and evidence
+- **Violation lookup** — Fetches the user's violations automatically; punishment type and reason are locked
+- **Dashboard management** — Review, approve/reject with notes and violation history shown
+- **DM notifications** — Users get DMed when their appeal is approved or rejected
 
-- **👥 Multi-Account Manager**
-  Run unlimited accounts simultaneously with independent settings, proxy assignments, and channel configurations.
+### 🤖 Discord AutoMod Integration
+- **Rule execution listener** — Detects when Discord's native AutoMod triggers
+- **DM warnings** — Optionally sends users a DM explaining which rule they triggered
+- **Rule name display** — Fetches and shows the AutoMod rule name from Discord
+- **Toggle** — `/modsettings discordwarn on/off`
 
-- **🛡️ Advanced Stealth & Security**
-  Realistic typing simulation, auto-pause on detection, configurable speed presets, webhook alerts, and multi-layer security to keep you safe.
+### 🧠 Automation Engine
+- **Auto Hunt & Battle** — Smart scheduling with cooldown management
+- **Quest Automation** — Auto-track, solve, and claim rewards
+- **Gem Management** — Tier-based selection and dynamic gem sets
+- **Gambling** — Martingale and flat betting strategies with stop-loss
 
-- **🎲 Advanced Gambling**
-  Smart betting strategies (Martingale, Flat) with configurable stop-loss, take-profit, max balance limits, and streak tracking.
-
-- **🧠 Dynamic Quest Intelligence**
-  Automatically completes quest checklists and tracks progression with smart timing.
-
-- **💎 Advanced AutoGems**
-  Automatically detect and equip the best gems based on your settings.
-
-- **⚡ Smart Command Scheduling**
-  Priority-based queue system with per-command cooldowns, auto-retry, and lazy loading.
-
-- **🌐 Proxy Support**
-  HTTP/HTTPS/SOCKS4/SOCKS5 proxies with per-account assignment, auto-testing, and bulk import.
-
-- **📊 Live Analytics**
-  Real-time CPH (cash per hour), command counters, session stats, and cash history charts.
-
-- **🔧 Easy Setup**
-  One-liner install scripts and an interactive setup wizard for quick configuration.
+### 🛡️ Security
+- **Captcha solvers** — YesCaptcha, AntiCaptcha, NopeCHA, Captcha.ly, ONNX AI
+- **Stealth mode** — Human-like typing, random delays, configurable presets
+- **Webhook alerts** — Real-time security notifications
+- **Auto-pause** — Pause on detection triggers
 
 ---
 
@@ -78,31 +95,29 @@ curl -o "%TEMP%\install_limey.bat" https://raw.githubusercontent.com/cubiced0/ow
 bash <(curl -s https://raw.githubusercontent.com/cubiced0/owo-discord-bot/main/install_limey.sh)
 ```
 
-#### For Termux
-
-Make sure to install the **Termux** and **Termux:API** apps from F-Droid or GitHub (grant the API app notifications permission). After the installation script finishes, follow the setup steps prompted by `limey_setup.py`. If you face issues with the basic installation, try the manual installation method.
-
 ---
 
 ## Quick Start
 
 1. **Install** using the commands above
 2. **Run** `python limey_setup.py` to configure accounts and settings
-3. **Start** with `python limey.py` and select option `1`
+3. **Start** with `python limey.py`
 4. **Dashboard** opens at **http://localhost:8000**
+
+### Default Login
+- **Username:** `admin`
+- **Password:** `12345678910`
 
 ---
 
-## Manager Bot
+## Manager Bot Setup
 
-The Manager Bot is a **regular Discord bot** (not a self-bot) that lets you control your Limey self-bots via Discord commands. It runs as a separate subprocess using standard `discord.py`.
-
-### Setup
+The Manager Bot is a **regular Discord bot** (not a self-bot) that provides moderation and appeals functionality.
 
 1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
 2. Create a new application and a bot user
 3. Copy the bot token
-4. Add it to your `config/settings.json` under `manager_bot.token`:
+4. Add it to your `config/settings.json`:
 
 ```json
 {
@@ -113,30 +128,53 @@ The Manager Bot is a **regular Discord bot** (not a self-bot) that lets you cont
 }
 ```
 
-### Commands
+### Manager Bot Commands
 
 | Command | Description |
 |---------|-------------|
-| `!status` | Show all self-bots and their current status |
-| `!control start <name>` | Resume a paused self-bot |
-| `!control stop <name>` | Pause a running self-bot |
+| `!status` | Show all self-bots and their status |
+| `!control start/stop <name>` | Resume/pause a self-bot |
 | `!cash [name]` | Check cash balance(s) |
 | `!logs [count] [name]` | View recent command logs |
-| `!settings [section]` | View current configuration |
-| `!accounts` | List all accounts |
-| `!help` | Show this help message |
+| `!appeal` | Submit a moderation appeal |
+| `!help` | Show help |
+
+### Moderation Commands (Prefix + Slash)
+
+| Command | Permission | Description |
+|---------|-----------|-------------|
+| `!warn` / `/warn` | moderate_members | Warn a member |
+| `!kick` / `/kick` | kick_members | Kick a member |
+| `!ban` / `/ban` | ban_members | Ban a user |
+| `!timeout` / `/timeout` | moderate_members | Timeout a member |
+| `!mute` / `/mute` | moderate_members | Mute a member |
+| `!unmute` / `/unmute` | moderate_members | Unmute a member |
+| `!purge` / `/purge` | manage_messages | Bulk delete messages |
+| `!lockdown` / `/lockdown` | administrator | Lock/unlock a channel |
+| `!slowmode` / `/slowmode` | manage_channels | Set channel slowmode |
+| `!warnings` / `/warnings` | moderate_members | View warnings |
+| `!clearwarns` / `/clearwarns` | administrator | Clear warnings |
+| `!violations` / `/violations` | moderate_members | View violations |
+| `!clearviolations` / `/clearviolations` | administrator | Clear violations |
+| `!modlog` / `/modlog` | administrator | View moderation log |
+| `!modsettings` / `/modsettings` | administrator | Toggle Discord AutoMod DM |
 
 ---
 
 ## Dashboard
 
-Once the bot is running, access the dashboard at:
+Access at **http://localhost:8000**
 
-**http://localhost:8000**
-
-Default credentials (change immediately):
-- **Username:** `admin`
-- **Password:** `12345678910`
+Features:
+- **Live bot stats** — Uptime, cash, command rates, status
+- **Account controls** — Start/stop/pause individual bots
+- **Settings editor** — Full configuration with live save
+- **Proxy manager** — Import, test, assign proxies
+- **Captcha solver** — Manual captcha submission
+- **Appeals management** — Review and handle user appeals
+- **Security alerts** — View and respond to captcha challenges
+- **API key management** — Create and revoke API keys
+- **User management** — Add/remove dashboard users with roles
 
 ---
 
@@ -161,7 +199,7 @@ This tool is for **educational purposes only**. Using self-bots violates Discord
 
 ### Limey
 
-**Advanced OwO Bot Grinder** • Built by **LIMEY** • Made with ❤️
+**Discord Bot Ecosystem** • Built by **LIMEY** • Made with ❤️
 
 **⭐ Star this project if you find it useful!**
 

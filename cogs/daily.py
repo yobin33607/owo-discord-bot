@@ -29,32 +29,27 @@ class Daily(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.active = True
-        self.stats_file = 'data/stats_daily.json'
         self.last_run = self._load_last_run()
         self.last_daily_sent = 0
 
+    def _get_daily_path(self):
+        return "data/stats_daily.json"
+
     def _load_last_run(self):
-        if os.path.exists(self.stats_file):
-            try:
-                with open(self.stats_file, 'r') as f:
-                    data = json.load(f)
-                    return data.get(str(self.bot.user_id), 0)
-            except:
-                return 0
+        from utils.github_data_store import ghd
+        data = ghd.read_json(self._get_daily_path(), default={})
+        if data:
+            return data.get(str(self.bot.user_id), 0)
         return 0
 
     def _save_last_run(self, ts):
-        data = {}
-        if os.path.exists(self.stats_file):
-            try:
-                with open(self.stats_file, 'r') as f:
-                    data = json.load(f)
-            except:
-                pass
+        from utils.github_data_store import ghd
+        data = ghd.read_json(self._get_daily_path(), default={})
+        if data is None:
+            data = {}
         data[str(self.bot.user_id)] = ts
         try:
-            with open(self.stats_file, 'w') as f:
-                json.dump(data, f, indent=4)
+            ghd.write_json(self._get_daily_path(), data, message="Update daily stats")
         except:
             pass
 

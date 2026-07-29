@@ -40,6 +40,7 @@ from core.bot import LimeyBot
 from dashboard.app import app as flask_app
 import core.state as state
 from utils import proxy_manager
+from utils.github_data_store import ghd
 
 # ── Manager Bot (runs as subprocess with standard discord.py) ────
 _manager_bot_proc = None
@@ -87,10 +88,11 @@ def _start_manager_bot_subprocess():
     """Launch the manager bot as a subprocess (uses standard discord.py)."""
     global _manager_bot_proc
 
-    config_path = os.path.join(state.CONFIG_DIR, 'settings.json')
     try:
-        with open(config_path, 'r') as f:
-            cfg = json.load(f)
+        cfg = ghd.read_json("config/settings.json", default={})
+        if not cfg:
+            console.print("[dim]  Manager Bot config not found — skipping[/dim]")
+            return
         mgr_cfg = cfg.get('manager_bot', {})
         token = mgr_cfg.get('token', '')
         if not token:
@@ -152,10 +154,11 @@ async def main():
             console.print("\n[yellow]Shutting down. See you next time![/yellow]")
             sys.exit(0)
         try:
-            acc_path = os.path.join(state.CONFIG_DIR, 'accounts.json')
-            with open(acc_path, 'r') as f:
-                acc_data = json.load(f)
+            acc_data = ghd.read_json("config/accounts.json", default={"accounts": []})
+            if acc_data:
                 accounts = [a for a in acc_data.get('accounts', []) if a.get('enabled', True)]
+            else:
+                accounts = []
         except:
             accounts = []
         if not accounts:

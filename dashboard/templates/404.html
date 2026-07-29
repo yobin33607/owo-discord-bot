@@ -1,0 +1,573 @@
+<!--
+  This file is part of Limey.
+  Copyright (c) 2025-Present Limey
+
+  Limey is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  You should have received a copy of the GNU General Public License
+  along with Limey. If not, see <https://www.gnu.org/licenses/>.
+-->
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>404 — Not Found | Limey</title>
+    <link rel="icon" type="image/x-icon" href="/static/assets/limey.ico">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;800;900&family=Exo+2:wght@300;400;600;800&family=Rajdhani:wght@400;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #ff1f1f;
+            --primary-glow: rgba(255, 31, 31, 0.6);
+            --primary-dim: rgba(255, 31, 31, 0.12);
+            --accent: #00ff88;
+            --accent-glow: rgba(0, 255, 136, 0.5);
+            --bg: #050508;
+            --surface: rgba(12, 12, 16, 0.92);
+            --surface-hover: rgba(20, 20, 28, 0.95);
+            --text: #f1f5f9;
+            --text-muted: #8892a0;
+            --border: rgba(255, 255, 255, 0.06);
+            --font-heading: 'Orbitron', sans-serif;
+            --font-body: 'Rajdhani', sans-serif;
+            --font-mono: 'Roboto Mono', monospace;
+            --font-alt: 'Exo 2', sans-serif;
+        }
+
+        html {
+            height: 100%;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font-body);
+            overflow: hidden;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #bgCanvas {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            z-index: 1;
+            pointer-events: none;
+            background: repeating-linear-gradient(0deg,
+                    transparent,
+                    transparent 2px,
+                    rgba(0, 0, 0, 0.06) 2px,
+                    rgba(0, 0, 0, 0.06) 4px);
+        }
+
+        .content {
+            position: relative;
+            z-index: 2;
+            text-align: center;
+            padding: 24px;
+            max-width: 640px;
+        }
+
+        /* ─── Glitch 404 ─────────────────────────────── */
+        .glitch-wrapper {
+            position: relative;
+            margin-bottom: 16px;
+        }
+
+        .glitch {
+            font-family: var(--font-heading);
+            font-size: clamp(8rem, 25vw, 14rem);
+            font-weight: 900;
+            letter-spacing: 8px;
+            line-height: 1;
+            position: relative;
+            color: var(--primary);
+            text-shadow:
+                0 0 40px rgba(255, 31, 31, 0.3),
+                0 0 80px rgba(255, 31, 31, 0.1);
+            animation: glitch-skew 4s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
+        }
+
+        .glitch::before,
+        .glitch::after {
+            content: attr(data-text);
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.7;
+        }
+
+        .glitch::before {
+            color: #00ffff;
+            z-index: -1;
+            animation: glitch-clip 3s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
+            clip-path: polygon(0 0, 100% 0, 100% 35%, 0 35%);
+            transform: translate(-3px, -2px);
+            opacity: 0.5;
+        }
+
+        .glitch::after {
+            color: var(--accent);
+            z-index: -2;
+            animation: glitch-clip 3s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.5s infinite;
+            clip-path: polygon(0 65%, 100% 65%, 100% 100%, 0 100%);
+            transform: translate(3px, 2px);
+            opacity: 0.5;
+        }
+
+        @keyframes glitch-skew {
+            0%, 100% { transform: skew(0deg); }
+            2% { transform: skew(2deg); }
+            4% { transform: skew(-1deg); }
+            6% { transform: skew(0deg); }
+            20% { transform: skew(0deg); }
+            22% { transform: skew(-3deg); }
+            24% { transform: skew(1deg); }
+            26% { transform: skew(0deg); }
+            45% { transform: skew(0deg); }
+            47% { transform: skew(1deg); }
+            49% { transform: skew(-2deg); }
+            51% { transform: skew(0deg); }
+        }
+
+        @keyframes glitch-clip {
+            0%, 100% { clip-path: polygon(0 0, 100% 0, 100% 35%, 0 35%); }
+            15% { clip-path: polygon(0 15%, 100% 15%, 100% 50%, 0 50%); }
+            30% { clip-path: polygon(0 0, 100% 0, 100% 35%, 0 35%); }
+            50% { clip-path: polygon(0 60%, 100% 60%, 100% 85%, 0 85%); }
+            65% { clip-path: polygon(0 20%, 100% 20%, 100% 45%, 0 45%); }
+            80% { clip-path: polygon(0 0, 100% 0, 100% 35%, 0 35%); }
+        }
+
+        /* ─── Scanline overlay ───────────────────────── */
+        .scanline {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.04);
+            animation: scanline 6s linear infinite;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        @keyframes scanline {
+            0% { top: -2px; }
+            100% { top: 100%; }
+        }
+
+        /* ─── Error code badge ───────────────────────── */
+        .error-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 31, 31, 0.2);
+            background: rgba(255, 31, 31, 0.06);
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: var(--primary);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+        }
+
+        .error-badge .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--primary);
+            box-shadow: 0 0 8px var(--primary-glow);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.3; transform: scale(0.8); }
+        }
+
+        /* ─── Terminal frame ─────────────────────────── */
+        .terminal-frame {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 24px 28px;
+            margin: 28px auto 32px;
+            max-width: 480px;
+            text-align: left;
+            backdrop-filter: blur(8px);
+        }
+
+        .terminal-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .terminal-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .terminal-dot:nth-child(1) { background: #ff5f56; }
+        .terminal-dot:nth-child(2) { background: #ffbd2e; }
+        .terminal-dot:nth-child(3) { background: #27c93f; }
+
+        .terminal-title {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: #555;
+            margin-left: 8px;
+            letter-spacing: 0.5px;
+        }
+
+        .terminal-body {
+            font-family: var(--font-mono);
+            font-size: 0.78rem;
+            line-height: 1.8;
+            color: var(--text-muted);
+        }
+
+        .terminal-body .line {
+            opacity: 0;
+            animation: typeIn 0.4s ease forwards;
+        }
+
+        .terminal-body .line:nth-child(1) { animation-delay: 0.2s; }
+        .terminal-body .line:nth-child(2) { animation-delay: 0.6s; }
+        .terminal-body .line:nth-child(3) { animation-delay: 1.0s; }
+        .terminal-body .line:nth-child(4) { animation-delay: 1.4s; }
+
+        .terminal-body .prompt {
+            color: var(--accent);
+        }
+
+        .terminal-body .cmd {
+            color: #e0e0e0;
+        }
+
+        .terminal-body .error-msg {
+            color: var(--primary);
+        }
+
+        .terminal-body .dim {
+            color: #555;
+        }
+
+        .terminal-cursor {
+            display: inline-block;
+            width: 8px;
+            height: 14px;
+            background: var(--accent);
+            animation: blink 1s step-end infinite;
+            vertical-align: text-bottom;
+            margin-left: 4px;
+        }
+
+        @keyframes typeIn {
+            to { opacity: 1; }
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        /* ─── Description ────────────────────────────── */
+        .description {
+            font-family: var(--font-alt);
+            font-size: 1.05rem;
+            color: var(--text-muted);
+            line-height: 1.6;
+            margin-bottom: 36px;
+        }
+
+        .description strong {
+            color: #d0d0d0;
+        }
+
+        /* ─── Action buttons ─────────────────────────── */
+        .actions {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn-primary {
+            padding: 14px 40px;
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-family: var(--font-heading);
+            font-size: 0.85rem;
+            font-weight: 700;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 30px rgba(255, 31, 31, 0.3);
+        }
+
+        .btn-primary:hover {
+            background: #ff3a3a;
+            box-shadow: 0 0 50px rgba(255, 31, 31, 0.5);
+            transform: translateY(-2px);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0) scale(0.97);
+        }
+
+        .btn-secondary {
+            padding: 14px 40px;
+            background: transparent;
+            color: var(--text);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 8px;
+            font-family: var(--font-heading);
+            font-size: 0.85rem;
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            box-shadow: 0 0 30px rgba(255, 31, 31, 0.1);
+            transform: translateY(-2px);
+        }
+
+        /* ─── Footer ──────────────────────────────────── */
+        .footer-note {
+            margin-top: 48px;
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: #333;
+            letter-spacing: 1px;
+        }
+
+        .footer-note a {
+            color: #555;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .footer-note a:hover {
+            color: var(--primary);
+        }
+
+        /* ─── Responsive ─────────────────────────────── */
+        @media (max-width: 480px) {
+            .glitch {
+                font-size: clamp(6rem, 20vw, 10rem);
+            }
+
+            .terminal-frame {
+                padding: 16px 18px;
+                margin: 20px auto 24px;
+            }
+
+            .terminal-body {
+                font-size: 0.7rem;
+            }
+
+            .actions {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .btn-primary,
+            .btn-secondary {
+                width: 100%;
+                max-width: 260px;
+                text-align: center;
+            }
+
+            .description {
+                font-size: 0.95rem;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .glitch {
+                font-size: clamp(7rem, 22vw, 11rem);
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="bgCanvas"></canvas>
+    <div class="scanline"></div>
+
+    <div class="content">
+
+        <div class="glitch-wrapper">
+            <div class="glitch" data-text="404">404</div>
+        </div>
+
+        <div class="error-badge">
+            <span class="dot"></span>
+            ERROR — PAGE NOT FOUND
+        </div>
+
+        <p class="description">
+            The page you're looking for doesn't exist, was moved,<br>
+            or was <strong>deleted</strong> by an unknown force.
+        </p>
+
+        <div class="terminal-frame">
+            <div class="terminal-header">
+                <span class="terminal-dot"></span>
+                <span class="terminal-dot"></span>
+                <span class="terminal-dot"></span>
+                <span class="terminal-title">~/limey — bash</span>
+            </div>
+            <div class="terminal-body">
+                <div class="line">
+                    <span class="prompt">$</span>
+                    <span class="cmd"> curl -I {{ request.url }}</span>
+                </div>
+                <div class="line">
+                    <span class="dim">HTTP/2 404</span>
+                </div>
+                <div class="line">
+                    <span class="prompt">$</span>
+                    <span class="cmd"> ls ./routes/</span>
+                </div>
+                <div class="line">
+                    <span class="error-msg">ls: ./routes/{{ first_segment }}: No such file or directory</span>
+                    <span class="terminal-cursor"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="actions">
+            <a href="/" class="btn-primary">← Back to Home</a>
+            <a href="javascript:history.back()" class="btn-secondary">Go Back</a>
+        </div>
+
+        <div class="footer-note">
+            <a href="https://github.com/cubiced0" target="_blank">LIMEY SELF &copy; 2025</a>
+        </div>
+
+    </div>
+
+    <script>
+        // ─── Background particle canvas ─────────────────
+        const canvas = document.getElementById('bgCanvas');
+        const ctx = canvas.getContext('2d');
+        let W, H;
+
+        function resize() {
+            W = canvas.width = window.innerWidth;
+            H = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        class Particle {
+            constructor() { this.reset(); }
+            reset() {
+                this.x = Math.random() * W;
+                this.y = Math.random() * H;
+                this.vx = (Math.random() - 0.5) * 0.3;
+                this.vy = (Math.random() - 0.5) * 0.3;
+                this.r = Math.random() * 1.8 + 0.5;
+            }
+            step() {
+                this.x += this.vx;
+                this.y += this.vy;
+                if (this.x < 0 || this.x > W) this.vx *= -1;
+                if (this.y < 0 || this.y > H) this.vy *= -1;
+            }
+        }
+
+        const PARTICLES = Array.from({ length: 50 }, () => new Particle());
+
+        function drawParticles() {
+            ctx.fillStyle = 'rgba(5, 5, 8, 0.18)';
+            ctx.fillRect(0, 0, W, H);
+
+            PARTICLES.forEach(p => p.step());
+
+            for (let i = 0; i < PARTICLES.length; i++) {
+                for (let j = i + 1; j < PARTICLES.length; j++) {
+                    const dx = PARTICLES[i].x - PARTICLES[j].x;
+                    const dy = PARTICLES[i].y - PARTICLES[j].y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < 120) {
+                        ctx.strokeStyle = `rgba(255, 31, 31, ${(1 - dist / 120) * 0.12})`;
+                        ctx.lineWidth = 0.5;
+                        ctx.beginPath();
+                        ctx.moveTo(PARTICLES[i].x, PARTICLES[i].y);
+                        ctx.lineTo(PARTICLES[j].x, PARTICLES[j].y);
+                        ctx.stroke();
+                    }
+                }
+                ctx.fillStyle = 'rgba(255, 31, 31, 0.15)';
+                ctx.beginPath();
+                ctx.arc(PARTICLES[i].x, PARTICLES[i].y, PARTICLES[i].r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        let rafTime = 0;
+        function loop(ts) {
+            requestAnimationFrame(loop);
+            drawParticles();
+        }
+        requestAnimationFrame(ts => { rafTime = ts; requestAnimationFrame(loop); });
+
+        // ─── Parallax glitch effect on mouse ──────────
+        const glitch = document.querySelector('.glitch');
+        document.addEventListener('mousemove', (e) => {
+            const x = (e.clientX / window.innerWidth - 0.5) * 6;
+            const y = (e.clientY / window.innerHeight - 0.5) * 6;
+            glitch.style.transform = `skew(${x * 0.5}deg) translate(${x * 0.3}px, ${y * 0.3}px)`;
+        });
+        document.addEventListener('mouseleave', () => {
+            glitch.style.transform = '';
+        });
+    </script>
+</body>
+</html>

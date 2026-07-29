@@ -1,0 +1,358 @@
+/* Appeals Management Page Styles */
+
+.appeals-header {
+    margin-bottom: 20px;
+}
+
+.appeals-toolbar {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    align-items: center;
+}
+
+.appeals-filter-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.appeals-filter {
+    padding: 6px 16px;
+    font-size: 0.8rem;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: #aaa;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: var(--font-mono);
+}
+
+.appeals-filter:hover {
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    border-color: rgba(255,255,255,0.15);
+}
+
+.appeals-filter.active {
+    background: var(--primary);
+    color: #000;
+    border-color: var(--primary);
+    font-weight: 600;
+}
+
+.appeals-stats-bar {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+
+.appeals-stats-bar .proxy-stat-card {
+    flex: 1;
+    min-width: 80px;
+    text-align: center;
+}
+
+.appeals-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.appeal-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.appeal-card:hover {
+    border-color: rgba(255,255,255,0.12);
+}
+
+.appeal-pending {
+    border-left: 3px solid #ffaa00;
+}
+
+.appeal-approved {
+    border-left: 3px solid #00ff88;
+}
+
+.appeal-rejected {
+    border-left: 3px solid #ff4444;
+}
+
+.appeal-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s ease;
+}
+
+.appeal-card-header:hover {
+    background: rgba(255,255,255,0.03);
+}
+
+.appeal-card-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.appeal-card-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.appeal-status-badge {
+    font-size: 0.7rem;
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.appeal-id {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--primary);
+    font-weight: 600;
+    min-width: 40px;
+}
+
+.appeal-user {
+    font-size: 0.9rem;
+    color: #fff;
+    font-weight: 500;
+}
+
+.appeal-type {
+    font-size: 0.75rem;
+    color: #888;
+    background: rgba(255,255,255,0.05);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+}
+
+.appeal-date {
+    font-size: 0.75rem;
+    color: #666;
+    font-family: var(--font-mono);
+}
+
+.appeal-chevron {
+    font-size: 0.7rem;
+    color: #555;
+    transition: transform 0.2s ease;
+}
+
+.appeal-card-body {
+    padding: 0 16px 16px 16px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    animation: appealSlideIn 0.2s ease;
+}
+
+@keyframes appealSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.appeal-section {
+    margin-top: 12px;
+}
+
+.appeal-section label {
+    display: block;
+    font-size: 0.7rem;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+    font-family: var(--font-mono);
+}
+
+.appeal-text {
+    font-size: 0.85rem;
+    color: #ccc;
+    line-height: 1.5;
+    background: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 6px;
+    padding: 10px 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.appeal-review-info {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 6px;
+    font-size: 0.8rem;
+    color: #888;
+}
+
+.appeal-review-info div {
+    margin-bottom: 4px;
+}
+
+.appeal-review-info div:last-child {
+    margin-bottom: 0;
+}
+
+.appeal-review-info strong {
+    color: #aaa;
+}
+
+.appeal-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+}
+
+.appeal-notes-input {
+    width: 100%;
+    resize: vertical;
+    min-height: 60px;
+    margin-top: 4px;
+}
+
+.review-modal-wrap {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.review-modal-wrap .appeal-section {
+    margin-top: 8px;
+}
+
+.review-modal-wrap .appeal-text {
+    font-size: 0.8rem;
+    padding: 8px 10px;
+}
+
+/* Violations section */
+.violations-section {
+    border-top: 1px solid rgba(255,255,255,0.06);
+    padding-top: 12px;
+    margin-top: 16px;
+}
+
+.violations-header {
+    color: #ff8800 !important;
+    font-size: 0.75rem !important;
+}
+
+.violations-count {
+    color: #666;
+    font-weight: 400;
+    font-size: 0.7rem;
+}
+
+.violations-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.violation-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 6px;
+    font-size: 0.78rem;
+}
+
+.violation-type {
+    font-family: var(--font-mono);
+    color: #ffaa44;
+    font-weight: 600;
+    min-width: 70px;
+}
+
+.violation-date {
+    color: #666;
+    font-size: 0.7rem;
+    font-family: var(--font-mono);
+    min-width: 120px;
+}
+
+.violation-reason {
+    color: #aaa;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.violation-none {
+    color: #00ff88;
+    font-size: 0.8rem;
+    padding: 8px 0;
+}
+
+.violation-more {
+    color: #666;
+    font-size: 0.75rem;
+    font-style: italic;
+    padding: 4px 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .appeals-filter-group {
+        width: 100%;
+    }
+    .appeals-filter {
+        flex: 1;
+        text-align: center;
+        font-size: 0.75rem;
+        padding: 6px 8px;
+    }
+    .appeal-card-left {
+        gap: 6px;
+    }
+    .appeal-card-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    .appeal-card-right {
+        width: 100%;
+        justify-content: space-between;
+    }
+    .appeal-date {
+        font-size: 0.65rem;
+    }
+    .appeal-status-badge {
+        font-size: 0.65rem;
+        padding: 1px 8px;
+    }
+    .appeals-stats-bar .proxy-stat-card {
+        min-width: 60px;
+        padding: 8px;
+    }
+}

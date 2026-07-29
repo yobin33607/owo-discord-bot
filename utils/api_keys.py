@@ -10,14 +10,12 @@ Usage (from your code):
 """
 
 import json
-import os
 import secrets
 import time
 from datetime import datetime
 
-import core.state as state
+from utils.github_data_store import ghd
 
-API_KEYS_FILE = os.path.join(state.CONFIG_DIR, "api_keys.json")
 KEY_PREFIX = "lmk_"  # Limey API Key prefix
 
 
@@ -25,31 +23,17 @@ KEY_PREFIX = "lmk_"  # Limey API Key prefix
 #  Internal helpers
 # ─────────────────────────────────────────────────────────
 
-def _ensure_file():
-    """Create the API keys file if it doesn't exist."""
-    if not os.path.exists(state.CONFIG_DIR):
-        os.makedirs(state.CONFIG_DIR, exist_ok=True)
-    if not os.path.exists(API_KEYS_FILE):
-        with open(API_KEYS_FILE, "w") as f:
-            json.dump({"keys": {}}, f, indent=4)
-
-
 def _load_keys():
-    """Load all API keys from the file."""
-    _ensure_file()
-    try:
-        with open(API_KEYS_FILE, "r") as f:
-            data = json.load(f)
-        return data.get("keys", {})
-    except (json.JSONDecodeError, OSError):
+    """Load all API keys from the GitHub data repo."""
+    data = ghd.read_json("config/api_keys.json", default={"keys": {}})
+    if data is None:
         return {}
+    return data.get("keys", {})
 
 
 def _save_keys(keys):
-    """Save all API keys to the file."""
-    _ensure_file()
-    with open(API_KEYS_FILE, "w") as f:
-        json.dump({"keys": keys}, f, indent=4)
+    """Save all API keys to the GitHub data repo."""
+    ghd.write_json("config/api_keys.json", {"keys": keys}, message="Update API keys")
 
 
 # ─────────────────────────────────────────────────────────

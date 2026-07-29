@@ -28,29 +28,25 @@ import os
 class LimeyCursePray(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.state_file = "data/cp_state.json"
         self.last_run = self._load_last_run()
 
+    def _get_state_path(self):
+        return "data/cp_state.json"
+
     def _load_last_run(self):
-        if os.path.exists(self.state_file):
-            try:
-                with open(self.state_file, "r") as f:
-                    data = json.load(f)
-                    return data.get("cp_last_run", 0)
-            except:
-                pass
+        from utils.github_data_store import ghd
+        data = ghd.read_json(self._get_state_path(), default={})
+        if data:
+            return data.get("cp_last_run", 0)
         return 0
 
     def _save_last_run(self):
-        data = {}
-        if os.path.exists(self.state_file):
-            try:
-                with open(self.state_file, "r") as f:
-                    data = json.load(f)
-            except:
-                pass
-        with open(self.state_file, "w") as f:
-            json.dump(data, f)
+        from utils.github_data_store import ghd
+        data = ghd.read_json(self._get_state_path(), default={})
+        if data is None:
+            data = {}
+        data["cp_last_run"] = time.time()
+        ghd.write_json(self._get_state_path(), data, message="Update curse/pray state")
 
     def trigger_action(self):
         cmds_cfg = self.bot.config.get("commands", {})

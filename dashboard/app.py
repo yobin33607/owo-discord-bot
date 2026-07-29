@@ -37,6 +37,23 @@ import urllib.parse
 import requests
 import re
 
+# ── Appeals System ───────────────────────────────────────
+
+from utils.github_data_store import ghd
+
+
+def _load_appeals_data():
+    """Load appeals from GitHub data repo."""
+    data = ghd.read_json("config/appeals.json", default=None)
+    if data is not None:
+        return data
+    return {"appeals": [], "next_id": 1}
+
+
+def _save_appeals_data(data):
+    """Save appeals to GitHub data repo."""
+    ghd.write_json("config/appeals.json", data)
+
 _original_getaddrinfo = socket.getaddrinfo
 
 def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
@@ -56,7 +73,6 @@ except AttributeError:
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
-AUTH_FILE = os.path.join(state.CONFIG_DIR, 'auth.json')
 LOGIN_ATTEMPTS = {}
 BLOCK_DURATION = 300  
 MAX_ATTEMPTS = 5
@@ -78,32 +94,31 @@ def _get_api_key_from_request():
 
 
 def load_auth_config():
-    if os.path.exists(AUTH_FILE):
-        try:
-            with open(AUTH_FILE, 'r') as f:
-                cfg = json.load(f)
+    try:
+        cfg = ghd.read_json("config/auth.json", default=None)
+        if cfg is None:
+            return None
+        
+        # Migrate old single-user schema to new multi-user schema
+        changed = False
+        if 'users' not in cfg:
+            old_user = cfg.get('username', 'admin')
+            old_pass = cfg.get('password', '')
+            cfg['users'] = [{'username': old_user, 'password': old_pass, 'role': 'admin'}]
+            cfg.pop('username', None)
+            cfg.pop('password', None)
+            changed = True
+        
+        if cfg.get('secret_key', '').startswith("generate_a_random_long_secret_key_here_please") or not cfg.get('secret_key'):
+            cfg['secret_key'] = secrets.token_hex(32)
+            changed = True
+        
+        if changed:
+            ghd.write_json("config/auth.json", cfg)
             
-            # Migrate old single-user schema to new multi-user schema
-            changed = False
-            if 'users' not in cfg:
-                old_user = cfg.get('username', 'admin')
-                old_pass = cfg.get('password', '')
-                cfg['users'] = [{'username': old_user, 'password': old_pass, 'role': 'admin'}]
-                cfg.pop('username', None)
-                cfg.pop('password', None)
-                changed = True
-            
-            if cfg.get('secret_key', '').startswith("generate_a_random_long_secret_key_here_please") or not cfg.get('secret_key'):
-                cfg['secret_key'] = secrets.token_hex(32)
-                changed = True
-            
-            if changed:
-                with open(AUTH_FILE, 'w') as f:
-                    json.dump(cfg, f, indent=4)
-                
-            return cfg
-        except:
-            pass
+        return cfg
+    except:
+        pass
     return None
 
 auth_cfg = load_auth_config()
@@ -215,33 +230,27 @@ def protect_large_ints(obj):
 
 # ── Discord Account Linking ────────────────────────────
 
-DISCORD_LINKS_FILE = os.path.join(state.CONFIG_DIR, 'discord_links.json')
-
 
 def load_discord_links():
-    """Load Discord account links from file."""
-    if os.path.exists(DISCORD_LINKS_FILE):
-        try:
-            with open(DISCORD_LINKS_FILE, 'r') as f:
-                return json.load(f)
-        except:
-            pass
+    """Load Discord account links from GitHub data repo."""
+    data = ghd.read_json("config/discord_links.json", default=None)
+    if data is not None:
+        return data
     return {"links": []}
 
 
 def save_discord_links(data):
-    """Save Discord account links to file."""
-    with open(DISCORD_LINKS_FILE, 'w') as f:
-        json.dump(data, f, indent=4)
+    """Save Discord account links to GitHub data repo."""
+    ghd.write_json("config/discord_links.json", data)
 
 
 def get_discord_oauth_config():
-    """Load Discord OAuth config from settings.json."""
+    """Load Discord OAuth config from settings.json via GitHub."""
     try:
-        settings_path = os.path.join(state.CONFIG_DIR, 'settings.json')
-        with open(settings_path, 'r') as f:
-            cfg = json.load(f)
-        return cfg.get('discord_oauth', {})
+        cfg = ghd.read_json("config/settings.json", default={})
+        if cfg:
+            return cfg.get('discord_oauth', {})
+        return {}
     except:
         return {}
 
@@ -482,8 +491,7 @@ def change_password():
         return jsonify({'success': False, 'error': 'User not found'}), 404
 
     auth_cfg['users'] = users
-    with open(AUTH_FILE, 'w') as f:
-        json.dump(auth_cfg, f, indent=4)
+    ghd.write_json("config/auth.json", auth_cfg)
 
     return jsonify({'success': True, 'message': 'Password changed successfully'})
 
@@ -559,6 +567,116 @@ def verify_api_key():
             'role': key_info['role'],
         })
     return jsonify({'success': False, 'valid': False, 'error': 'Invalid or revoked API key'}), 401
+
+# ── Violations API ──────────────────────────────────────
+
+
+def _load_violations_for_user(user_id):
+    """Load all violations for a user across all guilds from moderation.json."""
+    data = ghd.read_json("config/moderation.json", default={})
+
+    user_key = str(user_id)
+    violations = data.get('violations', {})
+    results = []
+    for guild_key, guild_violations in violations.items():
+        if user_key in guild_violations:
+            for v in guild_violations[user_key]:
+                v['guild_id'] = guild_key
+                results.append(v)
+    results.sort(key=lambda v: v.get('timestamp', 0), reverse=True)
+    return results[:50]
+
+
+@app.route('/api/violations/<user_id>')
+@require_permission('manage')
+def api_violations(user_id):
+    """Get violations for a specific Discord user ID."""
+    violations = _load_violations_for_user(user_id)
+    return jsonify({'success': True, 'violations': violations, 'total': len(violations)})
+
+
+# ── Appeals API Routes ──────────────────────────────────
+
+@app.route('/api/appeals')
+@require_permission('manage')
+def api_appeals_list():
+    """List appeals. Optional query params: status (pending|approved|rejected|all)"""
+    status_filter = request.args.get('status', 'pending')
+    limit = request.args.get('limit', 50, type=int)
+
+    data = _load_appeals_data()
+    appeals = data.get('appeals', [])
+
+    if status_filter != 'all':
+        appeals = [a for a in appeals if a.get('status') == status_filter]
+
+    appeals.sort(key=lambda a: a.get('created_at', 0), reverse=True)
+    appeals = appeals[:limit]
+
+    return jsonify({'success': True, 'appeals': appeals, 'total': len(appeals)})
+
+
+@app.route('/api/appeals/<int:appeal_id>')
+@require_permission('manage')
+def api_appeals_detail(appeal_id):
+    """Get a single appeal's full details."""
+    data = _load_appeals_data()
+    for a in data.get('appeals', []):
+        if a.get('id') == appeal_id:
+            return jsonify({'success': True, 'appeal': a})
+    return jsonify({'success': False, 'error': 'Appeal not found'}), 404
+
+
+@app.route('/api/appeals/<int:appeal_id>/review', methods=['POST'])
+@require_permission('manage')
+def api_appeals_review(appeal_id):
+    """Review (approve/reject) an appeal."""
+    payload = request.json or {}
+    action = payload.get('action', '').strip().lower()
+    notes = payload.get('notes', '').strip()
+
+    if action not in ('approve', 'reject'):
+        return jsonify({'success': False, 'error': 'Action must be "approve" or "reject"'}), 400
+
+    data = _load_appeals_data()
+    target = None
+    for a in data.get('appeals', []):
+        if a.get('id') == appeal_id:
+            target = a
+            break
+
+    if not target:
+        return jsonify({'success': False, 'error': f'Appeal #{appeal_id} not found'}), 404
+
+    if target.get('status') != 'pending':
+        return jsonify({'success': False, 'error': f'Appeal #{appeal_id} is already {target["status"]}'}), 400
+
+    new_status = 'approved' if action == 'approve' else 'rejected'
+    reviewer = session.get('username', 'Unknown')
+    if getattr(g, 'api_key_auth', False):
+        reviewer = getattr(g, 'api_key_user', 'API')
+
+    target['status'] = new_status
+    target['reviewed_by'] = reviewer
+    target['review_notes'] = notes or f'{action.capitalize()} by {reviewer}'
+    target['reviewed_at'] = time.time()
+
+    _save_appeals_data(data)
+
+    return jsonify({
+        'success': True,
+        'message': f'Appeal #{appeal_id} has been {new_status}.',
+        'appeal': target
+    })
+
+
+@app.errorhandler(404)
+def not_found(e):
+    """Render the custom 404 error page."""
+    path = request.path.strip('/')
+    first_segment = path.split('/')[0] if path else 'unknown'
+    return render_template('404.html', first_segment=first_segment), 404
+
 
 @app.route('/')
 def home():
@@ -652,8 +770,7 @@ def auth_users():
             users.append({'username': username, 'password': password, 'role': role})
         
         cfg['users'] = users
-        with open(AUTH_FILE, 'w') as f:
-            json.dump(cfg, f, indent=4)
+        ghd.write_json("config/auth.json", cfg)
         
         return jsonify({'success': True, 'message': f'User {username} saved'})
     
@@ -686,8 +803,7 @@ def auth_users_delete(username):
         return jsonify({'success': False, 'error': 'Cannot delete the last admin user'}), 400
     
     cfg['users'] = [u for u in users if u['username'] != username]
-    with open(AUTH_FILE, 'w') as f:
-        json.dump(cfg, f, indent=4)
+    ghd.write_json("config/auth.json", cfg)
     
     return jsonify({'success': True, 'message': f'User {username} deleted'})
 
@@ -869,15 +985,13 @@ def settings():
             save_to_all = request.args.get('all_accounts') == 'true' or request.args.get('all') == 'true'
             
             if save_to_all:
-                global_path = os.path.join(state.CONFIG_DIR, 'settings.json')
-                with open(global_path, 'w') as f:
-                    json.dump(new_config, f, indent=4)
+                ghd.write_json("config/settings.json", new_config, message="Update global settings from dashboard")
                 
-                for filename in os.listdir(state.CONFIG_DIR):
-                    if filename.startswith("settings_") and filename.endswith(".json"):
-                        file_path = os.path.join(state.CONFIG_DIR, filename)
-                        with open(file_path, 'w') as f:
-                            json.dump(new_config, f, indent=4)
+                # Update all per-user settings files as well
+                settings_files = ghd.list_files("config")
+                for fpath in settings_files:
+                    if fpath.startswith("config/settings_") and fpath.endswith(".json"):
+                        ghd.write_json(fpath, new_config, message=f"Update {fpath} from dashboard (all accounts)")
                 
                 for bot in state.bot_instances:
                     asyncio.run_coroutine_threadsafe(bot.sync_settings(new_config), bot.loop)
@@ -886,12 +1000,11 @@ def settings():
             else:
                 if account_id:
                     safe_id = re.sub(r'[^a-zA-Z0-9_-]', '', account_id) if account_id else ''
-                    config_path = os.path.join(state.CONFIG_DIR, f'settings_{safe_id}.json')
+                    config_path = f'config/settings_{safe_id}.json'
                 else:
-                    config_path = os.path.join(state.CONFIG_DIR, 'settings.json')
+                    config_path = 'config/settings.json'
                 
-                with open(config_path, 'w') as f:
-                    json.dump(new_config, f, indent=4)
+                ghd.write_json(config_path, new_config, message=f"Update settings from dashboard")
                 
                 for bot in state.bot_instances:
                     if (not account_id) or (bot.user and str(bot.user.id) == str(account_id)):
@@ -900,27 +1013,20 @@ def settings():
                 state.log_command("SYS", f"Settings updated for {'Account ' + account_id if account_id else 'Global'}", "success")
             
             return jsonify({"status": "success"})
-        except Exception:
-            return jsonify({"status": "error", "message": "Failed to save settings"}), 500
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"Failed to save settings: {e}"}), 500
     else:
         if account_id:
             safe_id = re.sub(r'[^a-zA-Z0-9_-]', '', account_id)
-            config_path = os.path.join(state.CONFIG_DIR, f'settings_{safe_id}.json')
+            config_path = f'config/settings_{safe_id}.json'
         else:
-            config_path = os.path.join(state.CONFIG_DIR, 'settings.json')
+            config_path = 'config/settings.json'
         
         try:
-            if os.path.exists(config_path):
-                with open(config_path, 'r') as f:
-                    data = json.load(f)
-            elif account_id:
-                global_path = os.path.join(state.CONFIG_DIR, 'settings.json')
-                if os.path.exists(global_path):
-                    with open(global_path, 'r') as f:
-                        data = json.load(f)
-                else:
-                    data = {}
-            else:
+            data = ghd.read_json(config_path, default=None)
+            if data is None and account_id:
+                data = ghd.read_json("config/settings.json", default={})
+            elif data is None:
                 data = {}
             
             # Ensure manager_bot and discord_oauth sections appear in the config UI
@@ -953,7 +1059,6 @@ def settings():
 @app.route('/api/accounts/config', methods=['GET', 'POST'])
 @login_required
 def accounts_config_api():
-    accounts_path = os.path.join(state.CONFIG_DIR, 'accounts.json')
     if request.method == 'POST':
         user_role = session.get('role', 'view')
         if ROLE_HIERARCHY.get(user_role, 0) < ROLE_HIERARCHY.get('manage', 20):
@@ -961,22 +1066,20 @@ def accounts_config_api():
         payload = request.json or {}
         accounts = payload.get('accounts', payload if isinstance(payload, list) else [])
         try:
-            with open(accounts_path, 'w', encoding='utf-8') as f:
-                json.dump({'accounts': accounts}, f, indent=4)
+            ghd.write_json("config/accounts.json", {"accounts": accounts}, message="Update accounts from dashboard")
             from utils import proxy_manager
             proxy_manager.sync_proxy_assignments()
             for bot in state.bot_instances:
                 bot.accounts = accounts
             state.log_command("SYS", "Accounts config updated. Restart recommended.", "success")
             return jsonify({"status": "success"})
-        except Exception:
-            return jsonify({"status": "error", "message": "Failed to save accounts config"}), 500
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"Failed to save accounts config: {e}"}), 500
 
     try:
         from utils import proxy_manager
-        with open(accounts_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        accounts = data.get('accounts', [])
+        account_data = ghd.read_json("config/accounts.json", default={"accounts": []})
+        accounts = account_data.get('accounts', [])
         for acc in accounts:
             if acc.get('token'):
                 acc['token_masked'] = proxy_manager.mask_token(acc['token'])
@@ -994,22 +1097,19 @@ def accounts_api():
             return jsonify({'success': False, 'error': 'Insufficient permissions'}), 403
         new_accounts = request.json
         try:
-            accounts_path = os.path.join(state.CONFIG_DIR, 'accounts.json')
-            with open(accounts_path, 'w') as f:
-                json.dump(new_accounts, f, indent=4)
+            ghd.write_json("config/accounts.json", new_accounts, message="Update accounts from dashboard")
 
             for bot in state.bot_instances:
                 bot.accounts = new_accounts.get('accounts', new_accounts) if isinstance(new_accounts, dict) else new_accounts
 
             state.log_command("SYS", "Accounts updated successfully. Restart recommended.", "success")
             return jsonify({"status": "success"})
-        except Exception:
-            return jsonify({"status": "error", "message": "Failed to save accounts config"}), 500
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"Failed to save accounts config: {e}"}), 500
     else:
         try:
-            accounts_path = os.path.join(state.CONFIG_DIR, 'accounts.json')
-            with open(accounts_path, 'r') as f:
-                return jsonify(json.load(f))
+            account_data = ghd.read_json("config/accounts.json", default={"accounts": []})
+            return jsonify(account_data)
         except Exception:
             return jsonify([])
 

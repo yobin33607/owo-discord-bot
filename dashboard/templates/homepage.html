@@ -17,7 +17,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Limey — Self-Bot Automation</title>
+    <title>Limey — Discord Bot Ecosystem</title>
     <link rel="icon" type="image/x-icon" href="/static/assets/limey.ico">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -700,17 +700,17 @@
         <section class="hero">
             <div class="hero-badge">
                 <span class="dot"></span>
-                v2.4.3 — Self-Bot Platform
+                v2.5.0 — Moderation & Automation Platform
             </div>
 
             <h1>
                 <span class="highlight">Limey</span><br>
-                <span class="highlight-green">Automate. Dominate.</span>
+                <span class="highlight-green">Manage. Moderate. Automate.</span>
             </h1>
 
             <p class="hero-sub">
-                A powerful self-bot automation platform for Discord.
-                Hunt, battle, farm, and level up — on autopilot.
+                A complete Discord bot ecosystem with moderation tools, appeals management,
+                Discord AutoMod integration, and a powerful web dashboard.
             </p>
 
             <div class="hero-actions">
@@ -720,16 +720,16 @@
 
             <div class="hero-stats" id="heroStats">
                 <div class="hero-stat">
-                    <div class="hero-stat-number">10+</div>
-                    <div class="hero-stat-label">Automation Modules</div>
+                    <div class="hero-stat-number">30+</div>
+                    <div class="hero-stat-label">Slash Commands</div>
                 </div>
                 <div class="hero-stat">
                     <div class="hero-stat-number">24/7</div>
                     <div class="hero-stat-label">Uptime</div>
                 </div>
                 <div class="hero-stat">
-                    <div class="hero-stat-number">99%</div>
-                    <div class="hero-stat-label">Captcha Solve Rate</div>
+                    <div class="hero-stat-number">Web</div>
+                    <div class="hero-stat-label">Dashboard</div>
                 </div>
                 <div class="hero-stat">
                     <div class="hero-stat-number">Multi</div>
@@ -746,36 +746,43 @@
         <section class="features" id="features">
             <div class="section-header reveal">
                 <h2>Built for <span class="highlight">Power</span></h2>
-                <p>Everything you need to automate and manage your Discord experience</p>
+                <p>Everything you need to moderate and manage your Discord server</p>
             </div>
 
             <div class="features-grid">
                 <div class="feature-card reveal">
-                    <div class="feature-icon">🎯</div>
-                    <h3>Auto Hunt & Battle</h3>
-                    <p>Intelligent hunting and battle automation with configurable strategies, cooldown management, and real-time performance tracking.</p>
+                    <div class="feature-icon">🛡️</div>
+                    <h3>Moderation Suite</h3>
+                    <p>Full moderation toolkit with warn, kick, ban, timeout, mute, purge, lockdown, and slowmode. All actions tracked with a violations system.</p>
                     <span class="feature-tag">Core</span>
                 </div>
 
                 <div class="feature-card reveal">
-                    <div class="feature-icon">💎</div>
-                    <h3>Gem Management</h3>
-                    <p>Smart gem usage system with tier-based selection. Auto-enable lucky gems for rarity quests, dynamic gem sets.</p>
-                    <span class="feature-tag">Optimization</span>
+                    <div class="feature-icon">🤖</div>
+                    <h3>Discord AutoMod</h3>
+                    <p>Integrates with Discord's native AutoMod to send DM warnings when users trigger rules. Fetches rule names for clear notifications.</p>
+                    <span class="feature-tag">Integration</span>
                 </div>
 
                 <div class="feature-card reveal">
-                    <div class="feature-icon">🛡️</div>
-                    <h3>Captcha Solving</h3>
-                    <p>Multi-service captcha solver with hCaptcha, YesCaptcha, AntiCaptcha, NopeCHA, and Captcha.ly support. Auto-solve with ONNX AI models.</p>
-                    <span class="feature-tag">Security</span>
+                    <div class="feature-icon">📋</div>
+                    <h3>Appeals System</h3>
+                    <p>Users can appeal bans/mutes via Discord commands. Mods review, approve, or reject appeals from the dashboard with full violation history.</p>
+                    <span class="feature-tag">Management</span>
                 </div>
 
                 <div class="feature-card reveal">
                     <div class="feature-icon">📊</div>
-                    <h3>Real-Time Dashboard</h3>
-                    <p>Live web dashboard with performance charts, command scheduling, quest tracking, cash history, and session analytics.</p>
+                    <h3>Web Dashboard</h3>
+                    <p>Live moderation dashboard with appeal management, account controls, settings editor, proxy manager, captcha solving, and analytics.</p>
                     <span class="feature-tag">UI</span>
+                </div>
+
+                <div class="feature-card reveal">
+                    <div class="feature-icon">🎯</div>
+                    <h3>Auto Hunt & Battle</h3>
+                    <p>Intelligent hunting and battle automation with configurable strategies, cooldown management, and real-time performance tracking.</p>
+                    <span class="feature-tag">Automation</span>
                 </div>
 
                 <div class="feature-card reveal">
@@ -786,16 +793,9 @@
                 </div>
 
                 <div class="feature-card reveal">
-                    <div class="feature-icon">👥</div>
-                    <h3>Multi-Account</h3>
-                    <p>Run multiple accounts simultaneously with per-account settings, proxy support, and account-specific configurations.</p>
-                    <span class="feature-tag">Scale</span>
-                </div>
-
-                <div class="feature-card reveal">
                     <div class="feature-icon">🔐</div>
                     <h3>Role-Based Access</h3>
-                    <p>Granular permission system with View, Manage, and Admin roles. Control who can see stats, change settings, or manage users.</p>
+                    <p>Granular permission system with View, Manage, and Admin roles. Discord OAuth login and API key authentication supported.</p>
                     <span class="feature-tag">Security</span>
                 </div>
 
@@ -818,8 +818,8 @@
         <!-- CTA -->
         <section class="cta-section">
             <div class="reveal">
-                <h2>Ready to <span class="highlight">automate</span>?</h2>
-                <p>Take control of your Discord experience with Limey's powerful automation platform.</p>
+                <h2>Ready to <span class="highlight">take control</span>?</h2>
+                <p>Manage your Discord server with Limey's powerful moderation tools and automation platform.</p>
                 <div class="cta-buttons">
                     <a href="/login" class="btn-primary">Launch Dashboard</a>
                     <a href="https://github.com/cubiced0" target="_blank" class="btn-secondary">View on GitHub</a>
@@ -834,7 +834,7 @@
                 <a href="https://discord.gg/88jNZK2hkw" target="_blank">Discord</a>
                 <a href="https://www.youtube.com/@dev1-9?sub_confirmation=1" target="_blank">YouTube</a>
             </div>
-            <p>LIMEY SELF &copy; 2025 &mdash; FOR EDUCATIONAL PURPOSES ONLY</p>
+            <p>LIMEY &copy; 2025 &mdash; FOR EDUCATIONAL PURPOSES ONLY</p>
         </footer>
     </div>
 

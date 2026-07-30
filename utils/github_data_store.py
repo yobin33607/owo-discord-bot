@@ -128,14 +128,25 @@ _written_paths: set[str] = set()
 # ── Internal helpers ──────────────────────────────────
 
 
-def _get_sha(path: str) -> str | None:
-    """Get the SHA of an existing file in the repo (for updates)."""
-    if path in _cache and _cache[path].get("sha"):
+def _get_sha(path: str, force: bool = False) -> str | None:
+    """Get the SHA of an existing file in the repo (for updates).
+
+    Args:
+        path: File path in the repo
+        force: If True, bypass cache and always fetch fresh from GitHub
+    """
+    if not force and path in _cache and _cache[path].get("sha"):
         return _cache[path]["sha"]
     try:
         r = requests.get(f"{API_BASE}/{path}", headers=HEADERS, timeout=10)
         if r.status_code == 200:
-            return r.json().get("sha")
+            sha = r.json().get("sha")
+            # Update cache with fresh SHA
+            if path in _cache:
+                _cache[path]["sha"] = sha
+            return sha
+        if r.status_code == 404:
+            return None
     except Exception as e:
         _log.warning(f"Failed to get SHA for {path}: {e}")
     return None
@@ -172,14 +183,17 @@ def _read_raw(path: str) -> tuple[dict | None, str | None, bool]:
 
 
 def _write_raw(path: str, data: dict | list, message: str = "") -> bool:
-    """Write a JSON-serializable object to a file in GitHub."""
-    try:
-        content_bytes = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
-        content_b64 = base64.b64encode(content_bytes).decode("utf-8")
+    """Write a JSON-serializable object to a file in GitHub.
 
-        sha = _get_sha(path)
+    Always fetches a fresh SHA before writing to avoid 409 conflicts.
+    Retries once on 409 conflict with a refreshed SHA.
+    """
+    content_bytes = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+    content_b64 = base64.b64encode(content_bytes).decode("utf-8")
+
+    def _do_write(sha: str | None) -> tuple[bool, int, str | None]:
+        """Perform the actual PUT request."""
         commit_message = message or f"Update {path} via Limey GitHub Data Store"
-
         body: dict = {
             "message": commit_message,
             "content": content_b64,
@@ -187,13 +201,30 @@ def _write_raw(path: str, data: dict | list, message: str = "") -> bool:
         }
         if sha:
             body["sha"] = sha
+        try:
+            r = requests.request("PUT", f"{API_BASE}/{path}", headers=HEADERS, json=body, timeout=15)
+            if r.status_code in (200, 201):
+                new_sha = r.json().get("content", {}).get("sha", sha)
+                return True, r.status_code, new_sha
+            return False, r.status_code, None
+        except Exception as e:
+            _log.warning(f"GitHub write error for {path}: {e}")
+            return False, 0, None
 
-        method = "PUT"
-        r = requests.request(method, f"{API_BASE}/{path}", headers=HEADERS, json=body, timeout=15)
+    try:
+        # Always fetch a fresh SHA to avoid cache-based conflicts
+        sha = _get_sha(path, force=True)
 
-        if r.status_code in (200, 201):
-            # Update cache
-            new_sha = r.json().get("content", {}).get("sha", sha)
+        ok, status_code, new_sha = _do_write(sha)
+
+        # Retry once on 409 conflict (SHA changed between fetch and write)
+        if not ok and status_code == 409:
+            _log.info(f"SHA conflict on {path}, re-fetching and retrying...")
+            sha = _get_sha(path, force=True)
+            ok, status_code, new_sha = _do_write(sha)
+
+        if ok:
+            # Update cache with the new SHA from response
             _cache[path] = {
                 "data": data,
                 "sha": new_sha,
@@ -202,7 +233,7 @@ def _write_raw(path: str, data: dict | list, message: str = "") -> bool:
             _written_paths.add(path)
             return True
         else:
-            _log.warning(f"GitHub write failed for {path}: HTTP {r.status_code} - {r.text[:200]}")
+            _log.warning(f"GitHub write failed for {path}: HTTP {status_code}")
             return False
     except Exception as e:
         _log.warning(f"GitHub write error for {path}: {e}")

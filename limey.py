@@ -18,6 +18,13 @@ Limey - https://github.com/cubiced0/owo-discord-bot
 import sys
 import os
 
+# ── Auto-detect project virtual environment ───────────────────
+_PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Check if we should re-exec using the project's .venv Python
+from utils.platform import exec_venv_or_continue  # type: ignore[import-untyped]
+exec_venv_or_continue()
+
 if sys.stdout.encoding != 'utf-8':
     try:
         sys.stdout.reconfigure(encoding='utf-8')
@@ -33,7 +40,7 @@ import secrets
 from rich.console import Console
 from rich.align import Align
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(_PROJECT_DIR)
 
 from limey_engines.core_engines.setup_engine import LimeySetupEngine
 from core.bot import LimeyBot

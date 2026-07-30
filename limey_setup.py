@@ -25,6 +25,13 @@ import time
 import argparse
 from importlib.metadata import version
 
+# ── Auto-detect project virtual environment ───────────────────
+_PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Check if we should re-exec using the project's .venv Python
+from utils.platform import exec_venv_or_continue  # type: ignore[import-untyped]
+exec_venv_or_continue()
+
 if sys.stdout.encoding != 'utf-8':
     try:
         sys.stdout.reconfigure(encoding='utf-8')

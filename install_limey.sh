@@ -194,10 +194,53 @@ if [ ! -f "limey_setup.py" ]; then
     fail "limey_setup.py not found"
 fi
 
+# ────────────────────────────────────────────────────
+#  Virtual environment setup
+# ────────────────────────────────────────────────────
+VENV_DIR="$INSTALL_DIR/.venv"
+
+create_venv() {
+    if [ -d "$VENV_DIR" ]; then
+        info "Virtual environment already exists"
+    else
+        info "Creating virtual environment..."
+        "$PY_CMD" -m venv "$VENV_DIR" || fail "Failed to create virtual environment"
+        ok "Virtual environment created at $VENV_DIR"
+    fi
+
+    # Determine the venv Python path
+    if [ -f "$VENV_DIR/bin/python" ]; then
+        VENV_PY="$VENV_DIR/bin/python"
+    elif [ -f "$VENV_DIR/Scripts/python" ]; then
+        VENV_PY="$VENV_DIR/Scripts/python"
+    else
+        fail "Could not find Python inside virtual environment"
+    fi
+
+    ok "Using venv Python: $VENV_PY"
+
+    # Upgrade pip inside venv
+    info "Upgrading pip..."
+    "$VENV_PY" -m pip install --upgrade pip --quiet || warn "pip upgrade skipped"
+
+    # Install requirements into venv
+    if [ -f "requirements.txt" ]; then
+        info "Installing dependencies into virtual environment..."
+        "$VENV_PY" -m pip install -r requirements.txt --no-cache-dir || warn "Some packages may have failed"
+        ok "Dependencies installed"
+    fi
+
+    PY_CMD="$VENV_PY"
+}
+
+create_venv
+
 info "Starting setup (--quick)"
 "$PY_CMD" limey_setup.py --quick || fail "Setup failed"
 
 echo
 ok "Limey installed successfully"
 echo -e "${CYAN}Location:${RESET} $INSTALL_DIR"
-echo -e "${CYAN}Run manually:${RESET} cd \"$INSTALL_DIR\" && $PY_CMD limey_setup.py"
+echo -e "${CYAN}Run:${RESET} cd \"$INSTALL_DIR\" && $PY_CMD limey.py"
+echo -e "${CYAN}Setup:${RESET} cd \"$INSTALL_DIR\" && $PY_CMD limey_setup.py"
+echo -e "${CYAN}Activate venv:${RESET} source \"$INSTALL_DIR/.venv/bin/activate\""

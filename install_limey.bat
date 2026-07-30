@@ -135,11 +135,51 @@ if exist "%INSTALL_DIR%\.git" (
 )
 
 echo.
-echo  [#] Launching setup...
 
 pushd "%INSTALL_DIR%"
 
-%PY_CMD% limey_setup.py --quick
+REM ── Virtual environment setup ──────────────────────────────
+set "VENV_DIR=%INSTALL_DIR%\.venv"
+
+if exist "%VENV_DIR%" (
+    echo  [*] Virtual environment already exists
+) else (
+    echo  [#] Creating virtual environment...
+    "%PY_CMD%" -m venv "%VENV_DIR%"
+    if errorlevel 1 (
+        echo  [X] Failed to create virtual environment.
+        popd
+        pause
+        exit /b 1
+    )
+    echo  [OK] Virtual environment created
+)
+
+REM Detect venv Python
+if exist "%VENV_DIR%\Scripts\python.exe" (
+    set "VENV_PY=%VENV_DIR%\Scripts\python.exe"
+) else (
+    set "VENV_PY=%VENV_DIR%\bin\python"
+)
+
+echo  [OK] Using venv Python
+
+REM Upgrade pip
+"%VENV_PY%" -m pip install --upgrade pip --quiet
+
+REM Install requirements
+if exist "requirements.txt" (
+    echo  [#] Installing dependencies into virtual environment...
+    "%VENV_PY%" -m pip install -r requirements.txt --no-cache-dir
+    echo  [OK] Dependencies installed
+)
+
+set "PY_CMD=%VENV_PY%"
+
+echo.
+echo  [#] Launching setup...
+
+"%PY_CMD%" limey_setup.py --quick
 
 if errorlevel 1 (
     popd
@@ -158,7 +198,9 @@ echo  Installed to:
 echo  %INSTALL_DIR%
 echo.
 echo  Run:
-echo  %INSTALL_DIR%\limey.py
+echo  cd /d "%INSTALL_DIR%" && .venv\Scripts\python limey.py
+echo  Setup:
+echo  cd /d "%INSTALL_DIR%" && .venv\Scripts\python limey_setup.py
 echo.
 
 pause

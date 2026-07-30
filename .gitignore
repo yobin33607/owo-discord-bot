@@ -61,7 +61,6 @@ tokens.txt
 venv/
 env/
 ENV/
-.venv/
 .ENV/
 .env
 .env/

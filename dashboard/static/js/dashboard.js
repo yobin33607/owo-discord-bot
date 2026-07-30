@@ -286,6 +286,68 @@ window.action = function(a, el) {
     }).then(() => update());
 };
 
+window.startAllBots = function() {
+    if (!confirm('▶️ START ALL BOTS\n\nThis will resume all paused bots.\n\nContinue?')) return;
+    
+    const btn = document.querySelector('[onclick*="startAllBots"]');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="icon-svg" style="--icon: url(\'/static/assets/limey_icons/sync.svg\'); animation: spin 1s linear infinite;"></span> <span class="btn-text">STARTING ALL...</span>'; }
+    
+    showToast('▶️ Starting all bots...', 'info');
+    
+    fetch('/api/control/all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start' })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast(`✅ Started ${data.success_count}/${data.total} bots`, 'success');
+                if (btn) { btn.disabled = false; btn.innerHTML = '<span class="icon-svg" style="--icon: url(\'/static/assets/limey_icons/play-all.svg\');"></span> <span class="btn-text">START ALL</span>'; }
+                update();
+                if (typeof fetchAccounts === 'function') fetchAccounts();
+            } else {
+                showToast('❌ ' + (data.error || 'Failed to start bots'), 'error');
+                if (btn) { btn.disabled = false; btn.innerHTML = '<span class="icon-svg" style="--icon: url(\'/static/assets/limey_icons/play-all.svg\');"></span> <span class="btn-text">START ALL</span>'; }
+            }
+        })
+        .catch(() => {
+            showToast('❌ Error starting bots', 'error');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<span class="icon-svg" style="--icon: url(\'/static/assets/limey_icons/play-all.svg\');"></span> <span class="btn-text">START ALL</span>'; }
+        });
+};
+
+window.stopAllBots = function() {
+    if (!confirm('⏹️ STOP ALL BOTS\n\nThis will pause all running bots.\n\nContinue?')) return;
+    
+    const btn = document.querySelector('[onclick*="stopAllBots"]');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="icon-svg" style="--icon: url(\'/static/assets/limey_icons/sync.svg\'); animation: spin 1s linear infinite;"></span> <span class="btn-text">STOPPING ALL...</span>'; }
+    
+    showToast('⏹️ Stopping all bots...', 'warning');
+    
+    fetch('/api/control/all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'stop' })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast(`⏹️ Stopped ${data.success_count}/${data.total} bots`, 'warning');
+                if (btn) { btn.disabled = false; btn.innerHTML = '<span class="icon-svg" style="--icon: url(\'/static/assets/limey_icons/stop-all.svg\');"></span> <span class="btn-text">STOP ALL</span>'; }
+                update();
+                if (typeof fetchAccounts === 'function') fetchAccounts();
+            } else {
+                showToast('❌ ' + (data.error || 'Failed to stop bots'), 'error');
+                if (btn) { btn.disabled = false; btn.innerHTML = '<span class="icon-svg" style="--icon: url(\'/static/assets/limey_icons/stop-all.svg\');"></span> <span class="btn-text">STOP ALL</span>'; }
+            }
+        })
+        .catch(() => {
+            showToast('❌ Error stopping bots', 'error');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<span class="icon-svg" style="--icon: url(\'/static/assets/limey_icons/stop-all.svg\');"></span> <span class="btn-text">STOP ALL</span>'; }
+        });
+};
+
 // ─── Console / Terminal Controls ────────────────────
 
 function fetchSystemStatus() {

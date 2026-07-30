@@ -1255,6 +1255,46 @@ def control():
         
     return jsonify({'success': True})
 
+
+@app.route('/api/control/all', methods=['POST'])
+@require_permission('manage')
+def control_all():
+    """Start or stop all bots at once."""
+    data = request.json
+    action = data.get('action', '').strip().lower()
+    
+    if action not in ('start', 'stop'):
+        return jsonify({'success': False, 'error': 'Action must be "start" or "stop"'}), 400
+    
+    success_count = 0
+    fail_count = 0
+    
+    for bot in state.bot_instances:
+        try:
+            if action == 'stop':
+                bot.paused = True
+                bot.log("SYS", f"Bot STOPPED via Dashboard (bulk {action})")
+            elif action == 'start':
+                bot.paused = False
+                bot.throttle_until = 0
+                bot.log("SYS", f"Bot RESUMED via Dashboard (bulk {action})")
+            success_count += 1
+        except Exception:
+            fail_count += 1
+    
+    if action == 'stop':
+        state.log_command("SYS", f"Bulk STOP: {success_count} bots stopped, {fail_count} failed", "warning")
+    else:
+        state.log_command("SYS", f"Bulk START: {success_count} bots resumed, {fail_count} failed", "success")
+    
+    return jsonify({
+        'success': True,
+        'action': action,
+        'success_count': success_count,
+        'fail_count': fail_count,
+        'total': success_count + fail_count
+    })
+
 @app.route('/api/security', methods=['POST'])
 @require_permission('manage')
 def security():

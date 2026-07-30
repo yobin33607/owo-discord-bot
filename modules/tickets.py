@@ -314,37 +314,229 @@ class TicketTypeSelectView(discord.ui.View):
             return
 
         ticket_type = select.values[0]
-        modal = TicketCreateModal(self.cog, ticket_type)
+
+        # If appeal type, first show violation selection view
+        if ticket_type == "appeal":
+            # Defer so we can load violations
+            await interaction.response.defer(ephemeral=True)
+
+            # Load violations from the moderation system (lazy import to avoid circular issues)
+            try:
+                from modules.manager_bot import _get_user_violations
+                violations = _get_user_violations(interaction.guild_id, interaction.user.id)
+            except Exception:
+                violations = []
+
+            if violations:
+                embed = discord.Embed(
+                    title="⚖️ Appeal — Select Violation",
+                    description=f"You have **{len(violations)}** violation(s) on record. Select the one you want to appeal:",
+                    color=0xFF8800,
+                    timestamp=discord.utils.utcnow(),
+                )
+
+                # Show most recent violations
+                violations_sorted = sorted(violations, key=lambda v: v.get("timestamp", 0), reverse=True)[:8]
+                for v in violations_sorted:
+                    vtype = v.get("type", "Unknown").upper()
+                    ts = time.strftime("%m/%d %H:%M", time.localtime(v.get("timestamp", 0)))
+                    reason = (v.get("reason") or "No reason")[:80]
+                    emoji = {"warn": "⚠️", "kick": "👢", "ban": "🔨", "timeout": "🔇", "mute": "🔇"}.get(v.get("type", ""), "📋")
+                    embed.add_field(
+                        name=f"{emoji} {vtype} — {ts}",
+                        value=f"Reason: {reason}",
+                        inline=False,
+                    )
+
+                embed.set_footer(text="Select a violation below to continue your appeal")
+
+                view = AppealTicketViolationSelectView(self.cog, interaction.user, interaction.guild, violations)
+                msg = await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                view.message = msg
+            else:
+                # No violations — let them appeal directly with an appeal modal
+                embed = discord.Embed(
+                    title="✅ No Violations Found",
+                    description=(
+                        "You have **no violations** on record in this server.\n\n"
+                        "If you still want to submit an appeal ticket, continue below."
+                    ),
+                    color=0x00FF88,
+                )
+
+                view = discord.ui.View(timeout=120)
+                async def open_appeal_modal(btn_interaction: discord.Interaction):
+                    if btn_interaction.user.id != self.user.id:
+                        await btn_interaction.response.send_message("❌ This is not your interaction.", ephemeral=True)
+                        return
+                    appeal_info = {
+                        "punishment_type": "other",
+                        "violation_reason": "Not specified",
+                    }
+                    modal = TicketCreateModal(self.cog, "appeal", appeal_info=appeal_info)
+                    await btn_interaction.response.send_modal(modal)
+                open_appeal_modal.__name__ = "open_appeal_modal_callback"
+
+                button = discord.ui.Button(label="✏️  Submit Appeal Ticket", style=discord.ButtonStyle.primary)
+                button.callback = open_appeal_modal
+                view.add_item(button)
+
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        else:
+            modal = TicketCreateModal(self.cog, ticket_type)
+            await interaction.response.send_modal(modal)
+
+
+class AppealTicketViolationSelectView(discord.ui.View):
+    """View showing the user's violations with a dropdown to select which one to appeal,
+    then continues to the appeal ticket creation modal."""
+
+    def __init__(self, cog, user, guild, violations):
+        super().__init__(timeout=120)
+        self.cog = cog
+        self.user = user
+        self.guild = guild
+        self.violations = violations
+        self.selected_violation = None
+
+        # Build dropdown options from violations
+        options = []
+        seen_types = set()
+        for v in violations:
+            vtype = v.get("type", "Unknown").capitalize()
+            if vtype not in seen_types:
+                seen_types.add(vtype)
+                ts = time.strftime("%m/%d", time.localtime(v.get("timestamp", 0)))
+                reason = (v.get("reason") or "")[:60]
+                options.append(
+                    discord.SelectOption(
+                        label=vtype,
+                        description=f"{ts} — {reason[:50]}",
+                        value=vtype.lower(),
+                        emoji={"warn": "⚠️", "kick": "👢", "ban": "🔨", "timeout": "🔇", "mute": "🔇"}.get(vtype.lower(), "📋"),
+                    )
+                )
+
+        # Add "Other" option
+        if not any(o.value == "other" for o in options):
+            options.append(
+                discord.SelectOption(label="Other", description="Something not listed above", value="other", emoji="📝")
+            )
+
+        self.violation_select = discord.ui.Select(
+            placeholder="📋 Select the violation you're appealing...",
+            options=options[:25],
+            min_values=1,
+            max_values=1,
+        )
+        self.violation_select.callback = self._on_select
+        self.add_item(self.violation_select)
+
+    async def _on_select(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message("❌ This is not your selection.", ephemeral=True)
+            return
+
+        selected_val = self.violation_select.values[0]
+        # Find the matching violation from stored violations
+        for v in self.violations:
+            if v.get("type", "").lower() == selected_val:
+                self.selected_violation = v
+                break
+        if self.selected_violation is None:
+            self.selected_violation = {"type": selected_val, "reason": "Not specified"}
+
+        # Enable the continue button
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                child.disabled = False
+        await interaction.response.edit_message(view=self)
+
+    @discord.ui.button(label="✏️  Continue to Appeal Ticket", style=discord.ButtonStyle.primary, disabled=True, row=1)
+    async def continue_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message("❌ This is not your interaction.", ephemeral=True)
+            return
+
+        v = self.selected_violation or {}
+        ptype = v.get("type", "other")
+        reason = v.get("reason", "Not specified")
+
+        appeal_info = {
+            "punishment_type": ptype,
+            "violation_reason": reason,
+        }
+
+        modal = TicketCreateModal(self.cog, "appeal", appeal_info=appeal_info)
         await interaction.response.send_modal(modal)
+
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+        try:
+            await self.message.edit(view=self)
+        except Exception:
+            pass
 
 
 class TicketCreateModal(discord.ui.Modal):
-    """Modal for user to describe their ticket issue."""
+    """Modal for user to describe their ticket issue.
+    If `appeal_info` is provided, shows appeal-specific fields instead.
+    """
 
-    def __init__(self, cog, ticket_type):
+    def __init__(self, cog, ticket_type, appeal_info=None):
         self.cog = cog
         self.ticket_type = ticket_type
+        self.appeal_info = appeal_info
         tinfo = TICKET_TYPES.get(ticket_type, {})
-        title_text = f"🎫 {tinfo.get('label', 'Ticket')} - Describe Your Issue"
-        super().__init__(title=title_text)
 
-        self.subject = discord.ui.TextInput(
-            label="Subject",
-            placeholder="Brief summary of your issue...",
-            style=discord.TextStyle.short,
-            required=True,
-            max_length=100,
-        )
-        self.add_item(self.subject)
+        if appeal_info:
+            # Appeal-specific modal
+            punishment_type = appeal_info.get('punishment_type', '')
+            title = "⚖️ Appeal Ticket"
+            if punishment_type and punishment_type.lower() != "other":
+                title = f"⚖️ Appeal — {punishment_type.upper()}"
+            super().__init__(title=title)
 
-        self.description = discord.ui.TextInput(
-            label="Description",
-            placeholder="Please describe your issue in detail...",
-            style=discord.TextStyle.paragraph,
-            required=True,
-            max_length=1500,
-        )
-        self.add_item(self.description)
+            self.explanation = discord.ui.TextInput(
+                label="Why Should This Be Lifted?",
+                placeholder="Explain your side of the story and why the punishment should be removed...",
+                style=discord.TextStyle.paragraph,
+                required=True,
+                max_length=1500,
+            )
+            self.add_item(self.explanation)
+
+            self.evidence = discord.ui.TextInput(
+                label="Evidence (optional)",
+                placeholder="Links, screenshots, or any evidence supporting your appeal",
+                style=discord.TextStyle.paragraph,
+                required=False,
+                max_length=1000,
+            )
+            self.add_item(self.evidence)
+        else:
+            # Regular ticket modal
+            title_text = f"🎫 {tinfo.get('label', 'Ticket')} - Describe Your Issue"
+            super().__init__(title=title_text)
+
+            self.subject = discord.ui.TextInput(
+                label="Subject",
+                placeholder="Brief summary of your issue...",
+                style=discord.TextStyle.short,
+                required=True,
+                max_length=100,
+            )
+            self.add_item(self.subject)
+
+            self.description = discord.ui.TextInput(
+                label="Description",
+                placeholder="Please describe your issue in detail...",
+                style=discord.TextStyle.paragraph,
+                required=True,
+                max_length=1500,
+            )
+            self.add_item(self.description)
 
     async def on_submit(self, interaction: discord.Interaction):
         """Create the ticket channel after modal submission."""
@@ -441,21 +633,34 @@ class TicketCreateModal(discord.ui.Modal):
                 )
                 return
 
-            # Store ticket record
+            # Build ticket record with appeal info if applicable
             ticket_record = {
                 "num": ticket_num,
                 "channel_id": str(channel.id),
                 "user_id": str(user.id),
                 "username": str(user),
                 "type": ticket_type,
-                "subject": self.subject.value,
-                "description": self.description.value,
                 "status": "open",
                 "claimed_by": None,
                 "created_at": time.time(),
                 "closed_at": None,
                 "transcript": [],
             }
+
+            if self.appeal_info:
+                # Appeal ticket — store appeal details
+                ticket_record["subject"] = f"Appeal: {self.appeal_info.get('punishment_type', 'other').upper()}"
+                ticket_record["description"] = self.explanation.value
+                ticket_record["appeal_violation"] = {
+                    "punishment_type": self.appeal_info.get('punishment_type', 'other'),
+                    "violation_reason": self.appeal_info.get('violation_reason', 'Not specified'),
+                }
+                ticket_record["appeal_evidence"] = self.evidence.value or "None provided"
+            else:
+                # Regular ticket
+                ticket_record["subject"] = self.subject.value
+                ticket_record["description"] = self.description.value
+
             data["tickets"][guild_key][str(ticket_num)] = ticket_record
             _save_ticket_data(data)
 
@@ -466,8 +671,32 @@ class TicketCreateModal(discord.ui.Modal):
                 color=tinfo.get("color", 0x44AAFF),
                 timestamp=discord.utils.utcnow(),
             )
-            welcome_embed.add_field(name="Subject", value=self.subject.value, inline=False)
-            welcome_embed.add_field(name="Description", value=self.description.value, inline=False)
+
+            if self.appeal_info:
+                # Appeal-specific welcome embed
+                ptype = self.appeal_info.get('punishment_type', 'other').upper()
+                preason = self.appeal_info.get('violation_reason', 'Not specified')
+                welcome_embed.add_field(
+                    name="⚖️ Appeal Details",
+                    value=f"**Appealing:** {ptype}\n**Reason:** {preason}",
+                    inline=False,
+                )
+                welcome_embed.add_field(
+                    name="📝 Explanation",
+                    value=self.explanation.value,
+                    inline=False,
+                )
+                if self.evidence.value:
+                    welcome_embed.add_field(
+                        name="🔗 Evidence",
+                        value=self.evidence.value,
+                        inline=False,
+                    )
+            else:
+                # Regular welcome embed
+                welcome_embed.add_field(name="Subject", value=self.subject.value, inline=False)
+                welcome_embed.add_field(name="Description", value=self.description.value, inline=False)
+
             if staff_role:
                 welcome_embed.add_field(name="Staff", value=staff_role.mention, inline=True)
             welcome_embed.set_footer(text=f"Ticket #{ticket_num}")
@@ -485,7 +714,15 @@ class TicketCreateModal(discord.ui.Modal):
             )
             confirm_embed.add_field(name="Ticket #", value=f"#{ticket_num}", inline=True)
             confirm_embed.add_field(name="Type", value=f"{tinfo.get('emoji', '📋')} {tinfo.get('label', ticket_type)}", inline=True)
-            confirm_embed.add_field(name="Subject", value=self.subject.value, inline=False)
+
+            if self.appeal_info:
+                confirm_embed.add_field(
+                    name="Appealing",
+                    value=f"{self.appeal_info.get('punishment_type', 'other').upper()}",
+                    inline=False,
+                )
+            else:
+                confirm_embed.add_field(name="Subject", value=self.subject.value, inline=False)
 
             await interaction.followup.send(embed=confirm_embed, ephemeral=True)
 

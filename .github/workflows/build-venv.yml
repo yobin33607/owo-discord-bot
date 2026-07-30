@@ -2,9 +2,11 @@ name: Build venv
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       create_release:
@@ -13,25 +15,28 @@ on:
         default: false
         type: boolean
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.os }}
-  cancel-in-progress: true
-
 jobs:
   build-venv:
     name: venv (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+
+    # Concurrency must be inside the job because it uses matrix.os
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.os }}
+      cancel-in-progress: true
+
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
         include:
           - os: ubuntu-latest
             artifact-name: venv-linux
             venv-python: .venv/bin/python
+
           - os: macos-latest
             artifact-name: venv-macos
             venv-python: .venv/bin/python
+
           - os: windows-latest
             artifact-name: venv-windows
             venv-python: .venv\Scripts\python.exe
@@ -49,99 +54,118 @@ jobs:
         run: python -m venv .venv
 
       - name: Upgrade pip
-        run: ${{ matrix.venv-python }} -m pip install --upgrade pip --quiet
+        run: ${{ matrix.venv-python }} -m pip install --upgrade pip
 
       - name: Cache pip downloads
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/pip
-            %LocalAppData%\pip\Cache
+            ~\AppData\Local\pip\Cache
           key: pip-${{ matrix.os }}-${{ hashFiles('requirements.txt') }}
-          restore-keys: pip-${{ matrix.os }}-
+          restore-keys: |
+            pip-${{ matrix.os }}-
 
       - name: Install dependencies
-        run: ${{ matrix.venv-python }} -m pip install -r requirements.txt --no-cache-dir
+        run: ${{ matrix.venv-python }} -m pip install -r requirements.txt
 
       - name: Verify venv
         run: |
           ${{ matrix.venv-python }} --version
           ${{ matrix.venv-python }} -c "import discord, flask, rich, aiohttp, requests; print('All imports OK')"
 
-      - name: Package venv
+      - name: Package venv (Linux/macOS)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
-          archive="venv-artifact"
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            7z a -tzip "${archive}.zip" .venv/
-            echo "archive_name=${archive}.zip" >> $GITHUB_ENV
-          else
-            tar czf "${archive}.tar.gz" .venv/
-            echo "archive_name=${archive}.tar.gz" >> $GITHUB_ENV
-          fi
+          tar -czf venv-artifact.tar.gz .venv
+
+      - name: Package venv (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path .venv -DestinationPath venv-artifact.zip -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact-name }}
-          path: venv-artifact.*
-          retention-days: 30
+          path: |
+            venv-artifact.tar.gz
+            venv-artifact.zip
           if-no-files-found: error
+          retention-days: 30
 
-  # ── Release (manual trigger only — avoids spam) ──
   release:
     name: 🚀 Release pre-built venvs
     if: github.event_name == 'workflow_dispatch' && inputs.create_release
-    needs: [build-venv]
+    needs: build-venv
     runs-on: ubuntu-latest
+
     permissions:
       contents: write
+
     steps:
-      - name: Download all venv artifacts
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: venv-artifacts/
+          path: venv-artifacts
 
       - name: Generate release tag
         id: tag
         run: |
-          echo "tag=venv-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+          echo "tag=venv-$(date +'%Y%m%d-%H%M%S')" >> "$GITHUB_OUTPUT"
 
       - name: Prepare release assets
         run: |
           mkdir -p release-assets
-          ls -la venv-artifacts/*/
-          for dir in venv-artifacts/*/; do
+
+          for dir in venv-artifacts/*; do
             name=$(basename "$dir")
-            cp "$dir"venv-artifact.* "release-assets/${name}.$(echo "$dir"venv-artifact.* | rev | cut -d. -f1 | rev)"
+
+            if [ -f "$dir/venv-artifact.tar.gz" ]; then
+              cp "$dir/venv-artifact.tar.gz" "release-assets/${name}.tar.gz"
+            elif [ -f "$dir/venv-artifact.zip" ]; then
+              cp "$dir/venv-artifact.zip" "release-assets/${name}.zip"
+            fi
           done
+
+          ls -lah release-assets
 
       - name: Generate release notes
         run: |
-          cat > release-notes.md << 'EOF'
+          cat > release-notes.md <<EOF
           ## Pre-built virtual environments
 
-          Archives containing a fully-set-up `.venv` with all dependencies
-          pre-installed for each platform.
+          Archives containing a fully configured \`.venv\` with all dependencies installed.
 
           ### Quick start
-          Pick your platform, download, extract into Limey project dir, then run:
-          ```
-          python limey.py
-          ```
 
-          ### Platforms
+          Download the archive for your platform.
+
+          Extract it into your project directory.
+
+          Run:
+
+          \`\`\`
+          python limey.py
+          \`\`\`
+
+          ### Included builds
+
           | Archive | Platform |
           |---------|----------|
-          | venv-linux.tar.gz | Linux (x86_64, Python 3.12) |
-          | venv-macos.tar.gz | macOS (x86_64/arm64, Python 3.12) |
-          | venv-windows.zip | Windows (x86_64, Python 3.12) |
+          | venv-linux.tar.gz | Linux (Python 3.12) |
+          | venv-macos.tar.gz | macOS (Python 3.12) |
+          | venv-windows.zip | Windows (Python 3.12) |
 
           ---
-          *Built by GitHub Actions — commit ${{ github.sha }}*
+          Built automatically by GitHub Actions.
+
+          Commit: ${{ github.sha }}
           EOF
 
-      - name: Create Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}

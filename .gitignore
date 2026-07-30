@@ -61,6 +61,7 @@ tokens.txt
 venv/
 env/
 ENV/
+.venv/
 .ENV/
 .env
 .env/
@@ -68,8 +69,13 @@ ENV/
 .virtualenv/
 
 # ===============================
-# PyInstaller
+# CI / GitHub Actions artifacts
 # ===============================
+venv-*-artifact/
+
+# ===============================
+# PyInstaller
+    # ===============================
 dist/
 
 # ===============================

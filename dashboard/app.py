@@ -42,6 +42,8 @@ import re
 
 from utils.github_data_store import ghd
 
+import discord
+
 
 def _load_appeals_data():
     """Load appeals from GitHub data repo."""
@@ -568,6 +570,168 @@ def verify_api_key():
             'role': key_info['role'],
         })
     return jsonify({'success': False, 'valid': False, 'error': 'Invalid or revoked API key'}), 401
+
+# ── Moderation Data Helpers ──────────────────────────
+
+def _load_mod_data():
+    """Load moderation data from GitHub data repo."""
+    data = ghd.read_json("config/moderation.json", default=None)
+    if data is not None:
+        return data
+    return {"violations": {}, "warnings": {}, "mod_log": {}, "mutes": {}, "next_violation_id": 1, "next_warn_id": 1}
+
+
+def _save_mod_data(data):
+    """Save moderation data to GitHub data repo."""
+    ghd.write_json("config/moderation.json", data, message="Update moderation data")
+
+
+def _get_mod_config():
+    """Get moderation config from settings.json."""
+    cfg = ghd.read_json("config/settings.json", default={})
+    return cfg.get("manager_bot", {}).get("moderation", {})
+
+
+# ── Standalone Data Helpers for Dashboard Actions ─────
+
+def _store_violation_data(user_id, guild_id, vtype, reason, moderator, duration=None):
+    """Store a violation record (standalone, no cog needed)."""
+    data = _load_mod_data()
+    if "violations" not in data:
+        data["violations"] = {}
+    guild_key = str(guild_id)
+    user_key = str(user_id)
+
+    if guild_key not in data["violations"]:
+        data["violations"][guild_key] = {}
+    if user_key not in data["violations"][guild_key]:
+        data["violations"][guild_key][user_key] = []
+
+    vid = data.get("next_violation_id", 1)
+    data["next_violation_id"] = vid + 1
+
+    data["violations"][guild_key][user_key].append({
+        "id": vid,
+        "type": vtype,
+        "reason": reason or "No reason provided",
+        "moderator": str(moderator),
+        "duration": duration,
+        "timestamp": time.time(),
+    })
+
+    if len(data["violations"][guild_key][user_key]) > 50:
+        data["violations"][guild_key][user_key] = data["violations"][guild_key][user_key][-50:]
+
+    _save_mod_data(data)
+    return vid
+
+
+def _store_mod_action_data(guild_id, action_type, target, moderator, reason=None):
+    """Store a mod action log entry (standalone, no cog needed)."""
+    data = _load_mod_data()
+    guild_key = str(guild_id)
+    if "mod_log" not in data:
+        data["mod_log"] = {}
+    if guild_key not in data["mod_log"]:
+        data["mod_log"][guild_key] = []
+
+    data["mod_log"][guild_key].append({
+        "type": action_type,
+        "target": str(target),
+        "moderator": str(moderator),
+        "reason": reason or "No reason provided",
+        "timestamp": time.time(),
+    })
+
+    if len(data["mod_log"][guild_key]) > 500:
+        data["mod_log"][guild_key] = data["mod_log"][guild_key][-500:]
+
+    _save_mod_data(data)
+
+
+import re as _re
+
+def _parse_duration_seconds(text):
+    """Parse a duration string like '1h', '30m', '7d' into seconds."""
+    text = text.strip().lower()
+    total = 0
+    parts = _re.findall(r'(\d+)\s*(s|sec|seconds?|m|min|minutes?|h|hr|hours?|d|days?)', text)
+    for num, unit in parts:
+        num = int(num)
+        if unit.startswith('d'):
+            total += num * 86400
+        elif unit.startswith('h'):
+            total += num * 3600
+        elif unit.startswith('m'):
+            total += num * 60
+        elif unit.startswith('s'):
+            total += num
+    return total if total > 0 else None
+
+
+def _format_duration_seconds(seconds):
+    """Format seconds into a human-readable duration string."""
+    if seconds < 60:
+        return f"{seconds}s"
+    elif seconds < 3600:
+        return f"{seconds // 60}m {seconds % 60}s"
+    elif seconds < 86400:
+        hours = seconds // 3600
+        mins = (seconds % 3600) // 60
+        return f"{hours}h {mins}m"
+    else:
+        days = seconds // 86400
+        hours = (seconds % 86400) // 3600
+        return f"{days}d {hours}h"
+
+
+async def _discord_mod_action(bot, action, guild_id, user_id, reason, duration_seconds=None, delete_days=0):
+    """Perform only the Discord API part of a moderation action on the bot's event loop.
+    Returns nothing on success, raises on failure."""
+    guild = bot.get_guild(int(guild_id))
+    if not guild:
+        try:
+            guild = await bot.fetch_guild(int(guild_id))
+        except Exception as e:
+            raise ValueError(f"Guild not found: {e}")
+
+    if action not in ('ban', 'unban'):
+        member = guild.get_member(int(user_id))
+        if not member:
+            try:
+                member = await guild.fetch_member(int(user_id))
+            except Exception as e:
+                raise ValueError(f"Member not found in guild: {e}")
+
+    if action == 'kick':
+        await member.kick(reason=reason)
+    elif action == 'ban':
+        await guild.ban(
+            discord.Object(id=int(user_id)),
+            reason=reason,
+            delete_message_days=max(0, min(delete_days, 7))
+        )
+    elif action == 'unban':
+        async for ban_entry in guild.bans():
+            if ban_entry.user.id == int(user_id):
+                await guild.unban(ban_entry.user, reason=reason)
+                return
+        raise ValueError("User is not banned in this guild")
+    elif action == 'timeout':
+        seconds = duration_seconds or 600
+        if seconds < 10:
+            raise ValueError("Duration too short (minimum 10 seconds)")
+        if seconds > 2419200:
+            raise ValueError("Duration cannot exceed 28 days")
+        until = discord.utils.utcnow() + discord.timedelta(seconds=seconds)
+        await member.timeout(until, reason=reason)
+    elif action == 'mute':
+        seconds = duration_seconds or 3600
+        until = discord.utils.utcnow() + discord.timedelta(seconds=seconds)
+        await member.timeout(until, reason=reason)
+    elif action == 'unmute':
+        await member.timeout(None, reason=reason)
+
 
 # ── Violations API ──────────────────────────────────────
 
@@ -2046,6 +2210,118 @@ def api_moderation_clear_violations():
     _save_mod_data(data)
     state.log_command("MOD", f"Dashboard cleared {cleared_count} violations for user {user_id}", "warning")
     return jsonify({'success': True, 'message': f'Cleared {cleared_count} violation(s)', 'cleared': cleared_count})
+
+
+@app.route('/api/moderation/action', methods=['POST'])
+@require_permission('manage')
+def api_moderation_action():
+    """Perform a moderation action (warn, kick, ban, unban, timeout, mute, unmute) via a Discord bot."""
+    payload = request.json or {}
+    action = payload.get('action', '').strip().lower()
+    user_id = str(payload.get('user_id', ''))
+    guild_id = str(payload.get('guild_id', ''))
+    reason = payload.get('reason', '').strip() or 'No reason provided'
+    duration = payload.get('duration', '').strip()
+    delete_days = payload.get('delete_days', 0)
+
+    if not action or not user_id or not guild_id:
+        return jsonify({'success': False, 'error': 'Missing required fields: action, user_id, guild_id'}), 400
+
+    try:
+        int(user_id)
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Invalid user ID format'}), 400
+
+    valid_actions = ['warn', 'kick', 'ban', 'unban', 'timeout', 'mute', 'unmute', 'clearviolations', 'clearwarns']
+    if action not in valid_actions:
+        return jsonify({'success': False, 'error': f'Invalid action. Must be one of: {", ".join(valid_actions)}'}), 400
+
+    # Parse duration
+    duration_seconds = None
+    if duration and action in ('timeout', 'mute'):
+        duration_seconds = _parse_duration_seconds(duration)
+        if not duration_seconds:
+            return jsonify({'success': False, 'error': 'Invalid duration format. Use e.g. 10m, 1h, 7d'}), 400
+
+    # Find a bot in the target guild
+    bot = None
+    try:
+        guild_id_int = int(guild_id)
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Invalid guild ID'}), 400
+
+    for b in state.bot_instances:
+        if b.is_ready and b.get_guild(guild_id_int):
+            bot = b
+            break
+
+    if not bot:
+        return jsonify({'success': False, 'error': 'No bot is connected to the target guild'}), 400
+
+    # Get moderator name
+    moderator_name = session.get('username', 'Dashboard')
+    if getattr(g, 'api_key_auth', False):
+        moderator_name = getattr(g, 'api_key_user', 'API')
+    moderator_str = f"{moderator_name} (Dashboard)"
+
+    # For local-only actions (warn, clearviolations, clearwarns), skip Discord API call
+    if action in ('warn', 'clearviolations', 'clearwarns'):
+        if action == 'warn':
+            _store_violation_data(user_id, guild_id, 'warn', reason, moderator_str)
+            _store_mod_action_data(guild_id, 'warn', user_id, moderator_str, reason)
+            dur_text = ''
+        elif action == 'clearviolations':
+            data = _load_mod_data()
+            gk = str(guild_id)
+            uk = str(user_id)
+            count = len(data.get('violations', {}).get(gk, {}).get(uk, []))
+            if gk in data.get('violations', {}) and uk in data['violations'][gk]:
+                data['violations'][gk][uk] = []
+                _save_mod_data(data)
+            _store_mod_action_data(guild_id, 'clearviolations', user_id, moderator_str, f'Cleared all {count} violations')
+            dur_text = f' ({count} cleared)'
+        elif action == 'clearwarns':
+            data = _load_mod_data()
+            gk = str(guild_id)
+            uk = str(user_id)
+            count = len(data.get('warnings', {}).get(gk, {}).get(uk, []))
+            if gk in data.get('warnings', {}) and uk in data['warnings'][gk]:
+                data['warnings'][gk][uk] = []
+                _save_mod_data(data)
+            _store_mod_action_data(guild_id, 'clearwarns', user_id, moderator_str, f'Cleared all {count} warnings')
+            dur_text = f' ({count} cleared)'
+
+        state.log_command("MOD", f"Dashboard {action} on user {user_id} in guild {guild_id}: {reason}", "warning")
+        return jsonify({'success': True, 'message': f'{action.capitalize()} completed successfully.{dur_text}'})
+
+    # For Discord API actions, run on the bot's event loop
+    future = asyncio.run_coroutine_threadsafe(
+        _discord_mod_action(bot, action, guild_id, user_id, reason, duration_seconds, delete_days),
+        bot.loop_ref
+    )
+
+    try:
+        future.result(timeout=30)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except discord.Forbidden:
+        return jsonify({'success': False, 'error': 'Bot lacks permissions to perform this action'}), 403
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Action failed: {str(e)}'}), 500
+
+    # Store violation for punitive actions
+    dur_str = None
+    if duration_seconds and action in ('timeout', 'mute'):
+        dur_str = _format_duration_seconds(duration_seconds)
+
+    if action in ('kick', 'ban', 'timeout', 'mute'):
+        _store_violation_data(user_id, guild_id, action, reason, moderator_str, duration=dur_str)
+
+    # Store mod action
+    _store_mod_action_data(guild_id, action, user_id, moderator_str, reason)
+
+    state.log_command("MOD", f"Dashboard {action} on user {user_id} in guild {guild_id}: {reason}", "warning")
+    return jsonify({'success': True, 'message': f'{action.capitalize()} completed successfully.'})
 
 
 def _save_mod_data(data):

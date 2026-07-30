@@ -250,6 +250,57 @@ function openModUserDetail(userId) {
             '<span style="font-size:0.72rem;color:#666;">This clears violations across all guilds.</span>' +
         '</div>';
         
+        // ── Mod Action Buttons ────────────────────────
+        html += '<div class="mod-action-bar">' +
+            '<div class="mod-action-bar-title">🛡️ Perform Moderation Action</div>' +
+            '<div class="mod-action-buttons">' +
+                '<button class="btn-control gold" onclick="showModActionForm(\'' + escapeHtml(userId) + '\', \'warn\')">⚠️ Warn</button>' +
+                '<button class="btn-control" style="background:#ff8800;border-color:#ff8800;color:#fff;" onclick="showModActionForm(\'' + escapeHtml(userId) + '\', \'kick\')">👢 Kick</button>' +
+                '<button class="btn-control red" onclick="showModActionForm(\'' + escapeHtml(userId) + '\', \'ban\')">🔨 Ban</button>' +
+                '<button class="btn-control" style="background:#ff8800;border-color:#ff8800;color:#fff;" onclick="showModActionForm(\'' + escapeHtml(userId) + '\', \'timeout\')">🔇 Timeout</button>' +
+                '<button class="btn-control" style="background:#ff8800;border-color:#ff8800;color:#fff;" onclick="showModActionForm(\'' + escapeHtml(userId) + '\', \'mute\')">🔇 Mute</button>' +
+                '<button class="btn-control green" onclick="showModActionForm(\'' + escapeHtml(userId) + '\', \'unmute\')">🔊 Unmute</button>' +
+                '<button class="btn-control green" onclick="showModActionForm(\'' + escapeHtml(userId) + '\', \'unban\')">🔓 Unban</button>' +
+                '<button class="btn-control" style="background:#44aaff;border-color:#44aaff;color:#fff;" onclick="showModActionForm(\'' + escapeHtml(userId) + '\', \'clearwarns\')">🧹 Clear Warns</button>' +
+            '</div>' +
+        '</div>';
+        
+        // ── Action Form (hidden) ──────────────────────
+        html += '<div id="mod-action-form-container" class="mod-action-form-container" style="display:none;">' +
+            '<div class="mod-action-form">' +
+                '<div class="mod-action-form-header">' +
+                    '<span id="mod-action-form-title">⚠️ Warn User</span>' +
+                    '<button class="btn-control" onclick="hideModActionForm()" style="padding:2px 8px;font-size:0.7rem;">✕</button>' +
+                '</div>' +
+                '<div class="mod-action-form-body">' +
+                    '<div style="display:flex;gap:10px;flex-wrap:wrap;">' +
+                        '<div style="flex:1;min-width:200px;">' +
+                            '<label class="form-label">Guild ID</label>' +
+                            '<select id="mod-action-guild" class="cfg-input" style="font-size:0.75rem;">' +
+                                getGuildOptions(userId) +
+                            '</select>' +
+                        '</div>' +
+                        '<div id="mod-action-duration-group" style="flex:0 0 140px;display:none;">' +
+                            '<label class="form-label">Duration</label>' +
+                            '<input type="text" id="mod-action-duration" class="cfg-input" placeholder="e.g. 10m, 1h, 7d" style="font-size:0.75rem;">' +
+                        '</div>' +
+                        '<div id="mod-action-days-group" style="flex:0 0 140px;display:none;">' +
+                            '<label class="form-label">Delete Days</label>' +
+                            '<input type="number" id="mod-action-days" class="cfg-input" value="0" min="0" max="7" style="font-size:0.75rem;">' +
+                        '</div>' +
+                    '</div>' +
+                    '<div style="margin-top:10px;">' +
+                        '<label class="form-label">Reason</label>' +
+                        '<input type="text" id="mod-action-reason" class="cfg-input" placeholder="Reason for action..." style="font-size:0.75rem;">' +
+                    '</div>' +
+                '</div>' +
+                '<div class="mod-action-form-footer">' +
+                    '<button class="btn-control" onclick="hideModActionForm()">Cancel</button>' +
+                    '<button class="btn-control green" id="mod-action-submit" onclick="submitModAction(\'' + escapeHtml(userId) + '\')">✅ Confirm Action</button>' +
+                '</div>' +
+            '</div>' +
+        '</div>';
+        
         content.innerHTML = html;
     })
     .catch(() => {
@@ -513,6 +564,193 @@ function renderModConfig(summary) {
     '</div>';
     
     content.innerHTML = html;
+}
+
+// ─── Mod Action Form ──────────────────────────────────
+
+let _modActionCurrentAction = null;
+
+function getFirstGuildId(userId) {
+    const userSum = _modUsersData.find(u => u.user_id === userId);
+    if (userSum && userSum.guilds) {
+        const guildKeys = Object.keys(userSum.guilds);
+        if (guildKeys.length > 0) return guildKeys[0];
+    }
+    return '';
+}
+
+function getGuildOptions(userId) {
+    const userSum = _modUsersData.find(u => u.user_id === userId);
+    let options = '';
+    if (userSum && userSum.guilds) {
+        const guildKeys = Object.keys(userSum.guilds);
+        guildKeys.forEach((gk, i) => {
+            const count = userSum.guilds[gk];
+            const selected = i === 0 ? 'selected' : '';
+            options += '<option value="' + escapeHtml(gk) + '" ' + selected + '>Guild ' + escapeHtml(gk) + ' (' + count + ' violations)</option>';
+        });
+    }
+    if (!options) {
+        options = '<option value="">No guild data available</option>';
+    }
+    return options;
+}
+
+function showModActionForm(userId, action) {
+    _modActionCurrentAction = action;
+    const container = document.getElementById('mod-action-form-container');
+    const title = document.getElementById('mod-action-form-title');
+    const durationGroup = document.getElementById('mod-action-duration-group');
+    const daysGroup = document.getElementById('mod-action-days-group');
+    const reasonInput = document.getElementById('mod-action-reason');
+    const submitBtn = document.getElementById('mod-action-submit');
+    
+    const actionNames = {
+        'warn': '⚠️ Warn User',
+        'kick': '👢 Kick Member',
+        'ban': '🔨 Ban User',
+        'unban': '🔓 Unban User',
+        'timeout': '🔇 Timeout Member',
+        'mute': '🔇 Mute Member',
+        'unmute': '🔊 Unmute Member',
+        'clearwarns': '🧹 Clear All Warnings'
+    };
+    
+    title.textContent = actionNames[action] || 'Action: ' + action;
+    
+    // Show/hide duration field
+    if (action === 'timeout' || action === 'mute') {
+        durationGroup.style.display = '';
+        document.getElementById('mod-action-duration').value = action === 'mute' ? '1h' : '10m';
+    } else {
+        durationGroup.style.display = 'none';
+    }
+    
+    // Show/hide delete days field
+    if (action === 'ban') {
+        daysGroup.style.display = '';
+        document.getElementById('mod-action-days').value = '0';
+    } else {
+        daysGroup.style.display = 'none';
+    }
+    
+    // Set submit button color based on action
+    const actionColors = {
+        'warn': 'gold',
+        'kick': '#ff8800',
+        'ban': 'red',
+        'timeout': '#ff8800',
+        'mute': '#ff8800',
+        'unmute': 'green',
+        'unban': 'green',
+        'clearwarns': '#44aaff'
+    };
+    const color = actionColors[action] || 'green';
+    submitBtn.style.cssText = color.startsWith('#') ? 
+        'background:' + color + ';border-color:' + color + ';color:#fff;padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-weight:600;' :
+        '';
+    submitBtn.className = color.startsWith('#') ? 'btn-control' : 'btn-control ' + color;
+    
+    // Set reason placeholder
+    const reasonPhrases = {
+        'warn': 'Reason for warning...',
+        'kick': 'Reason for kick...',
+        'ban': 'Reason for ban...',
+        'timeout': 'Reason for timeout...',
+        'mute': 'Reason for mute...',
+        'unmute': 'Reason for unmute...',
+        'unban': 'Reason for unban...',
+        'clearwarns': 'Optional note...'
+    };
+    reasonInput.placeholder = reasonPhrases[action] || 'Reason...';
+    
+    container.style.display = '';
+    container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function hideModActionForm() {
+    document.getElementById('mod-action-form-container').style.display = 'none';
+    _modActionCurrentAction = null;
+}
+
+function submitModAction(userId) {
+    const action = _modActionCurrentAction;
+    if (!action) {
+        showToast('No action selected', 'error');
+        return;
+    }
+    
+    const guildSelect = document.getElementById('mod-action-guild');
+    const guildId = guildSelect ? guildSelect.value : '';
+    const reason = document.getElementById('mod-action-reason').value.trim() || '';
+    const duration = document.getElementById('mod-action-duration') ? document.getElementById('mod-action-duration').value.trim() : '';
+    const daysInput = document.getElementById('mod-action-days');
+    const deleteDays = daysInput ? parseInt(daysInput.value) || 0 : 0;
+    
+    if (!guildId) {
+        showToast('Please select a guild', 'error');
+        return;
+    }
+    
+    // Confirmation dialog
+    let confirmMsg = '⚠️ ' + action.toUpperCase() + ' user ' + userId;
+    confirmMsg += '\nGuild: ' + guildId;
+    if (reason) confirmMsg += '\nReason: ' + reason;
+    if (duration && (action === 'timeout' || action === 'mute')) confirmMsg += '\nDuration: ' + duration;
+    if (action === 'ban' && deleteDays > 0) confirmMsg += '\nDelete Days: ' + deleteDays;
+    confirmMsg += '\n\nProceed with this action?';
+    
+    if (!confirm(confirmMsg)) return;
+    
+    const btn = document.querySelector('#mod-action-submit');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Processing...';
+    }
+    
+    const payload = {
+        action: action,
+        user_id: userId,
+        guild_id: guildId,
+        reason: reason || 'No reason provided'
+    };
+    
+    if (duration && (action === 'timeout' || action === 'mute')) {
+        payload.duration = duration;
+    }
+    if (action === 'ban' && deleteDays > 0) {
+        payload.delete_days = deleteDays;
+    }
+    
+    fetch('/api/moderation/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '✅ Confirm Action';
+        }
+        if (data.success) {
+            showToast(data.message || action + ' completed successfully', 'success');
+            hideModActionForm();
+            // Refresh the user detail to show updated violations
+            openModUserDetail(userId);
+            loadModUsers();
+            loadModerationSummary();
+        } else {
+            showToast(data.error || 'Action failed', 'error');
+        }
+    })
+    .catch(() => {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '✅ Confirm Action';
+        }
+        showToast('Error performing action', 'error');
+    });
 }
 
 // ─── Init ──────────────────────────────────────────────

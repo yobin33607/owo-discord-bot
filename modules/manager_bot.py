@@ -29,7 +29,7 @@ Slash commands:
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 import json
 import os
 import time
@@ -189,6 +189,21 @@ class ManagerBot(commands.Bot):
         except Exception as e:
             _log.warning(f"Failed to load Tickets cog: {e}")
             print(f"[Manager Bot] ⚠️  Tickets cog failed to load: {e}")
+        try:
+            await self.add_cog(RoleManager(self))
+            _log.info("RoleManager cog loaded")
+            print("[Manager Bot] ✅ RoleManager cog loaded")
+        except Exception as e:
+            _log.warning(f"Failed to load RoleManager cog: {e}")
+            print(f"[Manager Bot] ⚠️  RoleManager cog failed to load: {e}")
+        try:
+            from modules.verification import setup as setup_verification
+            await setup_verification(self)
+            _log.info("Verification cog loaded")
+            print("[Manager Bot] ✅ Verification cog loaded")
+        except Exception as e:
+            _log.warning(f"Failed to load Verification cog: {e}")
+            print(f"[Manager Bot] ⚠️  Verification cog failed to load: {e}")
 
     async def on_ready(self):
         _log.info(f"Logged in as {self.user} (ID: {self.user.id})")
@@ -201,6 +216,12 @@ class ManagerBot(commands.Bot):
             await self._sync_all_commands()
 
         print(f"[Manager Bot]   Ready! Responds in any channel.\n")
+
+        # ── Start Role Manager ─────────────────────────
+        role_mgr = self.get_cog("RoleManager")
+        if role_mgr:
+            role_mgr.check_roles.start()
+            _log.info("RoleManager background loop started")
 
     async def _get_cog_app_commands(self):
         """Get ALL app commands from ALL loaded cogs.
@@ -535,6 +556,81 @@ class ManagerCommands(commands.Cog):
                     lines.append(f"  {key:20s} : {str(val)[:40]}")
             await ctx.send(f"```{chr(10).join(lines)}```")
 
+    @commands.command(name="rolestatus")
+    async def cmd_rolestatus(self, ctx):
+        """Check role tier status for all self-bots. Shows cash, current role, and next tier target."""
+        accounts = self._fetch_accounts()
+        if not accounts:
+            await ctx.send("```❌ No self-bots are running.```")
+            return
+
+        role_mgr = self.bot.get_cog("RoleManager")
+        if not role_mgr:
+            await ctx.send("```❌ RoleManager cog not loaded.```")
+            return
+
+        guild = role_mgr._find_role_guild()
+        if not guild:
+            await ctx.send("```❌ Could not find guild with tier roles. Is the bot in the right server?```")
+            return
+
+        lines = ["🎖️  ROLE STATUS REPORT"]
+        lines.append("─" * 60)
+
+        for acc in accounts:
+            uid = acc.get("id", "")
+            username = acc.get("username", "Unknown")
+            cash = acc.get("cash", 0) or 0
+
+            member = guild.get_member(int(uid)) if uid.isdigit() else None
+            in_guild = "✅" if member else "❌"
+
+            # Find current highest tier role
+            current_role_name = "None"
+            current_role_id = None
+            if member:
+                for _min_cash, rid in role_mgr.ROLE_TIERS:
+                    role = guild.get_role(rid)
+                    if role and role in member.roles:
+                        current_role_name = role.name
+                        current_role_id = rid
+                        break
+
+            # Determine target tier
+            target_role_id = role_mgr._get_tier_for_cash(cash)
+            target_name = "None"
+            next_target = "—"
+            if target_role_id:
+                target_role = guild.get_role(target_role_id)
+                target_name = target_role.name if target_role else f"ID {target_role_id}"
+                # Find immediate next higher tier (iterate lowest-to-highest)
+                for min_cash, rid in reversed(role_mgr.ROLE_TIERS):
+                    if cash < min_cash:
+                        next_role = guild.get_role(rid)
+                        next_target = f"{next_role.name if next_role else f'ID {rid}'} ({min_cash:,} cash)"
+                        break
+            else:
+                # Find the lowest tier as next target
+                if role_mgr.ROLE_TIERS:
+                    lowest_min, lowest_rid = role_mgr.ROLE_TIERS[-1]
+                    lowest_role = guild.get_role(lowest_rid)
+                    next_target = f"{lowest_role.name if lowest_role else f'ID {lowest_rid}'} ({lowest_min:,} cash)"
+
+            role_status = "✅" if current_role_id == target_role_id else ("⚠️ Needs update" if target_role_id else "—")
+
+            lines.append(f"  {in_guild} {username:20s}")
+            lines.append(f"      Cash:        {cash:>12,}")
+            lines.append(f"      Current:     {current_role_name}")
+            lines.append(f"      Target:      {target_name} {role_status}")
+            lines.append(f"      Next Tier:   {next_target}")
+            lines.append("")
+
+        lines.append("─" * 60)
+        lines.append(f"  Guild: {guild.name} ({guild.id})")
+        lines.append(f"  Accounts visible: {len(accounts)}")
+
+        await ctx.send(f"```{chr(10).join(lines)}```")
+
     @commands.command(name="accounts")
     async def cmd_accounts(self, ctx):
         """List all configured accounts"""
@@ -602,6 +698,7 @@ class ManagerCommands(commands.Cog):
                 "`!appeals [status]` — List appeals\n"
                 "`!appeal <id> approve/reject [notes]` — Review an appeal\n"
                 "`!modlog [count]` — View moderation log\n"
+                "`!rolestatus` — Check role tier status for all self-bots\n"
                 "`!help` — This message"
             ),
             inline=False,
@@ -631,6 +728,14 @@ class ManagerCommands(commands.Cog):
                 "`!ticketconfig` — Show ticket configuration\n"
                 "`!close` — Close current ticket channel\n"
                 "`!add <member>` — Add user to ticket (staff only)\n"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="Prefix Commands — Verification",
+            value=(
+                "`!verifypanel` — Post the verification button panel\n"
+                "`!verifyconfig` — View/set verification settings\n"
             ),
             inline=False,
         )
@@ -675,6 +780,14 @@ class ManagerCommands(commands.Cog):
                 "`/ticket-config` — Show ticket configuration\n"
                 "`/close` — Close current ticket channel\n"
                 "`/ticket-add <member>` — Add user to ticket (staff only)\n"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="Slash Commands — Verification",
+            value=(
+                "`/verifypanel` — Post the verification button panel\n"
+                "`/verifyconfig` — View verification configuration\n"
             ),
             inline=False,
         )
@@ -879,6 +992,7 @@ class ManagerCommands(commands.Cog):
                 "`!appeals [status]` — List appeals\n"
                 "`!appeal <id> approve/reject [notes]` — Review an appeal\n"
                 "`!modlog [count]` — View moderation log\n"
+                "`!rolestatus` — Check role tier status for all self-bots\n"
                 "`!help` — This message"
             ),
             inline=False,
@@ -908,6 +1022,14 @@ class ManagerCommands(commands.Cog):
                 "`!ticketconfig` — Show ticket configuration\n"
                 "`!close` — Close current ticket channel\n"
                 "`!add <member>` — Add user to ticket (staff only)\n"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="Prefix Commands — Verification",
+            value=(
+                "`!verifypanel` — Post the verification button panel\n"
+                "`!verifyconfig` — View/set verification settings\n"
             ),
             inline=False,
         )
@@ -952,6 +1074,14 @@ class ManagerCommands(commands.Cog):
                 "`/ticket-config` — Show ticket configuration\n"
                 "`/close` — Close current ticket channel\n"
                 "`/ticket-add <member>` — Add user to ticket (staff only)\n"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="Slash Commands — Verification",
+            value=(
+                "`/verifypanel` — Post the verification button panel\n"
+                "`/verifyconfig` — View verification configuration\n"
             ),
             inline=False,
         )
@@ -1379,6 +1509,159 @@ class ManagerCommands(commands.Cog):
                 await interaction.followup.send(
                     f"❌ An error occurred: {error}", ephemeral=True
                 )
+
+
+# ── Role Manager ──────────────────────────────────────
+
+
+# ── Role Manager ──────────────────────────────────────
+
+
+class RoleManager(commands.Cog):
+    """
+    Background cog that assigns role tiers to self-bots based on their cash balance.
+    Runs every 60 seconds, checking each self-bot's cash and assigning the highest
+    matching tier role. Removes lower-tier roles when a higher tier is achieved.
+    """
+
+    # Role tiers: (min_cash, role_id) sorted highest to lowest
+    ROLE_TIERS = [
+        (500000, 1530189334643343420),  # 500k+
+        (400000, 1532291694773534730),  # 400k+
+        (300000, 1532291746829172846),  # 300k+
+        (200000, 1532291817012465664),  # 200k+
+        (100000, 1532291804869820537),  # 100k+
+    ]
+    ALL_ROLE_IDS = {rid for _, rid in ROLE_TIERS}
+
+    def __init__(self, bot):
+        self.bot = bot
+        self._guild = None  # Cached guild where roles exist
+        self._last_assignments = {}  # user_id -> role_id (to avoid redundant API calls)
+
+    def _find_role_guild(self):
+        """Find the guild that contains our role IDs by checking all guilds the bot is in."""
+        for guild in self.bot.guilds:
+            for role_id in self.ALL_ROLE_IDS:
+                if guild.get_role(role_id):
+                    _log.info(f"RoleManager: Found target guild {guild.id} ({guild.name})")
+                    return guild
+        return None
+
+    async def _ensure_guild(self):
+        """Ensure we have the guild cached."""
+        if self._guild is None:
+            self._guild = self._find_role_guild()
+        return self._guild
+
+    def _get_tier_for_cash(self, cash):
+        """Return the role ID for the highest tier this cash qualifies for, or None."""
+        for min_cash, role_id in self.ROLE_TIERS:
+            if cash >= min_cash:
+                return role_id
+        return None
+
+    def _get_lower_tier_role_ids(self, target_role_id):
+        """Get all role IDs below the given tier that should be removed."""
+        lower_ids = set()
+        found = False
+        for _min_cash, role_id in self.ROLE_TIERS:
+            if role_id == target_role_id:
+                found = True
+            elif found:
+                lower_ids.add(role_id)
+        return lower_ids
+
+    @tasks.loop(seconds=60)
+    async def check_roles(self):
+        """Periodically check cash balance of all self-bots and assign tier roles."""
+        guild = await self._ensure_guild()
+        if not guild:
+            _log.warning("RoleManager: No guild found containing role IDs — retrying next cycle")
+            return
+
+        accounts = _api_get("/api/accounts/list")
+        if not accounts:
+            _log.debug("RoleManager: No accounts data from API")
+            return
+
+        for acc in accounts:
+            try:
+                user_id = str(acc.get("id", ""))
+                cash = acc.get("cash", 0) or 0
+                username = acc.get("username", "Unknown")
+
+                if not user_id or not user_id.isdigit():
+                    continue
+
+                target_role_id = self._get_tier_for_cash(cash)
+
+                member = guild.get_member(int(user_id))
+                if not member:
+                    try:
+                        member = await guild.fetch_member(int(user_id))
+                    except (discord.NotFound, discord.HTTPException):
+                        continue
+
+                if not member:
+                    continue
+
+                current_assignment = self._last_assignments.get(user_id)
+                if current_assignment == target_role_id:
+                    continue
+
+                if target_role_id:
+                    target_role = guild.get_role(target_role_id)
+                    if not target_role:
+                        _log.warning(f"RoleManager: Role {target_role_id} not found in guild")
+                        continue
+
+                    if target_role not in member.roles:
+                        try:
+                            await member.add_roles(target_role, reason=f"Cash tier: {cash:,}")
+                            _log.info(f"RoleManager: Assigned {target_role.name} to {username} [cash: {cash:,}]")
+                        except discord.Forbidden:
+                            _log.warning(f"RoleManager: No permission to assign roles to {username}")
+                            continue
+                        except Exception as e:
+                            _log.warning(f"RoleManager: Failed to assign role to {username}: {e}")
+                            continue
+
+                    lower_ids = self._get_lower_tier_role_ids(target_role_id)
+                    roles_to_remove = []
+                    for rid in lower_ids:
+                        role = guild.get_role(rid)
+                        if role and role in member.roles:
+                            roles_to_remove.append(role)
+                    if roles_to_remove:
+                        try:
+                            await member.remove_roles(*roles_to_remove, reason=f"Superseded by higher cash tier ({cash:,})")
+                            _log.info(f"RoleManager: Removed {len(roles_to_remove)} lower tier role(s) from {username}")
+                        except Exception as e:
+                            _log.warning(f"RoleManager: Failed to remove roles from {username}: {e}")
+
+                else:
+                    roles_to_remove = []
+                    for rid in self.ALL_ROLE_IDS:
+                        role = guild.get_role(rid)
+                        if role and role in member.roles:
+                            roles_to_remove.append(role)
+                    if roles_to_remove:
+                        try:
+                            await member.remove_roles(*roles_to_remove, reason=f"Cash below 100k ({cash:,})")
+                            _log.info(f"RoleManager: Removed all tier roles from {username} (cash: {cash:,})")
+                        except Exception as e:
+                            _log.warning(f"RoleManager: Failed to remove roles from {username}: {e}")
+
+                self._last_assignments[user_id] = target_role_id
+
+            except Exception as e:
+                _log.warning(f"RoleManager: Error processing account {acc.get('id', '?')}: {e}")
+
+    @check_roles.before_loop
+    async def before_check_roles(self):
+        """Wait for the bot to be ready before starting the loop."""
+        await self.bot.wait_until_ready()
 
 
 # ── Entry Point ────────────────────────────────────────

@@ -114,7 +114,26 @@ class LimeyBot(commands.Bot):
         platform = "Mobile (Termux)" if self.is_mobile else "Desktop"
         _log.info(f"Initialized bot on platform: {platform}")
         
+        # Store event loop reference for thread-safe scheduling from dashboard
+        self._loop_ref = None
+
+    @property
+    def loop_ref(self):
+        """Get the event loop safely, falling back to discord.py's loop attribute."""
+        if self._loop_ref is not None:
+            return self._loop_ref
+        try:
+            return self.loop
+        except (AttributeError, RuntimeError):
+            return None
+
     async def setup_hook(self):
+        # Capture the event loop for cross-thread scheduling (dashboard API)
+        try:
+            self._loop_ref = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop_ref = None
+
         if self.proxy_url and self.proxy_url.startswith(("socks4://", "socks5://")):
             try:
                 from aiohttp_socks import ProxyConnector
@@ -611,6 +630,8 @@ class LimeyBot(commands.Bot):
             self.log("WARN", f"Version check failed: {e}")
     
     async def run_bot(self):
+        # Capture the event loop BEFORE start() so dashboard can use it immediately
+        self._loop_ref = asyncio.get_running_loop()
         self.check_version()
         route = f"via {self.proxy_label}" if self.proxy_label != "direct" else "direct connection"
         self.log("SYS", f"Starting bot ({route})...")

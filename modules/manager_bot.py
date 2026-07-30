@@ -181,6 +181,14 @@ class ManagerBot(commands.Bot):
         except Exception as e:
             _log.warning(f"Failed to load Moderation cog: {e}")
             print(f"[Manager Bot] ⚠️  Moderation cog failed to load: {e}")
+        try:
+            from modules.tickets import setup as setup_tickets
+            await setup_tickets(self)
+            _log.info("Tickets cog loaded")
+            print("[Manager Bot] ✅ Tickets cog loaded")
+        except Exception as e:
+            _log.warning(f"Failed to load Tickets cog: {e}")
+            print(f"[Manager Bot] ⚠️  Tickets cog failed to load: {e}")
 
     async def on_ready(self):
         _log.info(f"Logged in as {self.user} (ID: {self.user.id})")
@@ -616,6 +624,17 @@ class ManagerCommands(commands.Cog):
             inline=False,
         )
         embed.add_field(
+            name="Prefix Commands — Tickets",
+            value=(
+                "`!ticketsetup` — Interactive ticket system setup\n"
+                "`!ticketpanel` — Post the ticket creation panel\n"
+                "`!ticketconfig` — Show ticket configuration\n"
+                "`!close` — Close current ticket channel\n"
+                "`!add <member>` — Add user to ticket (staff only)\n"
+            ),
+            inline=False,
+        )
+        embed.add_field(
             name="Slash Commands — Manager",
             value=(
                 "`/status` — Show all self-bots and their status\n"
@@ -645,6 +664,17 @@ class ManagerCommands(commands.Cog):
                 "`/slowmode <sec>` — Set channel slowmode\n"
                 "`/lock` / `/unlock` — Lock/unlock channel\n"
                 "`/modlog [count]` — View moderation log\n"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="Slash Commands — Tickets",
+            value=(
+                "`/ticket-setup` — Interactive ticket system setup\n"
+                "`/ticket-panel` — Post the ticket creation panel\n"
+                "`/ticket-config` — Show ticket configuration\n"
+                "`/close` — Close current ticket channel\n"
+                "`/ticket-add <member>` — Add user to ticket (staff only)\n"
             ),
             inline=False,
         )
@@ -871,6 +901,17 @@ class ManagerCommands(commands.Cog):
             inline=False,
         )
         embed.add_field(
+            name="Prefix Commands — Tickets",
+            value=(
+                "`!ticketsetup` — Interactive ticket system setup\n"
+                "`!ticketpanel` — Post the ticket creation panel\n"
+                "`!ticketconfig` — Show ticket configuration\n"
+                "`!close` — Close current ticket channel\n"
+                "`!add <member>` — Add user to ticket (staff only)\n"
+            ),
+            inline=False,
+        )
+        embed.add_field(
             name="Slash Commands — Manager",
             value=(
                 "`/status` — Show all self-bots and their status\n"
@@ -900,6 +941,17 @@ class ManagerCommands(commands.Cog):
                 "`/slowmode <sec>` — Set channel slowmode\n"
                 "`/lock` / `/unlock` — Lock/unlock channel\n"
                 "`/modlog [count]` — View moderation log\n"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="Slash Commands — Tickets",
+            value=(
+                "`/ticket-setup` — Interactive ticket system setup\n"
+                "`/ticket-panel` — Post the ticket creation panel\n"
+                "`/ticket-config` — Show ticket configuration\n"
+                "`/close` — Close current ticket channel\n"
+                "`/ticket-add <member>` — Add user to ticket (staff only)\n"
             ),
             inline=False,
         )
@@ -1037,7 +1089,7 @@ class ManagerCommands(commands.Cog):
     # ── Appeal Modal (updated) ────────────────────────
 
     class AppealModal(discord.ui.Modal):
-        def __init__(self, cog, punishment_type=""):
+        def __init__(self, cog, punishment_type="", mod_reason=""):
             self.cog = cog
             self._punishment_type = punishment_type
             self._mod_reason = mod_reason

@@ -211,6 +211,107 @@
     font-size: 0.9rem;
 }
 
+/* ── Console Controls ─────────────────────────────── */
+.console-controls-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.console-left, .console-right {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+/* ── System Info Panel ────────────────────────────── */
+.system-info-panel {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    padding: 12px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+}
+
+.sys-info-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4px 12px;
+    min-width: 60px;
+    flex: 1;
+}
+
+.sys-info-label {
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #666;
+    margin-bottom: 2px;
+    font-family: var(--font-mono);
+}
+
+.sys-info-value {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #ddd;
+    font-family: var(--font-mono);
+}
+
+/* System shutdown note style */
+.system-shutdown-note {
+    font-size: 0.8rem;
+    color: #888;
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: rgba(255,68,68,0.08);
+    border: 1px solid rgba(255,68,68,0.2);
+    border-radius: 8px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .console-controls-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .console-left, .console-right {
+        width: 100%;
+        justify-content: center;
+    }
+    .console-left .btn-control,
+    .console-right .btn-control {
+        flex: 1;
+        text-align: center;
+        padding: 6px 8px;
+        font-size: 0.75rem;
+    }
+    .console-left .btn-text,
+    .console-right .btn-text {
+        font-size: 0.7rem;
+    }
+    .system-info-panel {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        padding: 10px;
+    }
+    .sys-info-item {
+        padding: 4px 6px;
+        min-width: auto;
+    }
+    .sys-info-value {
+        font-size: 0.75rem;
+    }
+}
+
 
 .mobile-control-panel {
     display: none;

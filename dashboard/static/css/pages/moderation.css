@@ -1,0 +1,549 @@
+/* Moderation Panel Page Styles */
+
+.mod-header {
+    margin-bottom: 20px;
+}
+
+.mod-stats-bar {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+
+.mod-stats-bar .proxy-stat-card {
+    flex: 1;
+    min-width: 100px;
+    text-align: center;
+}
+
+.mod-toolbar {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    align-items: center;
+}
+
+.mod-toolbar.secondary {
+    margin-bottom: 12px;
+}
+
+.mod-filter-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex: 1;
+}
+
+.mod-filter {
+    padding: 6px 16px;
+    font-size: 0.8rem;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: #aaa;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: var(--font-mono);
+}
+
+.mod-filter:hover {
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    border-color: rgba(255,255,255,0.15);
+}
+
+.mod-filter.active {
+    background: var(--primary);
+    color: #000;
+    border-color: var(--primary);
+    font-weight: 600;
+}
+
+.mod-search-box {
+    min-width: 200px;
+}
+
+.mod-search-box .cfg-search-input {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+}
+
+.mod-section {
+    animation: modFadeIn 0.2s ease;
+}
+
+@keyframes modFadeIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.mod-users-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.mod-user-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    cursor: pointer;
+}
+
+.mod-user-card:hover {
+    border-color: rgba(255,255,255,0.12);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+}
+
+.mod-user-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    gap: 12px;
+}
+
+.mod-user-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.mod-user-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.mod-user-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+.mod-user-name {
+    font-weight: 600;
+    color: #fff;
+    font-size: 0.9rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mod-user-id {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: #666;
+}
+
+.mod-user-stats {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+}
+
+.mod-stat-badge {
+    text-align: center;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    min-width: 50px;
+}
+
+.mod-stat-badge .stat-num {
+    font-size: 1.1rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: #ffaa44;
+    display: block;
+}
+
+.mod-stat-badge .stat-label {
+    font-size: 0.6rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.mod-stat-badge.violations .stat-num { color: #ff4444; }
+.mod-stat-badge.warnings .stat-num { color: #ffaa44; }
+.mod-stat-badge.last-action .stat-num { color: #888; font-size: 0.7rem; }
+
+.mod-user-type {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.mod-user-type.type-warn { background: #ffaa4422; color: #ffaa44; border: 1px solid #ffaa4444; }
+.mod-user-type.type-kick { background: #ff880022; color: #ff8800; border: 1px solid #ff880044; }
+.mod-user-type.type-ban { background: #ff444422; color: #ff4444; border: 1px solid #ff444444; }
+.mod-user-type.type-timeout { background: #ff880022; color: #ff8800; border: 1px solid #ff880044; }
+.mod-user-type.type-mute { background: #ff880022; color: #ff8800; border: 1px solid #ff880044; }
+
+/* Detail Modal */
+.mod-modal-inner {
+    max-width: 650px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.mod-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.mod-detail-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.mod-detail-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+.mod-detail-info h3 {
+    margin: 0;
+    color: #fff;
+    font-size: 1rem;
+}
+
+.mod-detail-info .user-id-small {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: #666;
+}
+
+.mod-detail-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.mod-detail-tab {
+    padding: 4px 14px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+    color: #aaa;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: var(--font-mono);
+}
+
+.mod-detail-tab:hover {
+    background: rgba(255,255,255,0.07);
+    color: #fff;
+}
+
+.mod-detail-tab.active {
+    background: var(--primary);
+    color: #000;
+    border-color: var(--primary);
+    font-weight: 600;
+}
+
+.mod-detail-section {
+    margin-top: 8px;
+}
+
+.mod-violation-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    transition: background 0.15s ease;
+}
+
+.mod-violation-item:hover {
+    background: rgba(255,255,255,0.05);
+}
+
+.mod-violation-icon {
+    font-size: 1rem;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.mod-violation-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.mod-violation-type {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #ffaa44;
+    text-transform: uppercase;
+}
+
+.mod-violation-reason {
+    font-size: 0.8rem;
+    color: #bbb;
+    margin-top: 2px;
+    word-break: break-word;
+}
+
+.mod-violation-meta {
+    font-size: 0.68rem;
+    color: #666;
+    margin-top: 4px;
+    font-family: var(--font-mono);
+}
+
+.mod-violation-actions {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mod-violation-actions .btn-control {
+    padding: 3px 10px;
+    font-size: 0.68rem;
+}
+
+.mod-empty {
+    color: #666;
+    font-style: italic;
+    font-size: 0.85rem;
+    text-align: center;
+    padding: 20px;
+}
+
+/* Mod Log */
+.mod-log-entry {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 12px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.04);
+    border-radius: 8px;
+    margin-bottom: 4px;
+    font-size: 0.78rem;
+    transition: background 0.15s ease;
+}
+
+.mod-log-entry:hover {
+    background: rgba(255,255,255,0.04);
+}
+
+.mod-log-icon {
+    font-size: 0.9rem;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.mod-log-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.mod-log-action {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.mod-log-target {
+    color: #ccc;
+}
+
+.mod-log-moderator {
+    color: #888;
+}
+
+.mod-log-reason {
+    color: #999;
+    margin-top: 1px;
+    font-size: 0.72rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mod-log-time {
+    font-size: 0.65rem;
+    color: #555;
+    font-family: var(--font-mono);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Config Tab */
+.mod-config-section {
+    margin-bottom: 16px;
+}
+
+.mod-config-section h3 {
+    font-size: 0.95rem;
+    color: var(--primary);
+    margin: 0 0 8px 0;
+    font-family: var(--font-heading);
+}
+
+.mod-config-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.mod-config-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 6px;
+    font-size: 0.8rem;
+}
+
+.mod-config-label {
+    color: #aaa;
+}
+
+.mod-config-value {
+    font-family: var(--font-mono);
+    color: #ddd;
+    font-size: 0.75rem;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mod-config-value.disabled {
+    color: #ff4444;
+}
+
+.mod-config-value.enabled {
+    color: #00ff88;
+}
+
+.mod-config-thresholds {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.mod-threshold-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 6px;
+    font-size: 0.78rem;
+}
+
+.mod-threshold-count {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    color: #ffaa44;
+    min-width: 30px;
+}
+
+.mod-threshold-action {
+    color: #ccc;
+}
+
+.mod-user-guilds {
+    font-size: 0.72rem;
+    color: #666;
+    margin-top: 2px;
+}
+
+.mod-bulk-clear {
+    margin-top: 12px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .mod-stats-bar .proxy-stat-card {
+        min-width: 70px;
+        padding: 8px;
+    }
+    .mod-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .mod-filter-group {
+        width: 100%;
+    }
+    .mod-filter {
+        flex: 1;
+        text-align: center;
+        font-size: 0.72rem;
+        padding: 5px 8px;
+    }
+    .mod-search-box {
+        min-width: 100%;
+    }
+    .mod-user-card-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    .mod-user-stats {
+        width: 100%;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .mod-config-grid {
+        grid-template-columns: 1fr;
+    }
+    .mod-modal-inner {
+        max-width: 95vw;
+    }
+}

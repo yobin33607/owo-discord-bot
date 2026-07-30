@@ -33,6 +33,7 @@ from datetime import datetime, timedelta
 
 
 import socket
+import sys
 import urllib.parse
 import requests
 import re
@@ -994,7 +995,7 @@ def settings():
                         ghd.write_json(fpath, new_config, message=f"Update {fpath} from dashboard (all accounts)")
                 
                 for bot in state.bot_instances:
-                    asyncio.run_coroutine_threadsafe(bot.sync_settings(new_config), bot.loop)
+                    asyncio.run_coroutine_threadsafe(bot.sync_settings(new_config), bot.loop_ref)
                 
                 state.log_command("SYS", "Settings updated for ALL accounts", "success")
             else:
@@ -1008,7 +1009,7 @@ def settings():
                 
                 for bot in state.bot_instances:
                     if (not account_id) or (bot.user and str(bot.user.id) == str(account_id)):
-                        asyncio.run_coroutine_threadsafe(bot.sync_settings(new_config), bot.loop)
+                        asyncio.run_coroutine_threadsafe(bot.sync_settings(new_config), bot.loop_ref)
                 
                 state.log_command("SYS", f"Settings updated for {'Account ' + account_id if account_id else 'Global'}", "success")
             
@@ -1219,7 +1220,7 @@ def test_security():
         
     sec = bot.get_cog('Security')
     if sec:
-        asyncio.run_coroutine_threadsafe(sec.play_beep(), bot.loop)
+        asyncio.run_coroutine_threadsafe(sec.play_beep(), bot.loop_ref)
         sec._show_desktop_notification("Test: Limey Security Alert working!")
         sec._send_webhook("SYSTEM TEST", "This is a test of your security notification system. All systems are operational.")
         return jsonify({'status': 'success', 'message': 'Test signals sent'})
@@ -1248,7 +1249,7 @@ def control():
     elif action == 'cash':
         asyncio.run_coroutine_threadsafe(
             bot.send_message(f"{bot.prefix}cash", skip_typing=True, priority=True),
-            bot.loop
+            bot.loop_ref
         )
         state.log_command("CMD", "Manual Cash Check Sent", "info", bot_name=bot.username)
         
@@ -1321,7 +1322,7 @@ def captcha_submit():
     
     asyncio.run_coroutine_threadsafe(
         bot.send_message(full_command, skip_typing=True, priority=True), 
-        bot.loop
+        bot.loop_ref
     )
     
     if 'current_captcha' in st:
@@ -1378,7 +1379,7 @@ def captcha_balance():
         temp_solver = YesCaptchaService(bot, api_key, "")
 
     try:
-        future = asyncio.run_coroutine_threadsafe(temp_solver.get_balance(), bot.loop)
+        future = asyncio.run_coroutine_threadsafe(temp_solver.get_balance(), bot.loop_ref)
         balance = future.result(timeout=10)
         return jsonify({'balance': balance, 'service': service, 'enabled': cfg.get('enabled', False)})
     except Exception:
@@ -1415,12 +1416,145 @@ def bot_command():
     
     asyncio.run_coroutine_threadsafe(
         bot.send_message(command, skip_typing=True, priority=True), 
-        bot.loop
+        bot.loop_ref
     )
     state.log_command("CMD", f"Manual command sent: {command}", bot_name=bot.username)
     return jsonify({'success': True, 'message': f'Command sent: {command}'})
 
 _pending_captchas = {}
+
+# ── System Control API ────────────────────────────────
+
+@app.route('/api/system/status')
+@login_required
+def system_status():
+    """Get system status information."""
+    uptime = time.time() - state.active_session_start if state.active_session_start else 0
+    bot_count = len(state.bot_instances)
+    active_count = sum(1 for b in state.bot_instances if not b.paused)
+    
+    # Get memory info (cross-platform)
+    memory_info = {}
+    try:
+        import psutil
+        process = psutil.Process(os.getpid())
+        memory_info = {
+            'rss': process.memory_info().rss,
+            'vms': process.memory_info().vms,
+            'percent': process.memory_percent(),
+            'cpu_percent': process.cpu_percent(interval=0.1),
+        }
+        memory_info['rss_mb'] = round(memory_info['rss'] / 1024 / 1024, 1)
+        memory_info['vms_mb'] = round(memory_info['vms'] / 1024 / 1024, 1)
+        memory_info['cpu'] = round(memory_info['cpu_percent'], 1)
+        memory_info['available'] = psutil is not None
+    except ImportError:
+        memory_info = {'available': False}
+    except Exception:
+        memory_info = {'available': False}
+    
+    return jsonify({
+        'success': True,
+        'system': {
+            'uptime': utils.format_seconds(uptime),
+            'uptime_seconds': uptime,
+            'bot_count': bot_count,
+            'active_count': active_count,
+            'platform': sys.platform,
+            'python_version': sys.version.split()[0],
+            'memory': memory_info,
+            'pid': os.getpid(),
+        }
+    })
+
+
+@app.route('/api/system/restart', methods=['POST'])
+@require_permission('manage')
+def system_restart():
+    """Restart the entire bot system."""
+    try:
+        state.log_command("SYS", "🔄 System restart initiated from dashboard...", "warning")
+        
+        # Save state
+        state.save_account_stats()
+        try:
+            import utils.history_tracker as ht
+            ht.end_session()
+        except Exception:
+            pass
+        
+        # Stop all bots gracefully
+        for bot in state.bot_instances:
+            try:
+                bot.active = False
+                asyncio.run_coroutine_threadsafe(bot.close(), bot.loop_ref)
+            except Exception:
+                pass
+        
+        state.log_command("SYS", "✅ State saved, all bots stopped. Restarting...", "success")
+        
+        # Use a thread for restart to avoid blocking the response
+        def _do_restart():
+            time.sleep(1)  # Give time for the response to be sent
+            try:
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            except Exception:
+                os._exit(0)
+        
+        threading.Thread(target=_do_restart, daemon=True).start()
+        
+        return jsonify({'success': True, 'message': 'System restarting...'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Restart failed: {e}'}), 500
+
+
+@app.route('/api/system/shutdown', methods=['POST'])
+@require_permission('manage')
+def system_shutdown():
+    """Shutdown the entire bot system."""
+    try:
+        state.log_command("SYS", "🛑 System shutdown initiated from dashboard...", "warning")
+        
+        # Save state
+        state.save_account_stats()
+        try:
+            import utils.history_tracker as ht
+            ht.end_session()
+        except Exception:
+            pass
+        
+        # Stop all bots
+        for bot in state.bot_instances:
+            try:
+                bot.active = False
+                asyncio.run_coroutine_threadsafe(bot.close(), bot.loop_ref)
+            except Exception:
+                pass
+        
+        state.log_command("SYS", "✅ State saved. System shutting down...", "success")
+        
+        def _do_shutdown():
+            time.sleep(1)
+            os._exit(0)
+        
+        threading.Thread(target=_do_shutdown, daemon=True).start()
+        
+        return jsonify({'success': True, 'message': 'System shutting down...'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Shutdown failed: {e}'}), 500
+
+
+@app.route('/api/system/logs/clear', methods=['POST'])
+@require_permission('manage')
+def system_clear_logs():
+    """Clear the in-memory command logs."""
+    try:
+        state.command_logs.clear()
+        state.log_command("SYS", "🗑️ Command logs cleared from dashboard", "info")
+        return jsonify({'success': True, 'message': 'Logs cleared'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Failed to clear logs: {e}'}), 500
+
 
 @app.route('/api/captcha_challenge', methods=['GET'])
 @login_required
@@ -1537,6 +1671,347 @@ def captcha_oauth_url():
         return jsonify({'success': False, 'error': 'Failed to get OAuth URL'})
     
     return jsonify({'success': True, 'url': redirect_url})
+
+# ── Ticket API ────────────────────────────────────────
+
+
+def _load_ticket_data():
+    """Load ticket data from GitHub data repo."""
+    data = ghd.read_json("config/tickets.json", default=None)
+    if data is not None:
+        return data
+    return {"config": {}, "tickets": {}, "next_ticket_num": 1}
+
+
+@app.route('/api/tickets/config', methods=['GET', 'POST'])
+@require_permission('manage')
+def api_tickets_config():
+    """Get or update the ticket system configuration."""
+    if request.method == 'POST':
+        payload = request.json or {}
+        config_update = payload.get('config', {})
+        
+        data = _load_ticket_data()
+        if 'config' not in data:
+            data['config'] = {}
+        
+        # Merge the update into existing config
+        for key in ('staff_role_id', 'log_channel_id'):
+            if key in config_update:
+                data['config'][key] = str(config_update[key]) if config_update[key] else ''
+        
+        _save_ticket_data(data)
+        
+        state.log_command("SYS", "Ticket configuration updated from dashboard", "success")
+        return jsonify({'success': True, 'message': 'Ticket configuration saved', 'config': data['config']})
+    
+    # GET: Return current config
+    data = _load_ticket_data()
+    return jsonify({'success': True, 'config': data.get('config', {})})
+
+
+@app.route('/api/tickets/stats')
+@require_permission('manage')
+def api_tickets_stats():
+    """Get ticket statistics across all guilds."""
+    data = _load_ticket_data()
+    tickets = data.get('tickets', {})
+    
+    total_open = 0
+    total_closed = 0
+    total_orphaned = 0
+    type_breakdown = {}
+    guild_totals = {}
+    
+    for guild_key, guild_tickets in tickets.items():
+        guild_totals[guild_key] = len(guild_tickets)
+        for tnum, tdata in guild_tickets.items():
+            status = tdata.get('status', 'unknown')
+            if status == 'open':
+                total_open += 1
+            elif status == 'closed':
+                total_closed += 1
+            else:
+                total_orphaned += 1
+            
+            ttype = tdata.get('type', 'unknown')
+            type_breakdown[ttype] = type_breakdown.get(ttype, 0) + 1
+    
+    return jsonify({
+        'success': True,
+        'stats': {
+            'total_open': total_open,
+            'total_closed': total_closed,
+            'total_orphaned': total_orphaned,
+            'total_all': total_open + total_closed + total_orphaned,
+            'type_breakdown': type_breakdown,
+            'guild_count': len(guild_totals),
+        }
+    })
+
+
+@app.route('/api/tickets/list')
+@require_permission('manage')
+def api_tickets_list():
+    """List all tickets across all guilds."""
+    data = _load_ticket_data()
+    tickets = data.get('tickets', {})
+    
+    status_filter = request.args.get('status', 'all')
+    limit = request.args.get('limit', 50, type=int)
+    
+    results = []
+    for guild_key, guild_tickets in tickets.items():
+        for tnum, tdata in guild_tickets.items():
+            if status_filter != 'all' and tdata.get('status') != status_filter:
+                continue
+            results.append({
+                'ticket_num': tnum,
+                'guild_id': guild_key,
+                'channel_id': tdata.get('channel_id'),
+                'user_id': tdata.get('user_id'),
+                'username': tdata.get('username'),
+                'type': tdata.get('type'),
+                'subject': tdata.get('subject'),
+                'status': tdata.get('status'),
+                'claimed_by': tdata.get('claimed_by'),
+                'created_at': tdata.get('created_at'),
+                'closed_at': tdata.get('closed_at'),
+            })
+    
+    results.sort(key=lambda t: t.get('created_at', 0), reverse=True)
+    results = results[:limit]
+    
+    return jsonify({'success': True, 'tickets': results, 'total': len(results)})
+
+
+# ── Moderation API ────────────────────────────────────
+
+
+def _load_mod_data():
+    """Load moderation data from GitHub data repo."""
+    data = ghd.read_json("config/moderation.json", default=None)
+    if data is not None:
+        return data
+    return {"warnings": {}, "mutes": {}, "mod_log": {}, "violations": {}, "next_warn_id": 1, "next_violation_id": 1}
+
+
+def _get_mod_config():
+    """Get moderation config from settings.json via GitHub."""
+    cfg = ghd.read_json("config/settings.json", default={})
+    return cfg.get("manager_bot", {}).get("moderation", {})
+
+
+@app.route('/api/moderation/users')
+@require_permission('manage')
+def api_moderation_users():
+    """Get a summary of all users with violations across all guilds."""
+    data = _load_mod_data()
+    violations = data.get('violations', {})
+    
+    users_map = {}
+    for guild_key, guild_violations in violations.items():
+        for user_key, user_violations in guild_violations.items():
+            if user_key not in users_map:
+                users_map[user_key] = {
+                    'user_id': user_key,
+                    'guilds': {},
+                    'total_violations': 0,
+                    'last_violation': 0
+                }
+            
+            if guild_key not in users_map[user_key]['guilds']:
+                users_map[user_key]['guilds'][guild_key] = 0
+            
+            users_map[user_key]['guilds'][guild_key] += len(user_violations)
+            users_map[user_key]['total_violations'] += len(user_violations)
+            
+            for v in user_violations:
+                ts = v.get('timestamp', 0)
+                if ts > users_map[user_key]['last_violation']:
+                    users_map[user_key]['last_violation'] = ts
+                    users_map[user_key]['last_type'] = v.get('type', 'unknown')
+                    users_map[user_key]['last_reason'] = v.get('reason', '')
+    
+    users_list = list(users_map.values())
+    users_list.sort(key=lambda u: u['last_violation'], reverse=True)
+    
+    return jsonify({'success': True, 'users': users_list, 'total': len(users_list)})
+
+
+@app.route('/api/moderation/violations/<user_id>')
+@require_permission('manage')
+def api_moderation_violations(user_id):
+    """Get all violations for a user with full details."""
+    data = _load_mod_data()
+    violations = data.get('violations', {})
+    
+    results = []
+    for guild_key, guild_violations in violations.items():
+        if str(user_id) in guild_violations:
+            for v in guild_violations[str(user_id)]:
+                v['guild_id'] = guild_key
+                results.append(v)
+    
+    results.sort(key=lambda v: v.get('timestamp', 0), reverse=True)
+    return jsonify({'success': True, 'violations': results, 'total': len(results)})
+
+
+@app.route('/api/moderation/warnings/<user_id>')
+@require_permission('manage')
+def api_moderation_warnings(user_id):
+    """Get all warnings for a user across all guilds."""
+    data = _load_mod_data()
+    warnings = data.get('warnings', {})
+    
+    results = []
+    for guild_key, guild_warnings in warnings.items():
+        if str(user_id) in guild_warnings:
+            for w in guild_warnings[str(user_id)]:
+                w['guild_id'] = guild_key
+                results.append(w)
+    
+    results.sort(key=lambda w: w.get('timestamp', 0), reverse=True)
+    return jsonify({'success': True, 'warnings': results, 'total': len(results)})
+
+
+@app.route('/api/moderation/modlog')
+@require_permission('manage')
+def api_moderation_modlog():
+    """Get mod log entries across all guilds."""
+    data = _load_mod_data()
+    mod_log = data.get('mod_log', {})
+    
+    guild_filter = request.args.get('guild_id', '')
+    action_filter = request.args.get('action', '')
+    limit = request.args.get('limit', 100, type=int)
+    
+    results = []
+    for guild_key, entries in mod_log.items():
+        if guild_filter and guild_key != guild_filter:
+            continue
+        for entry in entries:
+            if action_filter and entry.get('type', '') != action_filter:
+                continue
+            entry['guild_id'] = guild_key
+            results.append(entry)
+    
+    results.sort(key=lambda e: e.get('timestamp', 0), reverse=True)
+    results = results[:limit]
+    
+    return jsonify({'success': True, 'entries': results, 'total': len(results)})
+
+
+@app.route('/api/moderation/summary')
+@require_permission('manage')
+def api_moderation_summary():
+    """Get a summary of moderation activity."""
+    data = _load_mod_data()
+    cfg = _get_mod_config()
+    
+    violations = data.get('violations', {})
+    mod_log = data.get('mod_log', {})
+    mutes = data.get('mutes', {})
+    
+    total_violations = sum(
+        len(user_v)
+        for guild_v in violations.values()
+        for user_v in guild_v.values()
+    )
+    
+    # Count users with violations
+    users_with_violations = set()
+    for guild_v in violations.values():
+        for uid in guild_v.keys():
+            users_with_violations.add(uid)
+    
+    total_mod_actions = sum(len(entries) for entries in mod_log.values())
+    active_mutes = 0
+    now = time.time()
+    for guild_m in mutes.values():
+        for uid, mute_info in guild_m.items():
+            until = mute_info.get('until', 0)
+            if until is None or until > now:
+                active_mutes += 1
+    
+    # Count by type
+    type_counts = {}
+    for guild_v in violations.values():
+        for user_v in guild_v.values():
+            items = user_v if isinstance(user_v, list) else [user_v]
+            for v in items:
+                vtype = v.get('type', 'unknown')
+                type_counts[vtype] = type_counts.get(vtype, 0) + 1
+    
+    warn_thresholds = cfg.get('warn_thresholds', {})
+    auto_mod_enabled = cfg.get('auto_mod', {}).get('discord_automod_warn', True)
+    muted_role_id = cfg.get('muted_role_id', None)
+    mod_log_channel = cfg.get('mod_log_channel_id', '')
+    
+    return jsonify({
+        'success': True,
+        'summary': {
+            'total_violations': total_violations,
+            'users_with_violations': len(users_with_violations),
+            'total_mod_actions': total_mod_actions,
+            'active_mutes': active_mutes,
+            'type_breakdown': type_counts,
+            'config': {
+                'warn_thresholds': warn_thresholds,
+                'auto_mod_enabled': auto_mod_enabled,
+                'muted_role_id': muted_role_id,
+                'mod_log_channel': mod_log_channel,
+            }
+        }
+    })
+
+
+@app.route('/api/moderation/clear-violations', methods=['POST'])
+@require_permission('manage')
+def api_moderation_clear_violations():
+    """Clear violations for a user in a guild."""
+    payload = request.json or {}
+    user_id = str(payload.get('user_id', ''))
+    guild_id = str(payload.get('guild_id', ''))
+    violation_id = payload.get('violation_id', 'all')
+    
+    if not user_id:
+        return jsonify({'success': False, 'error': 'User ID required'}), 400
+    
+    data = _load_mod_data()
+    
+    if guild_id:
+        guild_keys = [guild_id]
+    else:
+        guild_keys = list(data.get('violations', {}).keys())
+    
+    cleared_count = 0
+    for gk in guild_keys:
+        guild_v = data.get('violations', {}).get(gk, {})
+        if user_id not in guild_v:
+            continue
+        
+        if violation_id == 'all':
+            cleared_count += len(guild_v[user_id])
+            guild_v[user_id] = []
+        else:
+            try:
+                vid = int(violation_id)
+                before = len(guild_v[user_id])
+                guild_v[user_id] = [v for v in guild_v[user_id] if v.get('id') != vid]
+                cleared_count += before - len(guild_v[user_id])
+            except (ValueError, TypeError):
+                return jsonify({'success': False, 'error': 'Invalid violation ID'}), 400
+    
+    _save_mod_data(data)
+    state.log_command("MOD", f"Dashboard cleared {cleared_count} violations for user {user_id}", "warning")
+    return jsonify({'success': True, 'message': f'Cleared {cleared_count} violation(s)', 'cleared': cleared_count})
+
+
+def _save_mod_data(data):
+    """Save moderation data to GitHub data repo."""
+    ghd.write_json("config/moderation.json", data, message="Update moderation data from dashboard")
+
 
 @app.route('/api/captcha/pending', methods=['GET'])
 @login_required

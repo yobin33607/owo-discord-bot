@@ -285,3 +285,331 @@ window.action = function(a, el) {
         body: JSON.stringify({ action: a, id: currentAccountId })
     }).then(() => update());
 };
+
+// ─── Console / Terminal Controls ────────────────────
+
+function fetchSystemStatus() {
+    fetch('/api/system/status')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success && data.system) {
+                const s = data.system;
+                document.getElementById('sys-uptime').textContent = s.uptime || '--';
+                document.getElementById('sys-bots').textContent = s.bot_count || 0;
+                document.getElementById('sys-active').textContent = s.active_count || 0;
+                document.getElementById('sys-python').textContent = s.python_version || '--';
+                document.getElementById('sys-pid').textContent = s.pid || '--';
+                document.getElementById('sys-platform').textContent = (s.platform || '--').replace('darwin', 'macOS').replace('win32', 'Windows').replace('linux', 'Linux');
+                
+                if (s.memory && s.memory.available) {
+                    document.getElementById('sys-memory').textContent = (s.memory.rss_mb || '--') + ' MB';
+                    document.getElementById('sys-cpu').textContent = (s.memory.cpu || '--') + '%';
+                } else {
+                    document.getElementById('sys-memory').textContent = 'N/A';
+                    document.getElementById('sys-cpu').textContent = 'N/A';
+                }
+            }
+        })
+        .catch(() => {});
+}
+
+function clearTerminalLogs() {
+    if (!confirm('Clear all log entries from the terminal display?')) return;
+    
+    fetch('/api/system/logs/clear', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                lastLogsHash = '';
+                document.getElementById('term').innerHTML = '<div class="history-item sys" style="color:#888; font-style:italic;">[SYSTEM] Logs cleared.</div>';
+                showToast('Logs cleared');
+            } else {
+                showToast(data.error || 'Failed to clear logs', 'error');
+            }
+        })
+        .catch(() => showToast('Error clearing logs', 'error'));
+}
+
+function systemRestart() {
+    if (!confirm('⚠️ RESTART SYSTEM\n\nThis will stop all bots, save state, and restart the entire process.\n\nContinue?')) return;
+    
+    const btn = document.querySelector('.btn-control.green[onclick*="systemRestart"]');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="icon-svg" style="--icon: url(\'/static/assets/limey_icons/sync.svg\'); animation: spin 1s linear infinite;"></span> <span class="btn-text">RESTARTING...</span>'; }
+    
+    showToast('🔄 System restarting...', 'info');
+    
+    fetch('/api/system/restart', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast('✅ ' + data.message, 'success');
+                // The page will reload when the system comes back up
+                setTimeout(() => {
+                    const checkInterval = setInterval(() => {
+                        fetch('/api/system/status')
+                            .then(() => {
+                                clearInterval(checkInterval);
+                                window.location.reload();
+                            })
+                            .catch(() => {});
+                    }, 3000);
+                }, 5000);
+            } else {
+                showToast(data.error || 'Restart failed', 'error');
+                if (btn) { btn.disabled = false; btn.innerHTML = '<span class="icon-svg" style="--icon: url(\'/static/assets/limey_icons/sync.svg\');"></span> <span class="btn-text">RESTART</span>'; }
+            }
+        })
+        .catch(() => {
+            showToast('Restart command sent. Waiting for system...', 'info');
+            setTimeout(() => {
+                const checkInterval = setInterval(() => {
+                    fetch('/api/system/status')
+                        .then(() => {
+                            clearInterval(checkInterval);
+                            window.location.reload();
+                        })
+                        .catch(() => {});
+                }, 3000);
+            }, 5000);
+        });
+}
+
+function systemShutdown() {
+    if (!confirm('⚠️ SHUTDOWN SYSTEM\n\nThis will stop all bots, save state, and shut down the entire process.\n\nThe dashboard will become unavailable until manually restarted.\n\nContinue?')) return;
+    
+    const btn = document.querySelector('.btn-control.red[onclick*="systemShutdown"]');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="icon-svg" style="--icon: url(\'/static/assets/limey_icons/stop.svg\');"></span> <span class="btn-text">SHUTTING DOWN...</span>'; }
+    
+    showToast('🛑 System shutting down...', 'warning');
+    
+    fetch('/api/system/shutdown', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast('✅ ' + data.message, 'success');
+                document.getElementById('term').innerHTML = '<div class="history-item" style="color:#ff4444; font-weight:bold; text-align:center; padding:40px 20px;">' +
+                    '<div style="font-size:2rem; margin-bottom:12px;">🛑</div>' +
+                    '<div>System shut down successfully.</div>' +
+                    '<div style="color:#888; font-size:0.8rem; margin-top:8px;">The dashboard is no longer available.</div>' +
+                    '<div style="color:#888; font-size:0.8rem;">Restart the bot manually to bring it back.</div>' +
+                '</div>';
+            } else {
+                showToast(data.error || 'Shutdown failed', 'error');
+                if (btn) { btn.disabled = false; btn.innerHTML = '<span class="icon-svg" style="--icon: url(\'/static/assets/limey_icons/stop.svg\');"></span> <span class="btn-text">SHUTDOWN</span>'; }
+            }
+        })
+        .catch(() => showToast('Shutdown command sent', 'info'));
+}
+
+// ─── Ticket System Dashboard ────────────────────────
+
+let _currentTicketStatusFilter = 'open';
+let _ticketConfigOriginal = null;
+
+function switchTicketTab(tab, el) {
+    document.querySelectorAll('#tickets .mod-filter[data-tab]').forEach(b => b.classList.remove('active'));
+    if (el) el.classList.add('active');
+    
+    document.getElementById('ticket-tickets-section').style.display = tab === 'tickets' ? '' : 'none';
+    document.getElementById('ticket-config-section').style.display = tab === 'config' ? '' : 'none';
+    
+    if (tab === 'config') {
+        loadTicketConfig();
+    } else if (tab === 'tickets') {
+        fetchTickets();
+    }
+}
+
+function loadTicketConfig() {
+    fetch('/api/tickets/config')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const cfg = data.config || {};
+                document.getElementById('ticket-cfg-role').value = cfg.staff_role_id || '';
+                document.getElementById('ticket-cfg-log').value = cfg.log_channel_id || '';
+                _ticketConfigOriginal = JSON.stringify({ staff_role_id: cfg.staff_role_id || '', log_channel_id: cfg.log_channel_id || '' });
+                document.getElementById('ticket-cfg-status').textContent = 'Configuration loaded';
+                document.getElementById('ticket-cfg-status').style.color = '#888';
+                
+                // Show ticket types info
+                renderTicketTypeInfo(cfg);
+            }
+        })
+        .catch(() => {
+            document.getElementById('ticket-cfg-status').textContent = 'Failed to load config';
+            document.getElementById('ticket-cfg-status').style.color = '#ff4444';
+        });
+}
+
+function renderTicketTypeInfo(cfg) {
+    const container = document.getElementById('ticket-cfg-categories');
+    const typeEmojis = { 'support': '❓', 'report': '🚩', 'appeal': '⚖️', 'question': '💡', 'other': '📝' };
+    const categories = cfg.categories || {};
+    
+    let html = '';
+    Object.entries(typeEmojis).forEach(([type, emoji]) => {
+        const catData = categories[type] || {};
+        const catId = catData.id;
+        html += '<div class="account-row" style="padding: 10px 16px;">' +
+            '<div style="display:flex;align-items:center;gap:12px;flex:1;">' +
+            '<span style="font-size:1.2rem;">' + emoji + '</span>' +
+            '<div>' +
+            '<div style="font-weight:600;">' + type.charAt(0).toUpperCase() + type.slice(1) + '</div>' +
+            '<div style="font-size:0.75rem;color:#666;">' +
+            (catId ? 'Category ID: <code style="color:#888;">' + catId + '</code>' : '⏳ Not yet created (auto-created on first ticket)') +
+            '</div>' +
+            '</div>' +
+            '</div>' +
+            '</div>';
+    });
+    container.innerHTML = html;
+}
+
+function markTicketConfigDirty() {
+    const current = JSON.stringify({
+        staff_role_id: document.getElementById('ticket-cfg-role').value.trim(),
+        log_channel_id: document.getElementById('ticket-cfg-log').value.trim(),
+    });
+    const statusEl = document.getElementById('ticket-cfg-status');
+    if (current !== _ticketConfigOriginal) {
+        statusEl.textContent = '⚠️ Unsaved changes';
+        statusEl.style.color = '#ffaa00';
+    } else {
+        statusEl.textContent = 'No changes';
+        statusEl.style.color = '#888';
+    }
+}
+
+function saveTicketConfig() {
+    const staffRoleId = document.getElementById('ticket-cfg-role').value.trim();
+    const logChannelId = document.getElementById('ticket-cfg-log').value.trim();
+    
+    const statusEl = document.getElementById('ticket-cfg-status');
+    statusEl.textContent = 'Saving...';
+    statusEl.style.color = '#888';
+    
+    fetch('/api/tickets/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            config: {
+                staff_role_id: staffRoleId,
+                log_channel_id: logChannelId,
+            }
+        })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                _ticketConfigOriginal = JSON.stringify({ staff_role_id: staffRoleId, log_channel_id: logChannelId });
+                statusEl.textContent = '✅ Configuration saved!';
+                statusEl.style.color = '#00ff88';
+                showToast('Ticket configuration saved');
+                
+                // Update categories display
+                renderTicketTypeInfo(data.config || {});
+            } else {
+                statusEl.textContent = '❌ ' + (data.error || 'Save failed');
+                statusEl.style.color = '#ff4444';
+                showToast(data.error || 'Failed to save', 'error');
+            }
+        })
+        .catch(() => {
+            statusEl.textContent = '❌ Failed to save';
+            statusEl.style.color = '#ff4444';
+            showToast('Error saving config', 'error');
+        });
+}
+
+function filterTickets(status, el) {
+    _currentTicketStatusFilter = status;
+    document.querySelectorAll('#tickets .mod-filter').forEach(b => b.classList.remove('active'));
+    if (el) el.classList.add('active');
+    fetchTickets();
+}
+
+function fetchTickets() {
+    const status = _currentTicketStatusFilter || 'open';
+    fetch('/api/tickets/list?status=' + status + '&limit=100')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                renderTicketList(data.tickets);
+            }
+        })
+        .catch(() => {});
+
+    // Also fetch stats
+    fetch('/api/tickets/stats')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('ticket-stat-open').textContent = data.stats.total_open || 0;
+                document.getElementById('ticket-stat-closed').textContent = data.stats.total_closed || 0;
+                document.getElementById('ticket-stat-total').textContent = data.stats.total_all || 0;
+                document.getElementById('ticket-stat-types').textContent = Object.keys(data.stats.type_breakdown || {}).length;
+            }
+        })
+        .catch(() => {});
+}
+
+function renderTicketList(tickets) {
+    const list = document.getElementById('tickets-list');
+    if (!tickets || tickets.length === 0) {
+        list.innerHTML = '<div class="no-data">No tickets found.</div>';
+        return;
+    }
+
+    const typeEmojis = {
+        'support': '❓',
+        'report': '🚩',
+        'appeal': '⚖️',
+        'question': '💡',
+        'other': '📝',
+    };
+
+    const statusColors = {
+        'open': '#44ff88',
+        'closed': '#ff4444',
+        'orphaned': '#888',
+    };
+
+    let html = '';
+    tickets.forEach(t => {
+        const typeEmoji = typeEmojis[t.type] || '🎫';
+        const statusColor = statusColors[t.status] || '#888';
+        const createdDate = t.created_at ? new Date(t.created_at * 1000).toLocaleString() : 'Unknown';
+        const closedDate = t.closed_at ? new Date(t.closed_at * 1000).toLocaleString() : '—';
+
+        html += '<div class="account-row">' +
+            '<div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:0;">' +
+            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+            '<span style="font-weight:600;">' + typeEmoji + ' #' + t.ticket_num + '</span>' +
+            '<span style="font-size:0.75rem;padding:2px 8px;border-radius:4px;background:' + statusColor + '22;color:' + statusColor + ';border:1px solid ' + statusColor + '44;">' + (t.status || 'unknown').toUpperCase() + '</span>' +
+            '<span style="font-size:0.75rem;color:#888;">' + escapeHtml(t.type || 'unknown') + '</span>' +
+            '</div>' +
+            '<div style="font-size:0.85rem;color:#ccc;">' + escapeHtml(t.subject || 'No subject') + '</div>' +
+            '<div style="font-size:0.75rem;color:#666;">' +
+            'By: ' + escapeHtml(t.username || 'Unknown') + ' &middot; ' +
+            'Created: ' + createdDate + ' &middot; ' +
+            'Channel: <code style="color:#888;font-size:0.7rem;">' + (t.channel_id ? t.channel_id.substring(0, 8) + '...' : 'N/A') + '</code>' +
+            '</div>' +
+            '</div>' +
+            '</div>';
+    });
+
+    list.innerHTML = html;
+}
+
+// ─── Override nav for Terminal tab to fetch system status ──
+const _origNavForTerminal = window.nav;
+if (typeof _origNavForTerminal === 'function') {
+    const _patchedNavForTerminal = function(id, el) {
+        _origNavForTerminal.call(window, id, el);
+        if (id === 'logs') {
+            fetchSystemStatus();
+        }
+    };
+    window.nav = _patchedNavForTerminal;
+}

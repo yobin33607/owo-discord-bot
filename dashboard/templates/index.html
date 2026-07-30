@@ -36,6 +36,7 @@
     <link rel="stylesheet" href="/static/css/pages/security.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/pages/history.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/pages/appeals.css?v=2.4.0.1">
+    <link rel="stylesheet" href="/static/css/pages/moderation.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/responsive.css?v=2.4.0.1">
 </head>
 
@@ -109,6 +110,10 @@
                         style="--icon: url('/static/assets/limey_icons/key.svg');"></span> API Keys</a>
                 <a class="nav-item" id="appealsNav" onclick="nav('appeals', this)" style="display:none;"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/check-to-slot.svg');"></span> Appeals</a>
+                <a class="nav-item" id="moderationNav" onclick="nav('moderation', this)" style="display:none;"><span class="icon-svg"
+                        style="--icon: url('/static/assets/limey_icons/shield-halved.svg');"></span> Moderation</a>
+                <a class="nav-item" id="ticketsNav" onclick="nav('tickets', this)" style="display:none;"><span class="icon-svg"
+                        style="--icon: url('/static/assets/limey_icons/ticket.svg');"></span> Tickets</a>
                 <a class="nav-item" onclick="nav('history', this)"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/clock-rotate-left.svg');"></span> History</a>
                 <a class="nav-item" onclick="nav('admin-users', this)"><span class="icon-svg"
@@ -491,6 +496,206 @@
                 </div>
             </div>
 
+            <!-- Moderation Tab -->
+            <div id="moderation" class="view">
+                <div class="mod-header">
+                    <h2 style="font-size:1.2rem; color:var(--primary); margin:0;"><span class="icon-svg"
+                            style="--icon: url('/static/assets/limey_icons/shield-halved.svg');"></span> Moderation Panel</h2>
+                    <p class="accounts-page-hint">View violations, warnings, and mod logs across all guilds. Manage moderation actions from the dashboard.</p>
+                </div>
+
+                <!-- Summary Stats -->
+                <div class="mod-stats-bar" id="mod-stats-bar">
+                    <div class="proxy-stat-card"><span id="mod-stat-violations">0</span><label>Violations</label></div>
+                    <div class="proxy-stat-card ok"><span id="mod-stat-users">0</span><label>Users Flagged</label></div>
+                    <div class="proxy-stat-card"><span id="mod-stat-actions">0</span><label>Mod Actions</label></div>
+                    <div class="proxy-stat-card"><span id="mod-stat-mutes">0</span><label>Active Mutes</label></div>
+                </div>
+
+                <!-- Filter/Toolbar -->
+                <div class="mod-toolbar">
+                    <div class="mod-filter-group">
+                        <button class="btn-control mod-filter active" data-tab="users" onclick="switchModTab('users', this)">👤 Violations by User</button>
+                        <button class="btn-control mod-filter" data-tab="modlog" onclick="switchModTab('modlog', this)">📋 Mod Log</button>
+                        <button class="btn-control mod-filter" data-tab="config" onclick="switchModTab('config', this)">⚙️ Config</button>
+                    </div>
+                    <div class="mod-search-box">
+                        <input type="search" id="mod-user-search" class="cfg-search-input" placeholder="Search by user ID..." autocomplete="off" oninput="filterModUsers(this.value)">
+                    </div>
+                </div>
+
+                <!-- Users Tab -->
+                <div id="mod-users-section" class="mod-section active">
+                    <div id="mod-users-list" class="mod-users-list">
+                        <div class="no-data">Loading moderation data...</div>
+                    </div>
+                </div>
+
+                <!-- Mod Log Tab -->
+                <div id="mod-modlog-section" class="mod-section" style="display:none;">
+                    <div class="mod-toolbar secondary">
+                        <select id="mod-action-filter" class="cfg-input" style="max-width:200px;" onchange="fetchModLog()">
+                            <option value="">All Actions</option>
+                            <option value="warn">⚠️ Warn</option>
+                            <option value="kick">👢 Kick</option>
+                            <option value="ban">🔨 Ban</option>
+                            <option value="unban">🔓 Unban</option>
+                            <option value="timeout">🔇 Timeout</option>
+                            <option value="untimeout">🔊 Untimeout</option>
+                            <option value="mute">🔇 Mute</option>
+                            <option value="unmute">🔊 Unmute</option>
+                            <option value="purge">🗑️ Purge</option>
+                            <option value="slowmode">🐢 Slowmode</option>
+                            <option value="lock">🔒 Lock</option>
+                            <option value="unlock">🔓 Unlock</option>
+                            <option value="clearwarns">🧹 Clear Warns</option>
+                            <option value="clearviolations">🧹 Clear Violations</option>
+                            <option value="automod">🤖 AutoMod</option>
+                        </select>
+                    </div>
+                    <div id="mod-modlog-list" class="mod-users-list">
+                        <div class="no-data">Loading mod log...</div>
+                    </div>
+                </div>
+
+                <!-- Config Tab -->
+                <div id="mod-config-section" class="mod-section" style="display:none;">
+                    <div id="mod-config-content" class="mod-users-list">
+                        <div class="no-data">Loading moderation config...</div>
+                    </div>
+                </div>
+
+                <!-- User Detail Modal -->
+                <div id="mod-user-detail-modal" class="proxy-modal">
+                    <div class="proxy-modal-inner mod-modal-inner">
+                        <div id="mod-user-detail-content"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tickets Tab -->
+            <div id="tickets" class="view">
+                <div class="mod-header">
+                    <h2 style="font-size:1.2rem; color:var(--primary); margin:0;"><span class="icon-svg"
+                            style="--icon: url('/static/assets/limey_icons/ticket.svg');"></span> Ticket System</h2>
+                    <p class="accounts-page-hint">Monitor tickets and configure the ticket system — staff role, log channel, and categories.</p>
+                </div>
+
+                <!-- Summary Stats -->
+                <div class="mod-stats-bar" id="ticket-stats-bar">
+                    <div class="proxy-stat-card"><span id="ticket-stat-open">0</span><label>Open</label></div>
+                    <div class="proxy-stat-card ok"><span id="ticket-stat-closed">0</span><label>Closed</label></div>
+                    <div class="proxy-stat-card"><span id="ticket-stat-total">0</span><label>Total</label></div>
+                    <div class="proxy-stat-card"><span id="ticket-stat-types">0</span><label>Types</label></div>
+                </div>
+
+                <!-- Sub-tabs: Tickets / Config -->
+                <div class="mod-toolbar">
+                    <div class="mod-filter-group">
+                        <button class="btn-control mod-filter active" data-tab="tickets" onclick="switchTicketTab('tickets', this)">🎫 Tickets</button>
+                        <button class="btn-control mod-filter" data-tab="config" onclick="switchTicketTab('config', this)">⚙️ Config</button>
+                    </div>
+                </div>
+
+                <!-- Ticket List Section -->
+                <div id="ticket-tickets-section" class="mod-section active">
+                    <div class="mod-toolbar secondary" style="margin-bottom: 12px;">
+                        <div class="mod-filter-group">
+                            <button class="btn-control mod-filter active" data-status="open" onclick="filterTickets('open', this)">🟢 Open</button>
+                            <button class="btn-control mod-filter" data-status="closed" onclick="filterTickets('closed', this)">🔒 Closed</button>
+                            <button class="btn-control mod-filter" data-status="all" onclick="filterTickets('all', this)">📋 All</button>
+                        </div>
+                    </div>
+                    <div id="tickets-list" class="mod-users-list">
+                        <div class="no-data">Loading tickets...</div>
+                    </div>
+                </div>
+
+                <!-- Ticket Config Section -->
+                <div id="ticket-config-section" class="mod-section" style="display:none;">
+                    <div class="module-card" style="margin-bottom: 20px;">
+                        <div class="module-header" style="cursor:default;">
+                            <h3 style="color:var(--primary); margin:0; font-family:var(--font-heading);">
+                                <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/gear.svg');"></span>
+                                Ticket System Configuration
+                            </h3>
+                        </div>
+                        <div style="padding: 20px; display: flex; flex-direction: column; gap: 16px; max-width: 500px;">
+                            <p style="color: #888; font-size: 0.85rem; margin: 0;">
+                                Configure the staff role and log channel for the ticket system.
+                                These IDs should match Discord role/channel IDs in your server.
+                                You can also use <code>/ticket-setup</code> in Discord for interactive setup.
+                            </p>
+                            <div>
+                                <label class="form-label">👮 Staff Role ID</label>
+                                <input type="text" id="ticket-cfg-role" class="cfg-input" placeholder="e.g. 123456789012345678"
+                                    onchange="markTicketConfigDirty()">
+                                <div style="font-size:0.75rem; color:#666; margin-top:4px;">
+                                    Members with this role can view and manage all tickets.
+                                </div>
+                            </div>
+                            <div>
+                                <label class="form-label">📁 Log Channel ID</label>
+                                <input type="text" id="ticket-cfg-log" class="cfg-input" placeholder="e.g. 123456789012345678"
+                                    onchange="markTicketConfigDirty()">
+                                <div style="font-size:0.75rem; color:#666; margin-top:4px;">
+                                    Channel where ticket transcripts and logs are sent when tickets are closed.
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <button class="btn-control green" onclick="saveTicketConfig()">
+                                    <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/floppy-disk.svg');"></span>
+                                    <span class="btn-text">SAVE CONFIGURATION</span>
+                                </button>
+                                <span id="ticket-cfg-status" style="font-size:0.85rem; color:#888;"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Ticket Types Info -->
+                    <div class="module-card">
+                        <div class="module-header" style="cursor:default;">
+                            <h3 style="color:var(--primary); margin:0; font-family:var(--font-heading);">
+                                <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/list.svg');"></span>
+                                Ticket Types &amp; Categories
+                            </h3>
+                        </div>
+                        <div style="padding: 20px;">
+                            <p style="color: #888; font-size: 0.85rem; margin: 0 0 12px 0;">
+                                Categories are automatically created when the first ticket of each type is opened.
+                            </p>
+                            <div id="ticket-cfg-categories" style="display: flex; flex-direction: column; gap: 8px;">
+                                <!-- Populated by JS -->
+                                <div class="no-data">Loading types...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Instructions -->
+                    <div class="module-card">
+                        <div class="module-header" style="cursor:default;">
+                            <h3 style="color:var(--primary); margin:0; font-family:var(--font-heading);">
+                                <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/book.svg');"></span>
+                                Quick Setup Guide
+                            </h3>
+                        </div>
+                        <div style="padding: 20px; font-size: 0.85rem; color: #aaa; line-height: 1.6;">
+                            <ol style="margin: 0; padding-left: 20px;">
+                                <li><strong>Set the Staff Role</strong> above — enter the Discord role ID that should have access to all tickets.</li>
+                                <li><strong>Set the Log Channel</strong> — enter the Discord channel ID where transcripts will be saved.</li>
+                                <li>Click <strong>Save Configuration</strong> to apply.</li>
+                                <li>In your Discord server, run <code>/ticket-panel</code> to post the ticket creation panel.</li>
+                                <li>Users click <strong>Create Ticket</strong> → select type → fill in the form → a private channel is created.</li>
+                            </ol>
+                            <p style="margin-top: 12px; color: #666;">
+                                💡 <strong>Tip:</strong> Enable Discord Developer Mode (User Settings → Advanced → Developer Mode) 
+                                to easily copy role and channel IDs by right-clicking them.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Security Tab -->
             <div id="security" class="view">
                 <div class="top-controls" style="display:flex; gap:10px; margin-bottom:20px;">
@@ -627,9 +832,63 @@
 
             <!-- Terminal Tab -->
             <div id="logs" class="view">
-                <button class="btn-control" onclick="update()" style="margin-bottom:20px;"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/rotate.svg');"></span> <span
-                        class="btn-text">RELOAD LOGS</span></button>
+                <!-- Console Controls Bar -->
+                <div class="console-controls-bar">
+                    <div class="console-left">
+                        <button class="btn-control" onclick="update()" title="Refresh logs"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/rotate.svg');"></span> <span
+                                class="btn-text">REFRESH</span></button>
+                        <button class="btn-control" onclick="clearTerminalLogs()" title="Clear log display"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/trash.svg');"></span> <span
+                                class="btn-text">CLEAR</span></button>
+                    </div>
+                    <div class="console-right">
+                        <button class="btn-control green" onclick="systemRestart()" title="Restart all bot processes"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/sync.svg');"></span> <span
+                                class="btn-text">RESTART</span></button>
+                        <button class="btn-control red" onclick="systemShutdown()" title="Shutdown the entire system"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/stop.svg');"></span> <span
+                                class="btn-text">SHUTDOWN</span></button>
+                    </div>
+                </div>
+
+                <!-- System Info Panel -->
+                <div id="system-info-panel" class="system-info-panel">
+                    <div class="sys-info-item">
+                        <span class="sys-info-label">Uptime</span>
+                        <span class="sys-info-value" id="sys-uptime">--</span>
+                    </div>
+                    <div class="sys-info-item">
+                        <span class="sys-info-label">Bots</span>
+                        <span class="sys-info-value" id="sys-bots">0</span>
+                    </div>
+                    <div class="sys-info-item">
+                        <span class="sys-info-label">Active</span>
+                        <span class="sys-info-value" id="sys-active">0</span>
+                    </div>
+                    <div class="sys-info-item">
+                        <span class="sys-info-label">Memory</span>
+                        <span class="sys-info-value" id="sys-memory">--</span>
+                    </div>
+                    <div class="sys-info-item">
+                        <span class="sys-info-label">CPU</span>
+                        <span class="sys-info-value" id="sys-cpu">--</span>
+                    </div>
+                    <div class="sys-info-item">
+                        <span class="sys-info-label">Python</span>
+                        <span class="sys-info-value" id="sys-python">--</span>
+                    </div>
+                    <div class="sys-info-item">
+                        <span class="sys-info-label">PID</span>
+                        <span class="sys-info-value" id="sys-pid">--</span>
+                    </div>
+                    <div class="sys-info-item">
+                        <span class="sys-info-label">Platform</span>
+                        <span class="sys-info-value" id="sys-platform">--</span>
+                    </div>
+                </div>
+
+                <!-- Terminal Output -->
                 <div id="term" class="terminal-window"></div>
             </div>
 
@@ -716,6 +975,7 @@
     <script src="/static/js/config.js"></script>
     <script src="/static/js/dashboard.js"></script>
     <script src="/static/js/history.js"></script>
+    <script src="/static/js/moderation.js"></script>
     <script src="/static/js/init.js"></script>
     <script>
         // ─── API Key Management ────────────────────────────
@@ -871,6 +1131,8 @@
                     // Show admin-only nav items
                     if (currentUserRole === 'admin' || currentUserRole === 'manage') {
                         document.getElementById('appealsNav').style.display = '';
+                        document.getElementById('moderationNav').style.display = '';
+                        document.getElementById('ticketsNav').style.display = '';
                     }
                     if (currentUserRole === 'admin') {
                         document.getElementById('apiKeysNav').style.display = '';

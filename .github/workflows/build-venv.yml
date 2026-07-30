@@ -5,7 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  workflow_dispatch:  # allow manual trigger
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: "Create a GitHub Release with the pre-built venvs?"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.os }}
@@ -23,15 +29,12 @@ jobs:
           - os: ubuntu-latest
             artifact-name: venv-linux
             venv-python: .venv/bin/python
-            pip: .venv/bin/pip
           - os: macos-latest
             artifact-name: venv-macos
             venv-python: .venv/bin/python
-            pip: .venv/bin/pip
           - os: windows-latest
             artifact-name: venv-windows
             venv-python: .venv\Scripts\python.exe
-            pip: .venv\Scripts\pip.exe
 
     steps:
       - name: Checkout
@@ -43,24 +46,22 @@ jobs:
           python-version: "3.12"
 
       - name: Create virtual environment
-        run: |
-          python -m venv .venv
+        run: python -m venv .venv
 
       - name: Upgrade pip
-        run: |
-          ${{ matrix.venv-python }} -m pip install --upgrade pip --quiet
+        run: ${{ matrix.venv-python }} -m pip install --upgrade pip --quiet
 
       - name: Cache pip downloads
         uses: actions/cache@v4
         with:
-          path: ~/.cache/pip
+          path: |
+            ~/.cache/pip
+            %LocalAppData%\pip\Cache
           key: pip-${{ matrix.os }}-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            pip-${{ matrix.os }}-
+          restore-keys: pip-${{ matrix.os }}-
 
       - name: Install dependencies
-        run: |
-          ${{ matrix.venv-python }} -m pip install -r requirements.txt --no-cache-dir
+        run: ${{ matrix.venv-python }} -m pip install -r requirements.txt --no-cache-dir
 
       - name: Verify venv
         run: |
@@ -70,13 +71,16 @@ jobs:
       - name: Package venv
         shell: bash
         run: |
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            7z a -tzip venv-artifact.zip .venv/
+          archive="venv-artifact"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a -tzip "${archive}.zip" .venv/
+            echo "archive_name=${archive}.zip" >> $GITHUB_ENV
           else
-            tar czf venv-artifact.tar.gz .venv/
+            tar czf "${archive}.tar.gz" .venv/
+            echo "archive_name=${archive}.tar.gz" >> $GITHUB_ENV
           fi
 
-      - name: Upload venv artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact-name }}
@@ -84,10 +88,10 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-  # ── Optional: create a combined release when pushed to main ──
+  # ── Release (manual trigger only — avoids spam) ──
   release:
-    name: Release pre-built venvs
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: 🚀 Release pre-built venvs
+    if: github.event_name == 'workflow_dispatch' && inputs.create_release
     needs: [build-venv]
     runs-on: ubuntu-latest
     permissions:
@@ -98,28 +102,43 @@ jobs:
         with:
           path: venv-artifacts/
 
-      - name: Create release tag
+      - name: Generate release tag
         id: tag
         run: |
           echo "tag=venv-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          ls -la venv-artifacts/*/
+          for dir in venv-artifacts/*/; do
+            name=$(basename "$dir")
+            cp "$dir"venv-artifact.* "release-assets/${name}.$(echo "$dir"venv-artifact.* | rev | cut -d. -f1 | rev)"
+          done
 
       - name: Generate release notes
         run: |
           cat > release-notes.md << 'EOF'
           ## Pre-built virtual environments
 
-          These archives contain a fully-set-up `.venv` with all dependencies
+          Archives containing a fully-set-up `.venv` with all dependencies
           pre-installed for each platform.
 
-          ### Usage
-          1. Download the archive for your platform
-          2. Extract it into your Limey project directory
-          3. Run `python limey.py` (it'll auto-detect the venv)
+          ### Quick start
+          Pick your platform, download, extract into Limey project dir, then run:
+          ```
+          python limey.py
+          ```
 
           ### Platforms
-          - **venv-linux** – x86_64 Linux (Python 3.12)
-          - **venv-macos** – x86_64 / arm64 macOS (Python 3.12)
-          - **venv-windows** – x86_64 Windows (Python 3.12)
+          | Archive | Platform |
+          |---------|----------|
+          | venv-linux.tar.gz | Linux (x86_64, Python 3.12) |
+          | venv-macos.tar.gz | macOS (x86_64/arm64, Python 3.12) |
+          | venv-windows.zip | Windows (x86_64, Python 3.12) |
+
+          ---
+          *Built by GitHub Actions — commit ${{ github.sha }}*
           EOF
 
       - name: Create Release
@@ -128,8 +147,5 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: "Pre-built venv ${{ steps.tag.outputs.tag }}"
           body_path: release-notes.md
-          files: |
-            venv-artifacts/venv-linux/venv-artifact.tar.gz
-            venv-artifacts/venv-macos/venv-artifact.tar.gz
-            venv-artifacts/venv-windows/venv-artifact.zip
+          files: release-assets/*
           make_latest: false

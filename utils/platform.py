@@ -129,76 +129,112 @@ def _rebuild_venv(venv_dir: str, venv_py: str) -> None:
     print("[OK] Virtual environment ready!", file=sys.stderr)
 
 
+def _fetch_and_extract_venv(url: str, name: str, venv_dir: str, venv_py: str) -> bool:
+    """
+    Download an archive and extract its .venv into place.
+    Returns True only if the resulting venv actually runs on this machine.
+    """
+    import shutil
+    import tarfile
+    import urllib.request
+    import zipfile
+
+    archive_path = os.path.join(_PROJECT_DIR, f"_{name}")
+    extract_root = os.path.join(_PROJECT_DIR, "_venv_extract")
+    try:
+        print(f"[...] Downloading pre-built venv ({name})...", file=sys.stderr)
+        urllib.request.urlretrieve(url, archive_path)
+
+        # Remove broken venv dir if exists
+        if os.path.exists(venv_dir):
+            shutil.rmtree(venv_dir, ignore_errors=True)
+        if os.path.exists(extract_root):
+            shutil.rmtree(extract_root, ignore_errors=True)
+        os.makedirs(extract_root, exist_ok=True)
+
+        # Extract (archives contain a .venv/ folder at their root)
+        if name.endswith(".zip"):
+            with zipfile.ZipFile(archive_path) as zf:
+                zf.extractall(extract_root)
+        else:
+            with tarfile.open(archive_path, "r:gz") as tf:
+                tf.extractall(extract_root)
+
+        extracted = os.path.join(extract_root, ".venv")
+        if not os.path.isdir(extracted):
+            # Archive might contain the venv contents directly
+            extracted = extract_root
+
+        shutil.move(extracted, venv_dir)
+
+        # Verify the downloaded venv works
+        if os.path.exists(venv_py) and _venv_is_valid(venv_py):
+            print("[OK] Pre-built venv downloaded and ready!", file=sys.stderr)
+            return True
+
+        # Downloaded venv didn't work — will fall through to local build
+        print("[!] Downloaded venv incompatible — building locally", file=sys.stderr)
+        if os.path.exists(venv_dir):
+            shutil.rmtree(venv_dir, ignore_errors=True)
+        return False
+    except Exception as e:
+        print(f"[!] Could not download pre-built venv: {e}", file=sys.stderr)
+        # Clean up partial downloads
+        if os.path.exists(venv_dir) and not _venv_is_valid(venv_py):
+            shutil.rmtree(venv_dir, ignore_errors=True)
+        return False
+    finally:
+        for path in (archive_path, extract_root):
+            try:
+                if os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=True)
+                elif os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                pass
+
+
 def _download_prebuilt_venv(venv_dir: str, venv_py: str) -> bool:
     """
-    Try to download a pre-built .venv from the latest GitHub Release
-    for the current platform. Returns True on success.
+    Try to download a pre-built .venv for the current platform.
+    Checks the repo's committed prebuilt/ folder (main branch) first,
+    then falls back to the latest GitHub Releases. Returns True on success.
     """
-    import subprocess
-    import urllib.request
     import json
-    import shutil
+    import urllib.request
 
-    # Map platform to release asset name
+    # Map platform to asset name
     system = platform.system().lower()
     if system == "windows":
-        asset_glob = "venv-windows.zip"
-        extract_cmd = ["7z", "x", "-aoa", "-o.venv"]
+        asset_name = "venv-windows.zip"
     elif system == "darwin":
-        asset_glob = "venv-macos.tar.gz"
-        extract_cmd = ["tar", "xzf"]
+        asset_name = "venv-macos.tar.gz"
     else:
-        asset_glob = "venv-linux.tar.gz"
-        extract_cmd = ["tar", "xzf"]
+        asset_name = "venv-linux.tar.gz"
 
     repo = "cubiced0/owo-discord-bot"
-    api_url = f"https://api.github.com/repos/{repo}/releases?per_page=5"
 
+    # 1) Pre-built venvs committed to the repo (prebuilt/ folder on main)
+    committed_url = f"https://raw.githubusercontent.com/{repo}/main/prebuilt/{asset_name}"
+    if _fetch_and_extract_venv(committed_url, asset_name, venv_dir, venv_py):
+        return True
+
+    # 2) Fallback: GitHub Releases
+    api_url = f"https://api.github.com/repos/{repo}/releases?per_page=5"
     try:
-        # Fetch recent releases
-        req = urllib.request.Request(api_url, headers={"User-Agent": "Limey/1.0", "Accept": "application/vnd.github.v3+json"})
+        req = urllib.request.Request(
+            api_url,
+            headers={"User-Agent": "Limey/1.0", "Accept": "application/vnd.github.v3+json"},
+        )
         with urllib.request.urlopen(req, timeout=15) as resp:
             releases = json.loads(resp.read().decode())
 
-        if not releases:
-            return False
-
-        # Find a release with our asset
         for release in releases:
             for asset in release.get("assets", []):
-                name = asset["name"]
-                if name.startswith("venv-") and any(p in name for p in ("linux", "macos", "windows")):
-                    if name.endswith(".tar.gz") or name.endswith(".zip"):
-                        download_url = asset["browser_download_url"]
-                        print(f"[...] Downloading pre-built venv ({name})...", file=sys.stderr)
-
-                        # Download
-                        archive_path = os.path.join(_PROJECT_DIR, f"_{name}")
-                        urllib.request.urlretrieve(download_url, archive_path)
-
-                        # Remove broken venv dir if exists
-                        if os.path.exists(venv_dir):
-                            shutil.rmtree(venv_dir, ignore_errors=True)
-
-                        # Extract
-                        if name.endswith(".zip"):
-                            subprocess.check_call(extract_cmd + [archive_path], cwd=_PROJECT_DIR)
-                        else:
-                            subprocess.check_call(extract_cmd + [archive_path], cwd=_PROJECT_DIR)
-
-                        # Clean up archive
-                        os.remove(archive_path)
-
-                        # Verify the downloaded venv works
-                        if os.path.exists(venv_py) and _venv_is_valid(venv_py):
-                            print("[OK] Pre-built venv downloaded and ready!", file=sys.stderr)
-                            return True
-
-                        # Downloaded venv didn't work — will fall through to local build
-                        print("[!] Downloaded venv incompatible — building locally", file=sys.stderr)
-                        if os.path.exists(venv_dir):
-                            shutil.rmtree(venv_dir, ignore_errors=True)
-                        return False
+                name = asset.get("name", "")
+                if name.startswith("venv-") and name.endswith((".tar.gz", ".zip")):
+                    if _fetch_and_extract_venv(asset["browser_download_url"], name, venv_dir, venv_py):
+                        return True
     except Exception as e:
         print(f"[!] Could not download pre-built venv: {e}", file=sys.stderr)
         # Clean up partial downloads

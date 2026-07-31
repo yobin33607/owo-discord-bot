@@ -96,6 +96,80 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  commit-venvs:
+    name: 📦 Commit pre-built venvs
+    # Only on main (push to main, or manual dispatch on main) — scripts fetch from /main/
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build-venv
+    runs-on: ubuntu-latest
+
+    concurrency:
+      group: ${{ github.workflow }}-commit-${{ github.ref }}
+      cancel-in-progress: true
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
+
+      # Note: must download AFTER checkout, since checkout with default clean:true
+      # runs git clean -ffdx and would delete untracked artifact directories.
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: venv-artifacts
+
+      - name: Prepare prebuilt folder (replace existing)
+        run: |
+          rm -rf prebuilt
+          mkdir -p prebuilt
+
+          for dir in venv-artifacts/*; do
+            name=$(basename "$dir")
+
+            if [ -f "$dir/venv-artifact.tar.gz" ]; then
+              cp "$dir/venv-artifact.tar.gz" "prebuilt/${name}.tar.gz"
+            elif [ -f "$dir/venv-artifact.zip" ]; then
+              cp "$dir/venv-artifact.zip" "prebuilt/${name}.zip"
+            fi
+          done
+
+          ls -lah prebuilt
+
+      - name: Check archives present and within GitHub size limits
+        run: |
+          if [ -z "$(ls -A prebuilt)" ]; then
+            echo "::error:: No pre-built venv archives found — aborting to avoid deleting prebuilt/"
+            exit 1
+          fi
+
+          for f in prebuilt/*; do
+            [ -f "$f" ] || continue
+            size=$(stat -c%s "$f")
+            echo "$f: $(( size / 1024 / 1024 )) MB"
+            if [ "$size" -gt 100000000 ]; then
+              echo "::error:: $f exceeds GitHub's 100MB per-file limit"
+              exit 1
+            fi
+          done
+
+      - name: Commit pre-built venvs (replace existing)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add prebuilt
+          git diff --cached --quiet && echo "No changes to pre-built venvs" || \
+            git commit -m "chore: update pre-built venvs [skip ci]"
+
+          branch="${GITHUB_REF#refs/heads/}"
+          git fetch origin "$branch" 2>/dev/null || true
+          git push --force-with-lease origin "HEAD:$branch"
+
   release:
     name: 🚀 Release pre-built venvs
     if: github.event_name == 'workflow_dispatch' && inputs.create_release

@@ -178,19 +178,6 @@ Features:
 
 ---
 
-## Screenshots
-
-### Login Page
-![Login](dashboard/static/assets/limey-auth.jpg)
-
-### Dashboard Desktop
-![Dashboard](dashboard/static/assets/limey-desktop-dash.jpg)
-
-### Dashboard Mobile
-![Dashboard](dashboard/static/assets/limey-mob.jpg)
-
----
-
 ## Disclaimer
 
 This tool is for **educational purposes only**. Using self-bots violates Discord's Terms of Service. Use at your own risk in private servers only.

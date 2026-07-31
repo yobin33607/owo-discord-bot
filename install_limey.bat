@@ -140,20 +140,50 @@ pushd "%INSTALL_DIR%"
 
 REM ── Virtual environment setup ──────────────────────────────
 set "VENV_DIR=%INSTALL_DIR%\.venv"
+set "PREBUILT_URL=https://raw.githubusercontent.com/cubiced0/owo-discord-bot/main/prebuilt/venv-windows.zip"
+set "USED_PREBUILT=0"
 
-if exist "%VENV_DIR%" (
-    echo  [*] Virtual environment already exists
-) else (
-    echo  [#] Creating virtual environment...
-    "%PY_CMD%" -m venv "%VENV_DIR%"
-    if errorlevel 1 (
-        echo  [X] Failed to create virtual environment.
-        popd
-        pause
-        exit /b 1
-    )
-    echo  [OK] Virtual environment created
+REM Existing venv already works? Keep it.
+if exist "%VENV_DIR%\Scripts\python.exe" (
+    "%VENV_DIR%\Scripts\python.exe" --version >nul 2>&1
+    if not errorlevel 1 goto VenvReady
 )
+
+REM Try to fetch the pre-built venv committed to the repo (replaces existing)
+echo  [#] Downloading pre-built venv...
+powershell -Command "Invoke-WebRequest -Uri '%PREBUILT_URL%' -OutFile '%TEMP%\venv-windows.zip'"
+
+if not errorlevel 1 (
+    echo  [OK] Pre-built venv downloaded
+
+    if exist "%VENV_DIR%" (
+        rmdir /s /q "%VENV_DIR%"
+    )
+
+    powershell -Command "Expand-Archive -Path '%TEMP%\venv-windows.zip' -DestinationPath '%INSTALL_DIR%' -Force"
+    del "%TEMP%\venv-windows.zip" >nul 2>&1
+)
+
+if exist "%VENV_DIR%\Scripts\python.exe" (
+    "%VENV_DIR%\Scripts\python.exe" --version >nul 2>&1
+    if not errorlevel 1 (
+        set "USED_PREBUILT=1"
+        goto VenvReady
+    )
+)
+
+echo  [!] Pre-built venv unavailable - building from scratch
+echo  [#] Creating virtual environment...
+"%PY_CMD%" -m venv "%VENV_DIR%"
+if errorlevel 1 (
+    echo  [X] Failed to create virtual environment.
+    popd
+    pause
+    exit /b 1
+)
+echo  [OK] Virtual environment created
+
+:VenvReady
 
 REM Detect venv Python
 if exist "%VENV_DIR%\Scripts\python.exe" (
@@ -163,6 +193,9 @@ if exist "%VENV_DIR%\Scripts\python.exe" (
 )
 
 echo  [OK] Using venv Python
+
+REM Pre-built venvs already have dependencies installed
+if "%USED_PREBUILT%"=="1" goto DepsDone
 
 REM Upgrade pip
 "%VENV_PY%" -m pip install --upgrade pip --quiet
@@ -174,6 +207,7 @@ if exist "requirements.txt" (
     echo  [OK] Dependencies installed
 )
 
+:DepsDone
 set "PY_CMD=%VENV_PY%"
 
 echo.

@@ -199,6 +199,73 @@ fi
 # ────────────────────────────────────────────────────
 VENV_DIR="$INSTALL_DIR/.venv"
 
+REPO_PATH="${REPO_URL%.git}"
+REPO_PATH="${REPO_PATH#https://github.com/}"
+PREBUILT_BASE="https://raw.githubusercontent.com/$REPO_PATH/main/prebuilt"
+
+venv_is_usable() {
+    if [ -x "$VENV_DIR/bin/python" ]; then
+        "$VENV_DIR/bin/python" --version >/dev/null 2>&1
+    elif [ -x "$VENV_DIR/Scripts/python" ]; then
+        "$VENV_DIR/Scripts/python" --version >/dev/null 2>&1
+    else
+        return 1
+    fi
+}
+
+try_download_prebuilt() {
+    local archive=""
+    case "$PLATFORM" in
+        termux)
+            return 1  # no pre-built venv for termux (different libc/arch)
+            ;;
+        macos)
+            archive="venv-macos.tar.gz"
+            ;;
+        linux)
+            archive="venv-linux.tar.gz"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+
+    local url="$PREBUILT_BASE/$archive"
+    local tmp
+    tmp="$(mktemp -d)" || return 1
+
+    info "Downloading pre-built venv ($archive)..."
+    if ! curl -fsSL -o "$tmp/$archive" "$url"; then
+        warn "Pre-built venv unavailable — building locally"
+        rm -rf "$tmp"
+        return 1
+    fi
+
+    # Replace any existing .venv with the fresh pre-built one
+    if [ -d "$VENV_DIR" ]; then
+        info "Replacing existing virtual environment"
+        rm -rf "$VENV_DIR"
+    fi
+
+    info "Extracting pre-built venv..."
+    if ! tar -xzf "$tmp/$archive" -C "$INSTALL_DIR"; then
+        warn "Failed to extract pre-built venv — building locally"
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+
+    if venv_is_usable; then
+        ok "Pre-built virtual environment ready"
+        VENV_PY="$VENV_DIR/bin/python"
+        return 0
+    fi
+
+    warn "Pre-built venv incompatible with this system — building locally"
+    rm -rf "$VENV_DIR"
+    return 1
+}
+
 create_venv() {
     if [ -d "$VENV_DIR" ]; then
         info "Virtual environment already exists"
@@ -233,7 +300,18 @@ create_venv() {
     PY_CMD="$VENV_PY"
 }
 
-create_venv
+# Use the pre-built venv from the repo if possible; otherwise build locally
+if [ -d "$VENV_DIR" ] && venv_is_usable; then
+    info "Virtual environment already exists"
+    create_venv
+elif try_download_prebuilt; then
+    info "Using pre-built virtual environment"
+    PY_CMD="$VENV_PY"
+else
+    # Only reached when no usable venv exists — start from a clean slate
+    rm -rf "$VENV_DIR"
+    create_venv
+fi
 
 info "Starting setup (--quick)"
 "$PY_CMD" limey_setup.py --quick || fail "Setup failed"

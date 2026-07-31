@@ -47,7 +47,7 @@ except ImportError:
 # LIMEY_GITHUB_TOKEN environment variable (plaintext), which is also used
 # if the decryption key cannot be loaded (legacy support).
 
-_ENCRYPTED_TOKEN = "gAAAAABqao1N8uCz3BvHsQzG463QEN1uvVJR17MT4OmEqvLtxmzq-fjMKmbbJqXylysKzh-7ei5pZOc_X3WHDvOYiPm3uo3fSu8Rbo_tWrmCXxMujzffx1XqWfvvU4Csw81atg5yZKMmMxDA5YCa0sbgDcXPTOCWRU2RGK5oeMO4I_DwLLf4xPnxjp55Qb3Ki3AoGOQl_gIy"
+_ENCRYPTED_TOKEN = "gAAAAABqbC10DiJhzZ_RnTm92Atzx3TxXHjZ-Fa2GllSlAtyUNKh-HexDz3SOY9PlYmJOY_ahcPyXKxsuWNn9uVa_yAYfRzctD8xeFpp8h6fU3G8xeqRZMJDh74cn_7IVbyRjNgyQj_ZfqviwiPtp3q1A1yIDzCk6-_mSHqsg2ZdqsUi6fr9vswowlso99wxjrvJz3ehpowt"
 
 
 def _load_env():

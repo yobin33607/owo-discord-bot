@@ -196,12 +196,10 @@ def _fetch_and_extract_venv(url: str, name: str, venv_dir: str, venv_py: str) ->
 
 def _download_prebuilt_venv(venv_dir: str, venv_py: str) -> bool:
     """
-    Try to download a pre-built .venv for the current platform.
-    Checks the repo's committed prebuilt/ folder (main branch) first,
-    then falls back to the latest GitHub Releases. Returns True on success.
+    Try to download a pre-built .venv for the current platform
+    from the repo's committed prebuilt/ folder (main branch).
+    GitHub Releases are never used. Returns True on success.
     """
-    import json
-    import urllib.request
 
     # Map platform to asset name
     system = platform.system().lower()
@@ -214,35 +212,9 @@ def _download_prebuilt_venv(venv_dir: str, venv_py: str) -> bool:
 
     repo = "cubiced0/owo-discord-bot"
 
-    # 1) Pre-built venvs committed to the repo (prebuilt/ folder on main)
+    # Pre-built venvs committed to the repo (prebuilt/ folder on main)
     committed_url = f"https://raw.githubusercontent.com/{repo}/main/prebuilt/{asset_name}"
-    if _fetch_and_extract_venv(committed_url, asset_name, venv_dir, venv_py):
-        return True
-
-    # 2) Fallback: GitHub Releases
-    api_url = f"https://api.github.com/repos/{repo}/releases?per_page=5"
-    try:
-        req = urllib.request.Request(
-            api_url,
-            headers={"User-Agent": "Limey/1.0", "Accept": "application/vnd.github.v3+json"},
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            releases = json.loads(resp.read().decode())
-
-        for release in releases:
-            for asset in release.get("assets", []):
-                name = asset.get("name", "")
-                if name.startswith("venv-") and name.endswith((".tar.gz", ".zip")):
-                    if _fetch_and_extract_venv(asset["browser_download_url"], name, venv_dir, venv_py):
-                        return True
-    except Exception as e:
-        print(f"[!] Could not download pre-built venv: {e}", file=sys.stderr)
-        # Clean up partial downloads
-        if os.path.exists(venv_dir) and not _venv_is_valid(venv_py):
-            shutil.rmtree(venv_dir, ignore_errors=True)
-        return False
-
-    return False
+    return _fetch_and_extract_venv(committed_url, asset_name, venv_dir, venv_py)
 
 
 def _ensure_venv() -> str:
@@ -250,7 +222,7 @@ def _ensure_venv() -> str:
     Ensure the project's .venv exists and is compatible with the current system.
     If missing or incompatible, tries the following in order:
       1. Use existing venv if valid
-      2. Download pre-built venv from GitHub Releases
+      2. Download pre-built venv from the repo's committed prebuilt/ folder
       3. Create venv from scratch (pip install)
     Returns the venv Python path.
     """

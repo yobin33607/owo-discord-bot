@@ -8,12 +8,6 @@ on:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      create_release:
-        description: "Create a GitHub Release with the pre-built venvs?"
-        required: false
-        default: false
-        type: boolean
 
 jobs:
   build-venv:
@@ -169,81 +163,3 @@ jobs:
           branch="${GITHUB_REF#refs/heads/}"
           git fetch origin "$branch" 2>/dev/null || true
           git push --force-with-lease origin "HEAD:$branch"
-
-  release:
-    name: 🚀 Release pre-built venvs
-    if: github.event_name == 'workflow_dispatch' && inputs.create_release
-    needs: build-venv
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: write
-
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: venv-artifacts
-
-      - name: Generate release tag
-        id: tag
-        run: |
-          echo "tag=venv-$(date +'%Y%m%d-%H%M%S')" >> "$GITHUB_OUTPUT"
-
-      - name: Prepare release assets
-        run: |
-          mkdir -p release-assets
-
-          for dir in venv-artifacts/*; do
-            name=$(basename "$dir")
-
-            if [ -f "$dir/venv-artifact.tar.gz" ]; then
-              cp "$dir/venv-artifact.tar.gz" "release-assets/${name}.tar.gz"
-            elif [ -f "$dir/venv-artifact.zip" ]; then
-              cp "$dir/venv-artifact.zip" "release-assets/${name}.zip"
-            fi
-          done
-
-          ls -lah release-assets
-
-      - name: Generate release notes
-        run: |
-          cat > release-notes.md <<EOF
-          ## Pre-built virtual environments
-
-          Archives containing a fully configured \`.venv\` with all dependencies installed.
-
-          ### Quick start
-
-          Download the archive for your platform.
-
-          Extract it into your project directory.
-
-          Run:
-
-          \`\`\`
-          python limey.py
-          \`\`\`
-
-          ### Included builds
-
-          | Archive | Platform |
-          |---------|----------|
-          | venv-linux.tar.gz | Linux (Python 3.12) |
-          | venv-macos.tar.gz | macOS (Python 3.12) |
-          | venv-windows.zip | Windows (Python 3.12) |
-
-          ---
-          Built automatically by GitHub Actions.
-
-          Commit: ${{ github.sha }}
-          EOF
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: "Pre-built venv ${{ steps.tag.outputs.tag }}"
-          body_path: release-notes.md
-          files: release-assets/*
-          make_latest: false

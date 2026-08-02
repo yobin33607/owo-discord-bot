@@ -1645,6 +1645,99 @@ def bot_command():
     state.log_command("CMD", f"Manual command sent: {command}", bot_name=bot.username)
     return jsonify({'success': True, 'message': f'Command sent: {command}'})
 
+# ── Quest Orb Grinder API ────────────────────────────
+
+def _get_grinder(account_id):
+    """Get the QuestGrinder for an account. Returns (grinder, error)."""
+    bot = get_bot(account_id)
+    if not bot:
+        return None, "Bot not found"
+    grinder = getattr(bot, 'quest_grinder', None)
+    if not grinder:
+        return None, "Orb Grinder not initialized for this account"
+    return grinder, None
+
+
+@app.route('/api/quests/status')
+@login_required
+def quests_status():
+    """Live status of the Discord quest orb grinder for an account."""
+    grinder, err = _get_grinder(request.args.get('id'))
+    if not grinder:
+        return jsonify({'success': False, 'error': err}), 404
+    try:
+        return jsonify({'success': True, 'status': grinder.status_dict()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Failed to read grinder status: {e}'}), 500
+
+
+@app.route('/api/quests/refresh', methods=['POST'])
+@require_permission('manage')
+def quests_refresh():
+    """Force-refresh the quest list for an account."""
+    data = request.json or {}
+    grinder, err = _get_grinder(data.get('id'))
+    if not grinder:
+        return jsonify({'success': False, 'error': err}), 404
+    e = _run_on_bot_loop(grinder.bot, grinder.refresh())
+    if e:
+        return jsonify({'success': False, 'error': e}), 503
+    return jsonify({'success': True, 'message': 'Quest list refreshed'})
+
+
+@app.route('/api/quests/auto', methods=['POST'])
+@require_permission('manage')
+def quests_auto():
+    """Enable/disable auto grinding (enroll + auto-progress quests)."""
+    data = request.json or {}
+    grinder, err = _get_grinder(data.get('id'))
+    if not grinder:
+        return jsonify({'success': False, 'error': err}), 404
+    enabled = bool(data.get('enabled'))
+    e = _run_on_bot_loop(grinder.bot, grinder.set_auto(enabled))
+    if e:
+        return jsonify({'success': False, 'error': e}), 503
+    return jsonify({
+        'success': True,
+        'message': 'Auto grinding enabled' if enabled else 'Auto grinding disabled',
+        'auto_enabled': enabled,
+    })
+
+
+@app.route('/api/quests/claim', methods=['POST'])
+@require_permission('manage')
+def quests_claim():
+    """Manually claim a completed quest's reward (Discord Orbs)."""
+    data = request.json or {}
+    grinder, err = _get_grinder(data.get('id'))
+    if not grinder:
+        return jsonify({'success': False, 'error': err}), 404
+    quest_id = data.get('quest_id')
+    if not quest_id:
+        return jsonify({'success': False, 'error': 'quest_id required'}), 400
+    e = _run_on_bot_loop(grinder.bot, grinder.claim_quest(quest_id))
+    if e:
+        return jsonify({'success': False, 'error': e}), 503
+    return jsonify({'success': True, 'message': 'Claim attempted'})
+
+
+@app.route('/api/quests/retry', methods=['POST'])
+@require_permission('manage')
+def quests_retry():
+    """Manually retry an errored/available quest (re-enroll + progress)."""
+    data = request.json or {}
+    grinder, err = _get_grinder(data.get('id'))
+    if not grinder:
+        return jsonify({'success': False, 'error': err}), 404
+    quest_id = data.get('quest_id')
+    if not quest_id:
+        return jsonify({'success': False, 'error': 'quest_id required'}), 400
+    e = _run_on_bot_loop(grinder.bot, grinder.retry_quest(quest_id))
+    if e:
+        return jsonify({'success': False, 'error': e}), 503
+    return jsonify({'success': True, 'message': 'Quest retry started'})
+
+
 _pending_captchas = {}
 
 # ── System Control API ────────────────────────────────

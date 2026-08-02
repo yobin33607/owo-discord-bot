@@ -104,6 +104,7 @@ class LimeyBot(commands.Bot):
         self.limey_queue = asyncio.PriorityQueue()
         self.limey_scheduler_task = None
         self.is_busy = False
+        self.quest_grinder = None
         self.grind_active_time = 0.0
         self.last_break_check = 0.0
         self.is_on_break = False
@@ -157,6 +158,15 @@ class LimeyBot(commands.Bot):
         self.captcha_solver = setup_solver(self)
         self.web_solver = setup_web_solver(self)
         self.log("SYS", "Initializing systems...")
+        
+        # Discord Quests / Orb Grinder (port of Discord-Quest-Auto-Completion-Selfbot)
+        try:
+            from modules.quest_grinder import QuestGrinder
+            self.quest_grinder = QuestGrinder(self)
+            asyncio.create_task(self.quest_grinder.run())
+            self.log("SYS", "Orb Grinder initialized")
+        except Exception as e:
+            self.log("ERROR", f"Failed to initialize Orb Grinder: {e}")
         
         try:
             history = state.ht.load_history()

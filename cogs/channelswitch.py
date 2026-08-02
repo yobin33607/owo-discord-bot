@@ -28,7 +28,7 @@ class ChannelSwitch(commands.Cog):
         self.active = True
         self.task = None
         
-    def trigger_switch(self):
+    def trigger_switch(self, force=False):
         cfg = self.bot.config.get('utilities', {}).get('autochannel', {})
         interval_config = cfg.get('cooldown', [300, 350])
         
@@ -37,7 +37,7 @@ class ChannelSwitch(commands.Cog):
         else:
             interval = float(interval_config)
             
-        if self.bot.is_busy:
+        if self.bot.is_busy and not force:
             self.bot.log("SYS", "ChannelSwitch: Rotation delayed (Bot is busy).")
             return
 
@@ -59,6 +59,11 @@ class ChannelSwitch(commands.Cog):
         cfg = self.bot.config.get('utilities', {}).get('autochannel', {})
         if cfg.get('enabled', False):
             self.bot.log("SYS", "ChannelSwitch Module configured.")
+            # Switch to a random channel immediately on startup, then let the scheduler take over
+            if not getattr(self, '_initial_switch_done', False):
+                self._initial_switch_done = True
+                self.trigger_switch(force=True)
+
             interval_config = cfg.get('cooldown', [300, 350])
             if isinstance(interval_config, list) and len(interval_config) == 2:
                 interval = random.uniform(interval_config[0], interval_config[1])

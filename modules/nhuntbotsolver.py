@@ -16,10 +16,18 @@ Limey - https://github.com/cubiced0/owo-discord-bot
 """
 
 
-import numpy as np
 import io
-from PIL import Image
 import base64
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
 
 # priorty and encoded images(avoiding I-O for speed) idea taken from owo-dusk
@@ -67,6 +75,8 @@ class LimeySolver:
         self._initialize_masks()
 
     def _initialize_masks(self):
+        if np is None or Image is None:
+            return
         for group in self.PRIORITY_LEVELS:
             for char in group:
                 if char in self.MASKS:

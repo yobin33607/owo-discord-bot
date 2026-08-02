@@ -21,8 +21,18 @@ import os
 import io
 import asyncio
 import aiohttp
-import numpy as np
-from PIL import Image
+import subprocess
+import sys
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
 try:
     import onnxruntime
@@ -31,6 +41,62 @@ except ImportError:
 
 
 # Credit to Owo-Dusk for onnxmodel https://github.com/owo-dusk/owo-dusk/blob/main/utils/captcha_solver/best.onnx
+
+
+_AI_DEPS_ATTEMPTED = False
+
+
+def _ai_deps_present():
+    return np is not None and Image is not None and onnxruntime is not None
+
+
+def _ensure_ai_deps():
+    """
+    Try to pip-install any missing AI solver deps (numpy/Pillow/onnxruntime)
+    using the current interpreter. Attempts only once per process.
+    Returns True if all deps are importable afterwards.
+    """
+    global np, Image, onnxruntime, _AI_DEPS_ATTEMPTED
+
+    if _ai_deps_present():
+        return True
+
+    if _AI_DEPS_ATTEMPTED:
+        return False
+    _AI_DEPS_ATTEMPTED = True
+
+    missing = []
+    if np is None:
+        missing.append("numpy")
+    if Image is None:
+        missing.append("Pillow")
+    if onnxruntime is None:
+        missing.append("onnxruntime")
+
+    for pkg in missing:
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", pkg, "--no-cache-dir"])
+        except Exception:
+            return False
+
+    # Re-import now that the packages should be on disk
+    try:
+        import numpy as _np
+        np = _np
+    except ImportError:
+        np = None
+    try:
+        from PIL import Image as _Image
+        Image = _Image
+    except ImportError:
+        Image = None
+    try:
+        import onnxruntime as _ort
+        onnxruntime = _ort
+    except ImportError:
+        onnxruntime = None
+
+    return _ai_deps_present()
 
 
 class CaptchaSolver:
@@ -44,11 +110,16 @@ class CaptchaSolver:
         self.classes = "abcdefghijklmnopqrstuvwxyz"
         self.conf_threshold = 0.3
         self.img_size = 384
-        
-        if onnxruntime:
+
+        if _ai_deps_present():
             self._load_model()
         else:
-            self.bot.log("SYS", "onnxruntime not installed. AI Solver disabled.")
+            self.bot.log("SYS", "AI Solver deps (numpy/Pillow/onnxruntime) missing – attempting auto-install...")
+            if _ensure_ai_deps():
+                self.bot.log("SYS", "AI Solver deps installed. Loading model...")
+                self._load_model()
+            else:
+                self.bot.log("SYS", "AI Solver deps could not be installed. AI Solver disabled.")
 
     def _load_model(self):
         if not os.path.exists(self.model_path):

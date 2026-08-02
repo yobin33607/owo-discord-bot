@@ -119,13 +119,23 @@ class LimeyBot(commands.Bot):
 
     @property
     def loop_ref(self):
-        """Get the event loop safely, falling back to discord.py's loop attribute."""
+        """Get the event loop safely, falling back to discord.py's loop attribute.
+
+        Returns None when the loop isn't usable yet (e.g. the bot is still
+        connecting) instead of discord.py-self's loop sentinel, which raises
+        AttributeError when accessed from non-async contexts.
+        """
         if self._loop_ref is not None:
             return self._loop_ref
         try:
-            return self.loop
+            loop = self.loop
+            # discord.py-self sets self.loop to a sentinel until the client is
+            # initialised inside the event loop; any attribute access on it raises.
+            if loop is not None and hasattr(loop, 'create_task'):
+                return loop
         except (AttributeError, RuntimeError):
-            return None
+            pass
+        return None
 
     async def setup_hook(self):
         # Capture the event loop for cross-thread scheduling (dashboard API)
@@ -157,6 +167,7 @@ class LimeyBot(commands.Bot):
         asyncio.create_task(self._process_pending_commands())
         asyncio.create_task(self.limey_queue_worker())
         asyncio.create_task(self._track_active_time())
+        asyncio.create_task(self._balance_monitor_worker())
         self.limey_scheduler_task = asyncio.create_task(self.limey_scheduler_worker())
         await self._load_cogs()
     
@@ -166,6 +177,68 @@ class LimeyBot(commands.Bot):
             if not self.paused:
                 self.grind_active_time += 1.0
             await asyncio.sleep(1.0)
+
+    async def _balance_monitor_worker(self):
+        """Check the account balance periodically (default every 5 minutes) and pause
+        the bot if it drops more than a configurable amount below its starting
+        balance (default -100). Uses the existing cash parser to refresh stats.
+        Config: settings.json -> balance_monitor -> {enabled, interval, drop_limit}
+        """
+        await self.wait_until_ready()
+        # The custom is_ready flag is set at the end of on_ready, which runs after
+        # discord's internal ready event – make sure sends will actually go through.
+        while not self.is_ready and self.active:
+            await asyncio.sleep(1)
+
+        try:
+            cfg = self.config.get('balance_monitor', {})
+            if not cfg.get('enabled', True):
+                return
+            interval = max(30, int(cfg.get('interval', 300)))
+            drop_limit = max(0, int(cfg.get('drop_limit', 100)))
+        except Exception:
+            interval, drop_limit = 300, 100
+        if not self.active:
+            return
+
+        self.log("SYS", f"Balance Monitor started (every {interval}s, stops if balance drops ≥{drop_limit} from start).")
+        # Send an initial cash check so the starting-balance baseline gets captured
+        await self._send_cash_check_and_wait()
+
+        while self.active:
+            try:
+                await asyncio.sleep(interval)
+                if not self.active or self.paused:
+                    continue
+
+                await self._send_cash_check_and_wait()
+
+                st = self.stats
+                current = st.get('current_cash')
+                start = st.get('start_cash')
+                if current is None or not start:
+                    continue  # baseline not synced yet – skip this cycle
+
+                drop = start - current
+                if drop >= drop_limit:
+                    self.log("ALARM", f"Balance Monitor: Balance dropped {drop:,} from start ({start:,} → {current:,}). Stopping bot.")
+                    self.paused = True
+                    self.throttle_until = float('inf')
+                    state.log_command("SYS", f"Balance Monitor stopped {self.username} (dropped {drop:,} from start)", "warning", bot_name=self.username)
+                    break
+            except Exception as e:
+                self.log("ERROR", f"Balance Monitor error: {e}")
+
+    async def _send_cash_check_and_wait(self, timeout=8):
+        """Send a cash check and wait until the parsed balance is refreshed.
+        Returns True if the balance was updated, False on timeout."""
+        before = self.stats.get('last_cash_update', 0)
+        await self.send_message(f"{self.prefix}cash", skip_typing=True, priority=True)
+        for _ in range(timeout):
+            await asyncio.sleep(1)
+            if self.stats.get('last_cash_update', 0) > before:
+                return True
+        return False
 
     async def _process_pending_commands(self):
         await asyncio.sleep(5)

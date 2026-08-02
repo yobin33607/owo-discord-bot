@@ -1002,6 +1002,23 @@ def get_bot(account_id):
     return state.bot_instances[0] if state.bot_instances else None
 
 
+def _run_on_bot_loop(bot, coro):
+    """Schedule a coroutine on the bot's event loop from the dashboard thread.
+    Returns an error message string, or None on success.
+    The coroutine is closed when it can't be scheduled, so it doesn't trigger
+    a 'coroutine was never awaited' RuntimeWarning."""
+    loop = bot.loop_ref
+    if loop is None:
+        coro.close()
+        return "Bot is still connecting – try again in a moment."
+    try:
+        asyncio.run_coroutine_threadsafe(coro, loop)
+        return None
+    except Exception as e:
+        coro.close()
+        return f"Could not reach the bot's event loop: {e}"
+
+
 @app.route('/api/stats')
 @login_required
 def stats():
@@ -1159,7 +1176,7 @@ def settings():
                         ghd.write_json(fpath, new_config, message=f"Update {fpath} from dashboard (all accounts)")
                 
                 for bot in state.bot_instances:
-                    asyncio.run_coroutine_threadsafe(bot.sync_settings(new_config), bot.loop_ref)
+                    _run_on_bot_loop(bot, bot.sync_settings(new_config))
                 
                 state.log_command("SYS", "Settings updated for ALL accounts", "success")
             else:
@@ -1173,7 +1190,7 @@ def settings():
                 
                 for bot in state.bot_instances:
                     if (not account_id) or (bot.user and str(bot.user.id) == str(account_id)):
-                        asyncio.run_coroutine_threadsafe(bot.sync_settings(new_config), bot.loop_ref)
+                        _run_on_bot_loop(bot, bot.sync_settings(new_config))
                 
                 state.log_command("SYS", f"Settings updated for {'Account ' + account_id if account_id else 'Global'}", "success")
             
@@ -1384,7 +1401,9 @@ def test_security():
         
     sec = bot.get_cog('Security')
     if sec:
-        asyncio.run_coroutine_threadsafe(sec.play_beep(), bot.loop_ref)
+        err = _run_on_bot_loop(bot, sec.play_beep())
+        if err:
+            return jsonify({'status': 'error', 'message': err}), 503
         sec._show_desktop_notification("Test: Limey Security Alert working!")
         sec._send_webhook("SYSTEM TEST", "This is a test of your security notification system. All systems are operational.")
         return jsonify({'status': 'success', 'message': 'Test signals sent'})
@@ -1411,10 +1430,9 @@ def control():
         bot.log("SYS", "Bot RESUMED via Dashboard")
             
     elif action == 'cash':
-        asyncio.run_coroutine_threadsafe(
-            bot.send_message(f"{bot.prefix}cash", skip_typing=True, priority=True),
-            bot.loop_ref
-        )
+        err = _run_on_bot_loop(bot, bot.send_message(f"{bot.prefix}cash", skip_typing=True, priority=True))
+        if err:
+            return jsonify({'success': False, 'error': err}), 503
         state.log_command("CMD", "Manual Cash Check Sent", "info", bot_name=bot.username)
         
     return jsonify({'success': True})
@@ -1524,10 +1542,9 @@ def captcha_submit():
     command_template = captcha_data.get('command_template', f"owo autohunt {cash} {{password}}")
     full_command = command_template.replace('{password}', code)
     
-    asyncio.run_coroutine_threadsafe(
-        bot.send_message(full_command, skip_typing=True, priority=True), 
-        bot.loop_ref
-    )
+    err = _run_on_bot_loop(bot, bot.send_message(full_command, skip_typing=True, priority=True))
+    if err:
+        return jsonify({'success': False, 'error': err}), 503
     
     if 'current_captcha' in st:
         del st['current_captcha']
@@ -1582,8 +1599,12 @@ def captcha_balance():
         from modules.services.yescaptcha import YesCaptchaService
         temp_solver = YesCaptchaService(bot, api_key, "")
 
+    loop = bot.loop_ref
+    if loop is None:
+        return jsonify({'balance': None, 'service': service, 'error': 'Bot is still connecting – try again in a moment.'}), 503
+
     try:
-        future = asyncio.run_coroutine_threadsafe(temp_solver.get_balance(), bot.loop_ref)
+        future = asyncio.run_coroutine_threadsafe(temp_solver.get_balance(), loop)
         balance = future.result(timeout=10)
         return jsonify({'balance': balance, 'service': service, 'enabled': cfg.get('enabled', False)})
     except Exception:
@@ -1618,10 +1639,9 @@ def bot_command():
     if not command:
         return jsonify({'success': False, 'error': 'No command provided'})
     
-    asyncio.run_coroutine_threadsafe(
-        bot.send_message(command, skip_typing=True, priority=True), 
-        bot.loop_ref
-    )
+    err = _run_on_bot_loop(bot, bot.send_message(command, skip_typing=True, priority=True))
+    if err:
+        return jsonify({'success': False, 'error': err}), 503
     state.log_command("CMD", f"Manual command sent: {command}", bot_name=bot.username)
     return jsonify({'success': True, 'message': f'Command sent: {command}'})
 
@@ -1691,7 +1711,9 @@ def system_restart():
         for bot in state.bot_instances:
             try:
                 bot.active = False
-                asyncio.run_coroutine_threadsafe(bot.close(), bot.loop_ref)
+                loop = bot.loop_ref
+                if loop is not None:
+                    asyncio.run_coroutine_threadsafe(bot.close(), loop)
             except Exception:
                 pass
         
@@ -1731,7 +1753,9 @@ def system_shutdown():
         for bot in state.bot_instances:
             try:
                 bot.active = False
-                asyncio.run_coroutine_threadsafe(bot.close(), bot.loop_ref)
+                loop = bot.loop_ref
+                if loop is not None:
+                    asyncio.run_coroutine_threadsafe(bot.close(), loop)
             except Exception:
                 pass
         
@@ -2295,9 +2319,12 @@ def api_moderation_action():
         return jsonify({'success': True, 'message': f'{action.capitalize()} completed successfully.{dur_text}'})
 
     # For Discord API actions, run on the bot's event loop
+    loop = bot.loop_ref
+    if loop is None:
+        return jsonify({'success': False, 'error': 'Bot is still connecting – try again in a moment.'}), 503
     future = asyncio.run_coroutine_threadsafe(
         _discord_mod_action(bot, action, guild_id, user_id, reason, duration_seconds, delete_days),
-        bot.loop_ref
+        loop
     )
 
     try:

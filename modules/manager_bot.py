@@ -787,7 +787,7 @@ class ManagerCommands(commands.Cog):
             name="Slash Commands — Verification",
             value=(
                 "`/verifypanel` — Post the verification button panel\n"
-                "`/verifyconfig` — View verification configuration\n"
+                "`/verifyconfig` — View/update verification configuration\n"
             ),
             inline=False,
         )
@@ -1081,7 +1081,7 @@ class ManagerCommands(commands.Cog):
             name="Slash Commands — Verification",
             value=(
                 "`/verifypanel` — Post the verification button panel\n"
-                "`/verifyconfig` — View verification configuration\n"
+                "`/verifyconfig` — View/update verification configuration\n"
             ),
             inline=False,
         )

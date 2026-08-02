@@ -54,6 +54,99 @@ def _log_verification(guild_id, user_id, username, action, details):
     _log.info(f"VERIFY [{action}] {username} ({user_id}) in guild {guild_id}: {details}")
 
 
+VALID_CONFIG_SETTINGS = (
+    "verified_role_id",
+    "unverified_role_id",
+    "welcome_channel_id",
+    "log_channel_id",
+    "min_account_age_days",
+    "captcha_enabled",
+    "captcha_difficulty",
+    "welcome_message",
+    "guild_id",
+)
+
+
+def _apply_config_setting(cfg, setting, value, guild_id):
+    """Apply a single verification config change in place.
+
+    Returns (changed: bool, error: str | None).
+    Shared by the prefix and slash commands.
+    """
+    setting = setting.strip().lower()
+
+    if setting == "verified_role_id":
+        try:
+            role_id = int(str(value).strip("<@&>"))
+        except ValueError:
+            return False, "❌ Invalid role ID. Use a Discord role ID number."
+        cfg["verified_role_id"] = str(role_id)
+        cfg["guild_id"] = str(guild_id)
+        return True, None
+
+    elif setting == "unverified_role_id":
+        try:
+            role_id = int(str(value).strip("<@&>"))
+        except ValueError:
+            return False, "❌ Invalid role ID."
+        cfg["unverified_role_id"] = str(role_id)
+        return True, None
+
+    elif setting in ("welcome_channel_id", "log_channel_id"):
+        try:
+            channel_id = int(str(value).strip("<#>"))
+        except ValueError:
+            return False, "❌ Invalid channel ID."
+        cfg[setting] = str(channel_id)
+        return True, None
+
+    elif setting == "min_account_age_days":
+        try:
+            days = int(value)
+            if days < 0:
+                raise ValueError
+        except ValueError:
+            return False, "❌ Invalid number. Use a positive integer (0 to disable)."
+        cfg[setting] = days
+        return True, None
+
+    elif setting == "captcha_enabled":
+        val = str(value).strip().lower()
+        if val in ("on", "enable", "true", "1"):
+            cfg[setting] = True
+            return True, None
+        if val in ("off", "disable", "false", "0"):
+            cfg[setting] = False
+            return True, None
+        return False, "❌ Use `on` or `off`."
+
+    elif setting == "captcha_difficulty":
+        val = str(value).strip().lower()
+        if val in ("easy", "medium", "hard"):
+            cfg[setting] = val
+            return True, None
+        return False, "❌ Difficulty must be `easy`, `medium`, or `hard`."
+
+    elif setting == "welcome_message":
+        if not value:
+            return False, "❌ Please provide a welcome message."
+        cfg[setting] = str(value)
+        return True, None
+
+    elif setting == "guild_id":
+        try:
+            gid = int(str(value).strip())
+        except ValueError:
+            return False, "❌ Invalid guild ID."
+        cfg[setting] = str(gid)
+        return True, None
+
+    return False, (
+        f"❌ Unknown setting: `{setting}`\n"
+        f"Valid settings: {', '.join(VALID_CONFIG_SETTINGS)}"
+    )
+
+
 # ── Captcha Generator ─────────────────────────────────
 
 
@@ -442,98 +535,16 @@ class Verification(commands.Cog):
             return
 
         # Handle setting changes
-        setting = setting.lower()
         cfg = _load_verification_config()
-        changed = False
+        changed, error = _apply_config_setting(cfg, setting, value, ctx.guild.id)
 
-        if setting == "verified_role_id":
-            try:
-                role_id = int(value.strip("<@&>"))
-                cfg["verified_role_id"] = str(role_id)
-                cfg["guild_id"] = str(ctx.guild.id)
-                changed = True
-            except ValueError:
-                await ctx.send("❌ Invalid role ID. Use a Discord role ID number.")
-                return
-
-        elif setting == "unverified_role_id":
-            try:
-                role_id = int(value.strip("<@&>"))
-                cfg["unverified_role_id"] = str(role_id)
-                changed = True
-            except ValueError:
-                await ctx.send("❌ Invalid role ID.")
-                return
-
-        elif setting == "welcome_channel_id":
-            try:
-                channel_id = int(value.strip("<#>"))
-                cfg["welcome_channel_id"] = str(channel_id)
-                changed = True
-            except ValueError:
-                await ctx.send("❌ Invalid channel ID.")
-                return
-
-        elif setting == "log_channel_id":
-            try:
-                channel_id = int(value.strip("<#>"))
-                cfg["log_channel_id"] = str(channel_id)
-                changed = True
-            except ValueError:
-                await ctx.send("❌ Invalid channel ID.")
-                return
-
-        elif setting == "min_account_age_days":
-            try:
-                days = int(value)
-                if days < 0:
-                    raise ValueError
-                cfg["min_account_age_days"] = days
-                changed = True
-            except ValueError:
-                await ctx.send("❌ Invalid number. Use a positive integer (0 to disable).")
-                return
-
-        elif setting == "captcha_enabled":
-            val = value.strip().lower()
-            if val in ("on", "enable", "true", "1"):
-                cfg["captcha_enabled"] = True
-                changed = True
-            elif val in ("off", "disable", "false", "0"):
-                cfg["captcha_enabled"] = False
-                changed = True
-            else:
-                await ctx.send("❌ Use `on` or `off`.")
-                return
-
-        elif setting == "captcha_difficulty":
-            val = value.strip().lower()
-            if val in ("easy", "medium", "hard"):
-                cfg["captcha_difficulty"] = val
-                changed = True
-            else:
-                await ctx.send("❌ Difficulty must be `easy`, `medium`, or `hard`.")
-                return
-
-        elif setting == "welcome_message":
-            if value:
-                cfg["welcome_message"] = value
-                changed = True
-            else:
-                await ctx.send("❌ Please provide a welcome message.")
-                return
-
-        else:
-            await ctx.send(
-                f"❌ Unknown setting: `{setting}`\n"
-                f"Valid settings: verified_role_id, unverified_role_id, welcome_channel_id, "
-                f"log_channel_id, min_account_age_days, captcha_enabled, captcha_difficulty, welcome_message"
-            )
+        if error:
+            await ctx.send(error)
             return
 
         if changed:
             _save_verification_config(cfg)
-            await ctx.send(f"✅ `{setting}` has been updated.")
+            await ctx.send(f"✅ `{setting.strip().lower()}` has been updated.")
             _log.info(f"Verification config updated: {setting} = {value}")
         else:
             await ctx.send("⚠️ No changes were made.")
@@ -577,10 +588,44 @@ class Verification(commands.Cog):
         await interaction.response.send_message(embed=embed, view=view)
 
     @app_commands.command(name="verifyconfig", description="View or update verification configuration")
+    @app_commands.describe(
+        setting="Setting to change (e.g. verified_role_id, captcha_enabled). Leave empty to view config.",
+        value="New value for the setting.",
+    )
     @app_commands.checks.has_permissions(administrator=True)
-    async def slash_verifyconfig(self, interaction: discord.Interaction):
-        """Show verification config."""
+    async def slash_verifyconfig(self, interaction: discord.Interaction, setting: str = "", value: str = ""):
+        """View or update verification config.
+
+        Usage:
+          /verifyconfig                                  — Show current config
+          /verifyconfig setting:verified_role_id value:<id>   — Set the verified role
+          /verifyconfig setting:captcha_enabled value:off     — Disable captcha
+          /verifyconfig setting:captcha_difficulty value:hard — Set difficulty
+        """
         cfg = _load_verification_config()
+
+        # If a setting was provided, apply the change
+        if setting.strip():
+            # Defer first: _save_verification_config does a GitHub write that can
+            # exceed Discord's 3-second interaction window.
+            await interaction.response.defer(ephemeral=True)
+            changed, error = _apply_config_setting(cfg, setting, value, interaction.guild_id)
+
+            if error:
+                await interaction.followup.send(error, ephemeral=True)
+                return
+
+            if changed:
+                _save_verification_config(cfg)
+                _log.info(f"Verification config updated via slash: {setting} = {value}")
+                await interaction.followup.send(
+                    f"✅ `{setting.strip().lower()}` has been updated.", ephemeral=True
+                )
+            else:
+                await interaction.followup.send("⚠️ No changes were made.", ephemeral=True)
+            return
+
+        # Otherwise, show the current config
         embed = discord.Embed(
             title="⚙️ Verification Configuration",
             color=0x4488FF,
@@ -601,6 +646,11 @@ class Verification(commands.Cog):
         for name, val in fields:
             embed.add_field(name=name, value=val, inline=True)
 
+        welcome_msg = cfg.get('welcome_message', '')
+        if welcome_msg:
+            embed.add_field(name="Welcome Message", value=f"```{welcome_msg[:100]}```", inline=False)
+
+        embed.set_footer(text="Use /verifyconfig setting:<name> value:<value> to change")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 

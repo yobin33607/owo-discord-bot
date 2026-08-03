@@ -1936,6 +1936,11 @@ def submit_captcha_solution():
             from modules.web_solver import WebSolver
             WebSolver.mark_verification_done(account_id)
             clear_captcha_challenge(account_id)
+            # Resume the bot immediately instead of waiting for the DM confirmation
+            bot.paused = False
+            bot.throttle_until = 0.0
+            bot.last_sent_time = 0
+            bot.warmup_until = 0
             state.log_command("SEC", f"Captcha verified for account {account_id}", "success")
             return jsonify({'success': True, 'message': 'Captcha verified successfully'})
         else:

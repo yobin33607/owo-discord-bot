@@ -19,11 +19,19 @@ Configuration (stored in manager_bot.verification in settings.json):
 import discord
 from discord import app_commands
 from discord.ext import commands
+import io
 import json
 import os
 import time
 import logging
 import random
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError:
+    Image = ImageDraw = ImageFont = None
+
+_PIL_AVAILABLE = Image is not None and ImageDraw is not None and ImageFont is not None
 
 _log = logging.getLogger("verification_bot")
 
@@ -151,18 +159,137 @@ def _apply_config_setting(cfg, setting, value, guild_id):
 
 
 class CaptchaGenerator:
-    """Generates simple math captcha challenges."""
+    """Generates real image captchas (distorted text) for human verification.
 
-    # Operators and their display symbols
+    Falls back to a simple math challenge if Pillow isn't installed.
+    """
+
+    # Unambiguous characters (no 0/O, 1/l/I) so users aren't confused
+    CHARSET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"
+
+    # Operators and their display symbols (fallback math captcha)
     OPERATORS = [
         ("+", lambda a, b: a + b),
         ("-", lambda a, b: a - b),
         ("×", lambda a, b: a * b),
     ]
 
+    _FONT_CANDIDATES = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+        "C:/Windows/Fonts/arialbd.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+        "/Library/Fonts/Arial Bold.ttf",
+        "/Library/Fonts/Arial.ttf",
+    ]
+
+    @classmethod
+    def _load_font(cls, size):
+        """Load a TTF font for rendering, falling back to Pillow's default."""
+        for path in cls._FONT_CANDIDATES:
+            if os.path.exists(path):
+                try:
+                    return ImageFont.truetype(path, size)
+                except Exception:
+                    continue
+        try:
+            return ImageFont.load_default(size=size)
+        except TypeError:
+            return ImageFont.load_default()
+
+    @classmethod
+    def _random_text(cls, length):
+        """Generate a random captcha code avoiding ambiguous characters."""
+        return "".join(random.choice(cls.CHARSET) for _ in range(length))
+
+    @classmethod
+    def generate_image(cls, difficulty="medium"):
+        """Generate a captcha image.
+
+        Returns (answer_text, png_bytes). If Pillow is unavailable,
+        png_bytes is None and the caller should fall back to math.
+        """
+        if not _PIL_AVAILABLE:
+            return None, None
+
+        if difficulty == "easy":
+            length, rot_range, noise = 4, 12, 0.35
+        elif difficulty == "hard":
+            length, rot_range, noise = 6, 28, 0.75
+        else:
+            length, rot_range, noise = 5, 20, 0.5
+
+        text = cls._random_text(length)
+        font = cls._load_font(46)
+        font_size = 46
+
+        pad = 22
+        step = font_size - 2
+        w = pad * 2 + length * step + 30
+        h = font_size * 2 + 24
+        img = Image.new("RGB", (w, h))
+        draw = ImageDraw.Draw(img)
+
+        # Light background with a soft vertical gradient
+        bg_base = random.choice(
+            [(238, 240, 244), (246, 246, 250), (234, 240, 248), (250, 244, 238)]
+        )
+        for y in range(h):
+            shade = int(16 * (y / h))
+            draw.line([(0, y), (w, y)], fill=tuple(max(0, c - shade) for c in bg_base))
+
+        # Noise specks
+        speck_colors = [(90, 90, 100), (120, 120, 130), (150, 150, 160)]
+        for _ in range(int(w * h * (0.008 + noise * 0.02))):
+            draw.point(
+                (random.randint(0, w - 1), random.randint(0, h - 1)),
+                fill=random.choice(speck_colors),
+            )
+
+        # Wavy lines across the image
+        n_lines = 2 if noise < 0.45 else 3 if noise < 0.6 else 4
+        for _ in range(n_lines):
+            pts = []
+            x = 0
+            while x <= w:
+                pts.append((x, random.randint(int(h * 0.25), int(h * 0.75))))
+                x += random.randint(30, 55)
+            draw.line(
+                pts,
+                fill=random.choice([(110, 110, 120), (140, 140, 150)]),
+                width=1,
+            )
+
+        # Per-character drawing with random rotation / vertical jitter
+        text_colors = [
+            (25, 25, 30), (35, 70, 150), (150, 55, 35),
+            (25, 110, 80), (110, 35, 120), (95, 60, 25),
+        ]
+        x = pad
+        for ch in text:
+            layer = Image.new("RGBA", (font_size + 30, font_size + 44), (0, 0, 0, 0))
+            ld = ImageDraw.Draw(layer)
+            ld.text((15, 22), ch, font=font, fill=(*random.choice(text_colors), 255))
+            layer = layer.rotate(
+                random.uniform(-rot_range, rot_range),
+                expand=True,
+                resample=Image.BICUBIC,
+            )
+            y_off = random.randint(-12, 12)
+            img.paste(layer, (x, (h - layer.height) // 2 + y_off), layer)
+            x += step + random.randint(-2, 8)
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return text, buf.getvalue()
+
     @classmethod
     def generate(cls, difficulty="medium"):
-        """Generate a captcha challenge. Returns (question_text, correct_answer)."""
+        """Fallback: generate a simple math challenge.
+        Returns (question_text, correct_answer).
+        """
         if difficulty == "easy":
             a = random.randint(1, 10)
             b = random.randint(1, 10)
@@ -188,6 +315,42 @@ class CaptchaGenerator:
         answer = op_func(a, b)
         question = f"**{a} {op_symbol} {b} = ?**"
         return question, answer
+
+
+# ── Captcha Answer View ───────────────────────────────
+
+
+class CaptchaAnswerView(discord.ui.View):
+    """View shown next to the captcha image; opens the answer modal."""
+
+    def __init__(self, cog, user_id):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self._user_id = user_id
+
+    @discord.ui.button(
+        label="Enter Answer",
+        style=discord.ButtonStyle.primary,
+        custom_id="captcha_answer_btn",
+        emoji="🔑",
+    )
+    async def answer_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Open the modal where the user types the code from the image."""
+        if interaction.user.id != self._user_id:
+            await interaction.response.send_message(
+                "❌ This captcha is not for you.", ephemeral=True
+            )
+            return
+
+        captcha_data = self.cog._active_captchas.get(self._user_id)
+        if not captcha_data or (time.time() - captcha_data.get("timestamp", 0)) > 300:
+            await interaction.response.send_message(
+                "❌ This captcha has expired. Click **Verify** to get a new one.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_modal(CaptchaModal(self.cog, None, self._user_id))
 
 
 # ── Verification Views ─────────────────────────────────
@@ -230,18 +393,44 @@ class VerificationView(discord.ui.View):
                 )
                 return
 
-            # Generate captcha and open modal
+            # Generate captcha and store the answer
             difficulty = config.get("captcha_difficulty", "medium")
-            question, answer = CaptchaGenerator.generate(difficulty)
+            answer, image_bytes = CaptchaGenerator.generate_image(difficulty)
 
-            # Store the answer
-            self.cog._active_captchas[interaction.user.id] = {
-                "answer": answer,
-                "timestamp": time.time(),
-            }
+            if image_bytes:
+                # Real image captcha: send the picture + an answer button
+                self.cog._active_captchas[interaction.user.id] = {
+                    "answer": answer.lower(),
+                    "timestamp": time.time(),
+                }
 
-            modal = CaptchaModal(self.cog, question, interaction.user.id)
-            await interaction.response.send_modal(modal)
+                file = discord.File(io.BytesIO(image_bytes), filename="captcha.png")
+                embed = discord.Embed(
+                    title="🔐 Human Verification",
+                    description=(
+                        "Please **read the code** in the image below, then click "
+                        "**Enter Answer** to type it in.\n\n"
+                        f"Difficulty: `{difficulty}`"
+                    ),
+                    color=0x00FF88,
+                )
+                embed.set_image(url="attachment://captcha.png")
+
+                view = CaptchaAnswerView(self.cog, interaction.user.id)
+                await interaction.response.send_message(
+                    embed=embed, file=file, view=view, ephemeral=True
+                )
+            else:
+                # Pillow unavailable – fall back to a math question
+                question, answer = CaptchaGenerator.generate(difficulty)
+
+                self.cog._active_captchas[interaction.user.id] = {
+                    "answer": str(answer).lower(),
+                    "timestamp": time.time(),
+                }
+
+                modal = CaptchaModal(self.cog, question, interaction.user.id)
+                await interaction.response.send_modal(modal)
         else:
             # No captcha required, verify immediately
             await self.cog._assign_verified_role(interaction.user, guild)
@@ -251,24 +440,33 @@ class VerificationView(discord.ui.View):
 
 
 class CaptchaModal(discord.ui.Modal):
-    """Modal that shows a captcha question and expects the answer."""
+    """Modal that expects the captcha answer typed by the user."""
 
     def __init__(self, cog, question, user_id):
         self.cog = cog
         self._user_id = user_id
         super().__init__(title="🔐 Human Verification")
 
+        if question:
+            # Fallback math captcha – question is shown in the input label
+            label = f"Solve: {question}"
+            placeholder = "Type your answer..."
+        else:
+            # Image captcha – the code was shown in a picture
+            label = "Enter the code shown in the image"
+            placeholder = "e.g. K7xQ2"
+
         self.captcha_input = discord.ui.TextInput(
-            label=f"Solve: {question}",
-            placeholder="Type your answer...",
+            label=label,
+            placeholder=placeholder,
             style=discord.TextStyle.short,
             required=True,
-            max_length=10,
+            max_length=12,
         )
         self.add_item(self.captcha_input)
 
     async def on_submit(self, interaction: discord.Interaction):
-        """Check the captcha answer."""
+        """Check the captcha answer (case-insensitive)."""
         captcha_data = self.cog._active_captchas.pop(self._user_id, None)
         if not captcha_data:
             await interaction.response.send_message(
@@ -277,16 +475,15 @@ class CaptchaModal(discord.ui.Modal):
             )
             return
 
-        try:
-            user_answer = int(self.captcha_input.value.strip())
-        except ValueError:
+        user_answer = self.captcha_input.value.strip().lower()
+        if not user_answer:
             await interaction.response.send_message(
-                "❌ Invalid answer. Please enter a number.\nClick the Verify button to try again.",
+                "❌ Please enter the code shown in the image.",
                 ephemeral=True
             )
             return
 
-        correct_answer = captcha_data["answer"]
+        correct_answer = str(captcha_data.get("answer", "")).lower()
 
         if user_answer == correct_answer:
             # Success!
@@ -302,8 +499,7 @@ class CaptchaModal(discord.ui.Modal):
             )
         else:
             await interaction.response.send_message(
-                f"❌ **Incorrect answer.** The correct answer was **{correct_answer}**.\n"
-                "Click the Verify button to try again with a new challenge.",
+                "❌ **Incorrect code.** Please click **Verify** to get a new captcha.",
                 ephemeral=True
             )
 
@@ -316,7 +512,7 @@ class Verification(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self._active_captchas = {}  # user_id -> {"answer": int, "timestamp": float}
+        self._active_captchas = {}  # user_id -> {"answer": str, "timestamp": float}
         self._captcha_cooldowns = {}  # user_id -> timestamp
 
     # ── Events ────────────────────────────────────────

@@ -62,6 +62,7 @@ window.nav = function(id, el) {
     if (id === 'security') {
         fetchSecuritySummary();
         pollForCaptchas();
+        if (typeof window.maybeRenderEmbeddedCaptcha === 'function') window.maybeRenderEmbeddedCaptcha();
     }
     if (id === 'admin-users') {
         if (typeof fetchUsers === 'function') fetchUsers();

@@ -292,7 +292,7 @@ function renderSecurityCards() {
                     <span class="captcha-timer">${timeStr}</span>
                 </div>
                 <div class="captcha-card-body">
-                    <button class="btn-control gold" onclick="triggerManualSolve('${p.accountId}')">Solve</button>
+                    <button class="btn-control gold" onclick="solveFromCard('${p.accountId}')">Solve</button>
                     <button class="btn-control" onclick="dismissCaptchaCard('${p.accountId}')">Dismiss</button>
                 </div>
             </div>
@@ -384,6 +384,138 @@ window.cancelManualSolve = function() {
     }
 };
 
-window.cancelEmbeddedCaptcha = window.cancelManualSolve;
+// ── Embedded hCaptcha ───────────────────────────────────
+// Renders a real hCaptcha widget inline in the dashboard and submits
+// the token to the backend, which verifies it against owobot.com.
+const HCAPTCHA_SITEKEY = 'a6a1d5ce-612d-472d-8e37-7601408fbc09';
+
+let _embeddedCaptchaPending = null;      // { accountId, username }
+let _embeddedCaptchaWidgetId = null;     // rendered hCaptcha widget id
+let _embeddedCaptchaRenderedFor = null;  // accountId currently rendered
+let _hcaptchaWaiters = [];
+
+window.hcaptchaOnload = function() {
+    _hcaptchaWaiters.forEach(cb => { try { cb(); } catch (e) {} });
+    _hcaptchaWaiters = [];
+    maybeRenderEmbeddedCaptcha();
+};
+
+function whenHcaptchaReady(cb) {
+    if (typeof window.hcaptcha !== 'undefined') { cb(); return; }
+    _hcaptchaWaiters.push(cb);
+    let tries = 0;
+    const poll = setInterval(() => {
+        tries++;
+        if (typeof window.hcaptcha !== 'undefined') {
+            clearInterval(poll);
+            cb();
+        } else if (tries > 50) {
+            clearInterval(poll);
+            const idx = _hcaptchaWaiters.indexOf(cb);
+            if (idx !== -1) _hcaptchaWaiters.splice(idx, 1);
+            showToast('hCaptcha failed to load – check your connection', 'error');
+        }
+    }, 200);
+}
+
+window.openEmbeddedCaptcha = function(accountId, username) {
+    const section = document.getElementById('captcha-solver-section');
+    if (!section) return;
+    _embeddedCaptchaPending = { accountId: accountId, username: username || accountId };
+    section.style.display = 'block';
+    maybeRenderEmbeddedCaptcha();
+};
+
+// User-initiated solve (e.g. from a pending captcha card) – scrolls to the widget.
+window.solveFromCard = function(accountId) {
+    openEmbeddedCaptcha(accountId);
+    setTimeout(() => {
+        const section = document.getElementById('captcha-solver-section');
+        if (section) {
+            try { section.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+        }
+    }, 100);
+};
+
+window.maybeRenderEmbeddedCaptcha = function() {
+    if (!_embeddedCaptchaPending) return;
+    const secView = document.getElementById('security');
+    if (!secView || !secView.classList.contains('active-view')) return; // wait until visible
+    const container = document.getElementById('hcaptcha-container');
+    if (!container) return;
+    whenHcaptchaReady(() => {
+        if (!_embeddedCaptchaPending) return;
+        const { accountId } = _embeddedCaptchaPending;
+        // Already showing a live widget for this account – keep it
+        if (_embeddedCaptchaRenderedFor === accountId && _embeddedCaptchaWidgetId !== null) return;
+        resetEmbeddedCaptchaWidget();
+        container.innerHTML = '';
+        try {
+            _embeddedCaptchaWidgetId = hcaptcha.render(container, {
+                sitekey: HCAPTCHA_SITEKEY,
+                theme: 'dark',
+                size: 'normal',
+                callback: (token) => submitEmbeddedCaptcha(accountId, token),
+                'expired-callback': () => showToast('Captcha expired – please solve it again', 'warning'),
+                'error-callback': () => showToast('Captcha error – click Reload to try again', 'error'),
+            });
+            _embeddedCaptchaRenderedFor = accountId;
+        } catch (e) {
+            console.error('hCaptcha render failed:', e);
+            container.innerHTML = '<div class="no-data">Failed to load captcha – <a href="javascript:void(0)" onclick="reloadEmbeddedCaptcha()">click to retry</a></div>';
+            _embeddedCaptchaWidgetId = null;
+        }
+    });
+};
+
+window.submitEmbeddedCaptcha = async function(accountId, token) {
+    try {
+        const res = await fetch('/api/captcha_solve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_id: accountId, token: token })
+        });
+        const d = await res.json();
+        if (d.success) {
+            showToast('Captcha verified – bot resumed!', 'success');
+            closeEmbeddedCaptcha();
+            pollForCaptchas();
+        } else {
+            showToast(d.error || 'Invalid captcha – please try again', 'error');
+            resetEmbeddedCaptchaWidget();
+        }
+    } catch (e) {
+        showToast('Failed to submit captcha', 'error');
+        resetEmbeddedCaptchaWidget();
+    }
+};
+
+function resetEmbeddedCaptchaWidget() {
+    if (_embeddedCaptchaWidgetId !== null && typeof hcaptcha !== 'undefined') {
+        try { hcaptcha.reset(_embeddedCaptchaWidgetId); } catch (e) {}
+    }
+    _embeddedCaptchaWidgetId = null;
+    _embeddedCaptchaRenderedFor = null;
+    const container = document.getElementById('hcaptcha-container');
+    if (container) container.innerHTML = '<div class="no-data">Loading hCaptcha…</div>';
+}
+
+function closeEmbeddedCaptcha() {
+    _embeddedCaptchaPending = null;
+    const section = document.getElementById('captcha-solver-section');
+    if (section) section.style.display = 'none';
+    resetEmbeddedCaptchaWidget();
+}
+
+window.cancelEmbeddedCaptcha = function() {
+    closeEmbeddedCaptcha();
+    cancelManualSolve();
+};
+
+window.reloadEmbeddedCaptcha = function() {
+    if (!_embeddedCaptchaPending) return;
+    resetEmbeddedCaptchaWidget();
+    maybeRenderEmbeddedCaptcha();
+};
 
 startPendingTimer();

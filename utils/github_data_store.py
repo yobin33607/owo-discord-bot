@@ -29,8 +29,10 @@ Usage:
 import json
 import os
 import time
+import random
 import base64
 import logging
+import threading
 
 _log = logging.getLogger(__name__)
 
@@ -38,6 +40,17 @@ try:
     import requests
 except ImportError:
     requests = None  # type: ignore[assignment]
+
+# Per-path write lock to prevent concurrent writes to the same file path
+_write_locks: dict[str, threading.Lock] = {}
+_write_locks_lock = threading.Lock()
+
+def _get_write_lock(path: str) -> threading.Lock:
+    """Get or create a per-path threading lock."""
+    with _write_locks_lock:
+        if path not in _write_locks:
+            _write_locks[path] = threading.Lock()
+        return _write_locks[path]
 
 
 # ── Encrypted token ────────────────────────────────────
@@ -185,8 +198,8 @@ def _read_raw(path: str) -> tuple[dict | None, str | None, bool]:
 def _write_raw(path: str, data: dict | list, message: str = "") -> bool:
     """Write a JSON-serializable object to a file in GitHub.
 
-    Always fetches a fresh SHA before writing to avoid 409 conflicts.
-    Retries once on 409 conflict with a refreshed SHA.
+    Uses a per-path lock to serialize concurrent writes and retries
+    up to 5 times with exponential backoff on 409 conflicts.
     """
     content_bytes = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
     content_b64 = base64.b64encode(content_bytes).decode("utf-8")
@@ -211,32 +224,37 @@ def _write_raw(path: str, data: dict | list, message: str = "") -> bool:
             _log.warning(f"GitHub write error for {path}: {e}")
             return False, 0, None
 
-    try:
-        # Always fetch a fresh SHA to avoid cache-based conflicts
+    lock = _get_write_lock(path)
+    with lock:
         sha = _get_sha(path, force=True)
 
-        ok, status_code, new_sha = _do_write(sha)
-
-        # Retry once on 409 conflict (SHA changed between fetch and write)
-        if not ok and status_code == 409:
-            _log.info(f"SHA conflict on {path}, re-fetching and retrying...")
-            sha = _get_sha(path, force=True)
+        for attempt in range(5):
             ok, status_code, new_sha = _do_write(sha)
+            if ok:
+                _cache[path] = {
+                    "data": data,
+                    "sha": new_sha,
+                    "fetched_at": time.time(),
+                }
+                _written_paths.add(path)
+                return True
 
-        if ok:
-            # Update cache with the new SHA from response
-            _cache[path] = {
-                "data": data,
-                "sha": new_sha,
-                "fetched_at": time.time(),
-            }
-            _written_paths.add(path)
-            return True
-        else:
-            _log.warning(f"GitHub write failed for {path}: HTTP {status_code}")
-            return False
-    except Exception as e:
-        _log.warning(f"GitHub write error for {path}: {e}")
+            # Stop retrying for non-409 errors
+            if status_code != 409 or attempt == 4:
+                break
+
+            delay = (2 ** (attempt + 1)) * 0.1 + random.uniform(0, 0.3)
+            _log.info(
+                f"SHA conflict on {path} (attempt {attempt + 2}/5), "
+                f"retrying in {delay:.2f}s..."
+            )
+            time.sleep(delay)
+            sha = _get_sha(path, force=True)
+
+        _log.warning(
+            f"GitHub write failed for {path}: HTTP {status_code} "
+            f"(attempt {attempt + 1}/5)"
+        )
         return False
 
 

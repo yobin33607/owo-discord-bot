@@ -111,11 +111,8 @@ function update() {
             document.getElementById('securityAlert').style.display = 'flex';
             document.getElementById('captchaMsg').innerText = d.security.last_message;
 
-            const section = document.getElementById('captcha-solver-section');
-            if (section && section.style.display !== 'block') {
-                const acc = accountsList.find(a => a.id === currentAccountId);
-                if (acc) openEmbeddedCaptcha(currentAccountId, acc.username);
-            }
+            const acc = accountsList.find(a => a.id === currentAccountId);
+            if (acc) openEmbeddedCaptcha(currentAccountId, acc.username);
         } else {
             document.getElementById('securityAlert').style.display = 'none';
         }

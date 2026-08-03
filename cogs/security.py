@@ -233,6 +233,7 @@ class Security(commands.Cog):
             if captcha_url:
                 self.bot.paused = True
                 self.bot.throttle_until = float('inf')
+                self.bot.stats['last_captcha_msg'] = (message.content or '')[:200]
                 self.bot.log("ALARM", "LINK CAPTCHA DETECTED IN DM!")
                 await self.play_beep()
                 self._show_desktop_notification("DM Captcha detected!")

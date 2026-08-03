@@ -13,6 +13,7 @@ Commands available:
   !logs [cnt] [n]    — View recent command logs
   !settings [sec]    — View configuration
   !accounts          — List all configured accounts
+  !announce          — Post a stats announcement for all self-bots
   !sync [guild_id]   — Sync slash commands (omit for global)
   !help              — Show this help
 
@@ -23,6 +24,7 @@ Slash commands:
   /logs              — View recent command logs
   /settings          — View configuration
   /accounts          — List all configured accounts
+  /announce          — Post a stats announcement for all self-bots
   /sync              — Sync slash commands to this server or globally
   /help              — Show available commands
 """
@@ -67,7 +69,7 @@ def _save_appeals(data):
     ghd.write_json("config/appeals.json", data, message="Update appeals data")
 
 
-def _add_appeal(username, user_id, punishment_type, reason, explanation, evidence):
+def _add_appeal(username, user_id, punishment_type, reason, explanation, evidence, guild_id=None):
     """Add a new appeal and return its ID."""
     data = _load_appeals()
     appeal_id = data["next_id"]
@@ -76,6 +78,7 @@ def _add_appeal(username, user_id, punishment_type, reason, explanation, evidenc
         "id": appeal_id,
         "username": username,
         "user_id": user_id,
+        "guild_id": str(guild_id) if guild_id else None,
         "punishment_type": punishment_type,
         "reason": reason,
         "explanation": explanation,
@@ -204,6 +207,13 @@ class ManagerBot(commands.Bot):
         except Exception as e:
             _log.warning(f"Failed to load Verification cog: {e}")
             print(f"[Manager Bot] ⚠️  Verification cog failed to load: {e}")
+        try:
+            await self.add_cog(AutoRole(self))
+            _log.info("AutoRole cog loaded")
+            print("[Manager Bot] ✅ AutoRole cog loaded")
+        except Exception as e:
+            _log.warning(f"Failed to load AutoRole cog: {e}")
+            print(f"[Manager Bot] ⚠️  AutoRole cog failed to load: {e}")
 
     async def on_ready(self):
         _log.info(f"Logged in as {self.user} (ID: {self.user.id})")
@@ -355,6 +365,7 @@ class ManagerBot(commands.Bot):
 class ManagerCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._announce_last_date = None  # YYYY-MM-DD of last auto-posted announcement
 
     # ── Shared helpers ────────────────────────────────
 
@@ -434,6 +445,226 @@ class ManagerCommands(commands.Cog):
             bot_name = log_entry.get("bot_name", "")
             lines.append(f"  [{ts}][{level}] {bot_name or '':12s} {msg[:60]}")
         return f"```{chr(10).join(lines)}```"
+
+    # ── Announcement System ──────────────────────────
+
+    def _get_announce_config(self):
+        """Get announcement config from manager bot settings (config/settings.json → manager_bot.announcements).
+        Returns normalized defaults so callers never have to handle missing keys.
+        """
+        cfg = load_manager_config()
+        announce = cfg.get("announcements", {}) or {}
+        return {
+            "channel_id": str(announce.get("channel_id", "") or "").strip(),
+            "auto_post": bool(announce.get("auto_post", False)),
+            "post_time": self._normalize_post_time(announce.get("post_time", "09:00")),
+        }
+
+    @staticmethod
+    def _normalize_post_time(raw):
+        """Normalize a 'HH:MM' time string (tolerates '9:00', ints, etc). Falls back to '09:00'."""
+        try:
+            return time.strftime("%H:%M", time.strptime(str(raw or "09:00").strip(), "%H:%M"))
+        except (ValueError, TypeError):
+            return "09:00"
+
+    def _build_announcement_report(self, accounts):
+        """Build the announcement embed + detail code block from accounts data.
+        Includes cash, status, uptime, hunts, battles, owo, commands, gems,
+        captchas, bans/warnings and session CPH for every account, plus totals.
+        """
+        embed = discord.Embed(
+            title="📢 Stats Announcement",
+            description=f"Live stats for **{len(accounts)}** self-bot account(s) 🚀",
+            color=0xFF4444,
+            timestamp=discord.utils.utcnow(),
+        )
+
+        detail_lines = [
+            "╔══════════════════════════════════════════════╗",
+            "║           📢  STATS ANNOUNCEMENT              ║",
+            "╚══════════════════════════════════════════════╝",
+            "",
+        ]
+
+        totals = {
+            "cash": 0, "commands": 0, "hunts": 0, "battles": 0, "owo": 0,
+            "gems": 0, "captchas": 0, "bans": 0, "warnings": 0,
+        }
+        running = 0
+        shown = 0  # number of per-account embed fields added
+
+        for i, acc in enumerate(accounts, 1):
+            name = acc.get("username", "Unknown")
+            uid = acc.get("id", "N/A")
+            paused = acc.get("paused", True)
+            status_emoji = "🔴" if paused else "🟢"
+            status_label = "PAUSED" if paused else "RUNNING"
+
+            stats = self._fetch_stats(uid)
+            if not stats or not isinstance(stats, dict):
+                stats = {}
+
+            cash = acc.get("cash", 0) or stats.get("cash", 0) or 0
+            chart = stats.get("chart_data", {}) or {}
+            sec = stats.get("security", {}) or {}
+            ana = stats.get("analytics", {}) or {}
+            uptime = stats.get("uptime", "N/A") or "N/A"
+            cph = ana.get("cph", 0) or 0
+
+            hunts = chart.get("hunt", 0) or 0
+            battles = chart.get("battle", 0) or 0
+            owo = chart.get("owo", 0) or 0
+            total_cmds = chart.get("total", 0) or acc.get("session_total", 0) or 0
+            gems = ana.get("gems_used", 0) or acc.get("gems_used", 0) or 0
+            captchas = sec.get("captchas", 0) or 0
+            bans = sec.get("bans", 0) or 0
+            warnings = sec.get("warnings", 0) or 0
+
+            totals["cash"] += cash
+            totals["commands"] += total_cmds
+            totals["hunts"] += hunts
+            totals["battles"] += battles
+            totals["owo"] += owo
+            totals["gems"] += gems
+            totals["captchas"] += captchas
+            totals["bans"] += bans
+            totals["warnings"] += warnings
+            if not paused:
+                running += 1
+
+            if shown < 15:  # Discord embed field limit (25) minus totals fields
+                embed.add_field(
+                    name=f"{status_emoji} {name}",
+                    value=(
+                        f"💰 {cash:,} | ⚔️ {battles:,} | 🎯 {hunts:,}\n"
+                        f"🧪 {gems:,} gems | 🛡 {captchas:,} captchas\n"
+                        f"⏱ {uptime} | ⚡ {cph:,} CPH"
+                    ),
+                    inline=True,
+                )
+                shown += 1
+
+            detail_lines.append(f"  [{i}] {name}")
+            detail_lines.append(f"      ID: {uid}")
+            detail_lines.append(f"      Status: {status_emoji} {status_label}")
+            detail_lines.append(f"      Cash: {cash:,}")
+            detail_lines.append(f"      Uptime: {uptime} | CPH: {cph:,}")
+            detail_lines.append(f"      Hunts: {hunts:,} | Battles: {battles:,} | Owo: {owo:,}")
+            detail_lines.append(f"      Commands: {total_cmds:,} | Gems: {gems:,}")
+            detail_lines.append(f"      Captchas: {captchas:,} | Bans: {bans:,} | Warnings: {warnings:,}")
+            detail_lines.append("")
+
+        remaining = len(accounts) - shown
+        if remaining > 0:
+            embed.description += f"\n…and {remaining} more (see breakdown below)"
+
+        embed.add_field(
+            name="📊 Totals",
+            value=(
+                f"💰 {totals['cash']:,} cash\n"
+                f"🔢 {totals['commands']:,} commands | 🎯 {totals['hunts']:,} hunts\n"
+                f"⚔️ {totals['battles']:,} battles | 🧪 {totals['gems']:,} gems"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="🛡 Security",
+            value=(
+                f"✅ {totals['captchas']:,} captchas solved\n"
+                f"🚫 {totals['bans']:,} bans | ⚠️ {totals['warnings']:,} warnings"
+            ),
+            inline=False,
+        )
+        embed.set_footer(text="Limey Manager Bot")
+
+        detail_lines.append("─" * 40)
+        detail_lines.append(f"  Accounts: {len(accounts)} ({running} running)")
+        detail_lines.append(f"  Total Cash: {totals['cash']:,}")
+        detail_lines.append(f"  Total Commands: {totals['commands']:,} | Hunts: {totals['hunts']:,} | Battles: {totals['battles']:,}")
+        detail_lines.append(f"  Total Gems: {totals['gems']:,} | Captchas: {totals['captchas']:,}")
+
+        # Trim the breakdown to fit Discord's 2000-char message limit, keeping
+        # the header and totals section and dropping account blocks as needed.
+        max_detail_len = 1800
+        full_text = chr(10).join(detail_lines)
+        if len(full_text) > max_detail_len:
+            divider = "─" * 40
+            totals_idx = len(detail_lines)
+            for j, line in enumerate(detail_lines):
+                if line == divider:
+                    totals_idx = j
+                    break
+            account_lines = detail_lines[:totals_idx]
+            totals_text = chr(10).join(detail_lines[totals_idx:])
+            header_lines = account_lines[:4]
+            blocks, cur = [], []
+            for line in account_lines[4:]:
+                if line.strip() == "":
+                    if cur:
+                        blocks.append(cur)
+                        cur = []
+                else:
+                    cur.append(line)
+            if cur:
+                blocks.append(cur)
+            trimmed = list(header_lines)
+            added = 0
+            for block in blocks:
+                candidate = chr(10).join(trimmed + block + ["", "", totals_text])
+                if len(candidate) > max_detail_len:
+                    trimmed.append("")
+                    trimmed.append(f"  ... and {len(blocks) - added} more account(s) — run /announce for the full list")
+                    break
+                trimmed.extend(block)
+                trimmed.append("")
+                added += 1
+            detail_lines = trimmed + [""] + detail_lines[totals_idx:]
+
+        detail = f"```ansi\n{chr(10).join(detail_lines)}```"
+        return embed, detail
+
+    async def _send_announcement(self, source_channel_id=None):
+        """Send the stats announcement to the configured announcements channel
+        (and the source channel if provided and different).
+        Returns (posted_to, error_message).
+        """
+        accounts = self._fetch_accounts()
+        if not accounts:
+            return None, "No self-bots are running."
+        embed, detail = self._build_announcement_report(accounts)
+
+        posted = []
+        target = None
+        channel_id = self._get_announce_config().get("channel_id", "")
+        if channel_id:
+            try:
+                target = await self.bot.fetch_channel(int(channel_id))
+            except Exception as e:
+                _log.warning(f"Announce: failed to fetch channel {channel_id}: {e}")
+
+        if target:
+            try:
+                await target.send(embed=embed)
+                await target.send(detail)
+                posted.append(f"<#{target.id}>")
+            except Exception as e:
+                _log.warning(f"Announce: failed to send to configured channel <#{target.id}>: {e}")
+
+        source = None
+        if source_channel_id:
+            source = self.bot.get_channel(source_channel_id)
+        if source and (not target or source.id != target.id):
+            try:
+                await source.send(embed=embed)
+                await source.send(detail)
+                posted.append(f"<#{source.id}>")
+            except Exception as e:
+                _log.warning(f"Announce: failed to send to source channel <#{source.id}>: {e}")
+
+        if not posted:
+            return None, "No valid channel to post to. Set an announcements channel ID or run in a server channel."
+        return posted, None
 
     # ── Prefix Commands ───────────────────────────────
 
@@ -652,6 +883,16 @@ class ManagerCommands(commands.Cog):
 
         await ctx.send(f"```{chr(10).join(lines)}```")
 
+    @commands.command(name="announce")
+    async def cmd_announce(self, ctx):
+        """Post a stats announcement to the announcements channel (and this channel)"""
+        posted, err = await self._send_announcement(source_channel_id=ctx.channel.id)
+        if err:
+            await ctx.send(f"```❌ {err}```")
+            return
+        if len(posted) > 1:
+            await ctx.send(f"```✅ Announcement posted to {posted[0]} (also shown here).```")
+
     @commands.command(name="sync")
     async def cmd_sync(self, ctx, guild_id: str = ""):
         """Sync slash commands. Usage: !sync [guild_id] (omit for global)"""
@@ -699,6 +940,7 @@ class ManagerCommands(commands.Cog):
                 "`!appeal <id> approve/reject [notes]` — Review an appeal\n"
                 "`!modlog [count]` — View moderation log\n"
                 "`!rolestatus` — Check role tier status for all self-bots\n"
+                "`!announce` — Post a stats announcement for all self-bots\n"
                 "`!help` — This message"
             ),
             inline=False,
@@ -717,6 +959,8 @@ class ManagerCommands(commands.Cog):
                 "`!purge <count> [@user]` — Purge messages\n"
                 "`!slowmode <sec>` — Set channel slowmode\n"
                 "`!lock` / `!unlock` — Lock/unlock channel\n"
+                "`!quarantine <user> [reason]` — Strip roles & quarantine a member\n"
+                "`!unquarantine <user> [reason]` — Release from quarantine & restore roles\n"
             ),
             inline=False,
         )
@@ -749,6 +993,7 @@ class ManagerCommands(commands.Cog):
                 "`/settings` — View configuration\n"
                 "`/accounts` — List all accounts\n"
                 "`/sync` — Sync slash commands\n"
+                "`/announce` — Post a stats announcement for all self-bots\n"
                 "`/appeal` — Submit an appeal (mute/ban review)\n"
                 "`/help` — Show this message"
             ),
@@ -768,6 +1013,8 @@ class ManagerCommands(commands.Cog):
                 "`/purge <count> [@user]` — Purge messages\n"
                 "`/slowmode <sec>` — Set channel slowmode\n"
                 "`/lock` / `/unlock` — Lock/unlock channel\n"
+                "`/quarantine <user> [reason]` — Strip roles & quarantine a member\n"
+                "`/unquarantine <user> [reason]` — Release from quarantine & restore roles\n"
                 "`/modlog [count]` — View moderation log\n"
             ),
             inline=False,
@@ -944,6 +1191,18 @@ class ManagerCommands(commands.Cog):
 
         await interaction.response.send_message(f"```{chr(10).join(lines)}```")
 
+    @app_commands.command(name="announce", description="Post a full stats announcement for all self-bots")
+    async def slash_announce(self, interaction: discord.Interaction):
+        """Post a stats announcement to the announcements channel (and this channel)"""
+        await interaction.response.defer()
+        posted, err = await self._send_announcement(source_channel_id=interaction.channel_id)
+        if err:
+            await interaction.followup.send(f"❌ {err}", ephemeral=True)
+            return
+        await interaction.followup.send(
+            f"✅ Stats announcement posted to {', '.join(posted)}.", ephemeral=True
+        )
+
     @app_commands.command(name="sync", description="Sync slash commands (in a server = guild sync, in DMs = global)")
     async def slash_sync(self, interaction: discord.Interaction):
         """Sync slash commands to this guild or globally"""
@@ -993,6 +1252,7 @@ class ManagerCommands(commands.Cog):
                 "`!appeal <id> approve/reject [notes]` — Review an appeal\n"
                 "`!modlog [count]` — View moderation log\n"
                 "`!rolestatus` — Check role tier status for all self-bots\n"
+                "`!announce` — Post a stats announcement for all self-bots\n"
                 "`!help` — This message"
             ),
             inline=False,
@@ -1011,6 +1271,8 @@ class ManagerCommands(commands.Cog):
                 "`!purge <count> [@user]` — Purge messages\n"
                 "`!slowmode <sec>` — Set channel slowmode\n"
                 "`!lock` / `!unlock` — Lock/unlock channel\n"
+                "`!quarantine <user> [reason]` — Strip roles & quarantine a member\n"
+                "`!unquarantine <user> [reason]` — Release from quarantine & restore roles\n"
             ),
             inline=False,
         )
@@ -1043,6 +1305,7 @@ class ManagerCommands(commands.Cog):
                 "`/settings` — View configuration\n"
                 "`/accounts` — List all accounts\n"
                 "`/sync` — Sync slash commands\n"
+                "`/announce` — Post a stats announcement for all self-bots\n"
                 "`/appeal` — Submit an appeal (mute/ban review)\n"
                 "`/help` — Show this message"
             ),
@@ -1062,6 +1325,8 @@ class ManagerCommands(commands.Cog):
                 "`/purge <count> [@user]` — Purge messages\n"
                 "`/slowmode <sec>` — Set channel slowmode\n"
                 "`/lock` / `/unlock` — Lock/unlock channel\n"
+                "`/quarantine <user> [reason]` — Strip roles & quarantine a member\n"
+                "`/unquarantine <user> [reason]` — Release from quarantine & restore roles\n"
                 "`/modlog [count]` — View moderation log\n"
             ),
             inline=False,
@@ -1259,6 +1524,7 @@ class ManagerCommands(commands.Cog):
                     reason=self._mod_reason,
                     explanation=self.explanation.value,
                     evidence=self.evidence.value or "None provided",
+                    guild_id=str(interaction.guild_id) if interaction.guild_id else None,
                 )
 
                 # Notify the appeals channel
@@ -1469,6 +1735,28 @@ class ManagerCommands(commands.Cog):
         emoji = "✅" if new_status == "approved" else "❌"
         await ctx.send(f"```{emoji} Appeal #{aid} has been {new_status}.\nNotes: {target['review_notes']}```")
 
+        # ── If approved, remove the user's warnings/violations ────
+        if new_status == "approved":
+            try:
+                user_id = target.get("user_id", "")
+                guild_id = target.get("guild_id") or (str(ctx.guild.id) if ctx.guild else None)
+                if user_id and user_id.isdigit() and guild_id:
+                    from modules.moderation import clear_user_violations
+                    removed = clear_user_violations(guild_id, user_id)
+                    if removed:
+                        _log.info(f"Appeal #{aid} approved — cleared {removed} warning/violation(s) for {user_id}")
+
+                    # Remove timeout if active
+                    if ctx.guild:
+                        member = ctx.guild.get_member(int(user_id))
+                        if member and member.is_timed_out():
+                            try:
+                                await member.timeout(None, reason=f"Appeal #{aid} approved")
+                            except Exception:
+                                pass
+            except Exception as e:
+                _log.warning(f"Failed to clear violations for approved appeal #{aid}: {e}")
+
         # Try to DM the user about the result
         try:
             user_id = target.get("user_id", "")
@@ -1486,6 +1774,50 @@ class ManagerCommands(commands.Cog):
                     await user.send(embed=embed)
         except Exception as e:
             _log.warning(f"Failed to DM user about appeal #{aid}: {e}")
+
+    # ── Scheduled Announcement Loop ───────────────────
+
+    @tasks.loop(seconds=60)
+    async def announce_loop(self):
+        """Auto-post the daily stats announcement at the configured time.
+        Config: manager_bot.announcements → {auto_post: true, channel_id: "...", post_time: "09:00"}
+        Posts once per day (local time of the machine running the bot).
+        """
+        cfg = self._get_announce_config()
+        if not cfg.get("auto_post", False):
+            return
+        if not cfg.get("channel_id", ""):
+            return
+
+        now = time.localtime()
+        today = time.strftime("%Y-%m-%d", now)
+        if self._announce_last_date == today:
+            return
+
+        current = f"{now.tm_hour:02d}:{now.tm_min:02d}"
+        if current < cfg.get("post_time", "09:00"):
+            return
+
+        self._announce_last_date = today
+        posted, err = await self._send_announcement()
+        if posted:
+            _log.info(f"Announce: auto-posted daily stats announcement to {', '.join(posted)}")
+        else:
+            _log.warning(f"Announce: auto-post failed: {err}")
+
+    @announce_loop.before_loop
+    async def before_announce_loop(self):
+        """Wait for the bot to be ready before starting the loop."""
+        await self.bot.wait_until_ready()
+
+    async def cog_load(self):
+        """Start the announcement loop when the cog is loaded."""
+        if not self.announce_loop.is_running():
+            self.announce_loop.start()
+
+    async def cog_unload(self):
+        """Cancel the announcement loop when the cog is unloaded."""
+        self.announce_loop.cancel()
 
     # ── Interaction error handling ─────────────────────
 
@@ -1662,6 +1994,154 @@ class RoleManager(commands.Cog):
     async def before_check_roles(self):
         """Wait for the bot to be ready before starting the loop."""
         await self.bot.wait_until_ready()
+
+
+# ── AutoRole ─────────────────────────────────────────
+
+
+class AutoRole(commands.Cog):
+    """
+    Saves member roles when they leave the server and restores them
+    automatically when they rejoin — a persistent autorole system.
+
+    Data is stored per-guild in config/autoroles.json via the GitHub
+    data store so it survives bot restarts.
+    """
+
+    def __init__(self, bot):
+        self.bot = bot
+        self._excluded_cache = None  # Cached excluded role IDs
+
+    # ── Data I/O ─────────────────────────────────────
+
+    @staticmethod
+    def _load():
+        return ghd.read_json("config/autoroles.json", default={}) or {}
+
+    @staticmethod
+    def _save(data):
+        ghd.write_json("config/autoroles.json", data, message="Update autorole data")
+
+    def _get_excluded_role_ids(self):
+        """Role IDs that should never be saved/restored (e.g. managed roles).
+        Reads from config/settings.json → manager_bot.autorole.excluded_role_ids.
+        Result is cached on first call per instance.
+        """
+        if self._excluded_cache is None:
+            cfg = load_manager_config()
+            ar_cfg = cfg.get("autorole", {}) or {}
+            raw = ar_cfg.get("excluded_role_ids", []) or []
+            self._excluded_cache = [int(r) for r in raw]
+        return self._excluded_cache
+
+    # ── Helpers ──────────────────────────────────────
+
+    @staticmethod
+    def _saveable_role_ids(member, excluded_ids):
+        """Return a set of role IDs on the member that should be saved.
+        Excludes @everyone, managed roles, and any user-configured exclusions.
+        """
+        guild = member.guild
+        ids = set()
+        for role in member.roles:
+            if role.is_default():
+                continue
+            if role.managed:
+                continue
+            if role.id in excluded_ids:
+                continue
+            ids.add(role.id)
+        return ids
+
+    # ── Events ───────────────────────────────────────
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member: discord.Member):
+        """Save the member's roles before they leave."""
+        if member.bot:
+            return  # Don't track bots
+        if member.id == 1533732730401980588:
+            return  # Discord AutoMod system user — ignore
+
+        excluded = self._get_excluded_role_ids()
+        role_ids = self._saveable_role_ids(member, excluded)
+        if not role_ids:
+            return  # Nothing worth saving
+
+        data = self._load()
+        guild_key = str(member.guild.id)
+        if guild_key not in data:
+            data[guild_key] = {}
+        data[guild_key][str(member.id)] = {
+            "roles": sorted(role_ids),
+            "timestamp": time.time(),
+        }
+        self._save(data)
+        _log.info(f"AutoRole: Saved {len(role_ids)} role(s) for {member} in guild {member.guild.id}")
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        """Restore saved roles when the member rejoins."""
+        if member.bot:
+            return
+        if member.id == 1533732730401980588:
+            return  # Discord AutoMod system user — ignore
+
+        data = self._load()
+        guild_key = str(member.guild.id)
+        user_key = str(member.id)
+
+        entry = data.get(guild_key, {}).get(user_key)
+        if not entry:
+            return
+
+        saved_role_ids = entry.get("roles", [])
+        if not saved_role_ids:
+            # Clean up empty entry
+            data.get(guild_key, {}).pop(user_key, None)
+            self._save(data)
+            return
+
+        excluded = self._get_excluded_role_ids()
+        guild = member.guild
+
+        roles_to_add = []
+        for rid in saved_role_ids:
+            if rid in excluded:
+                continue
+            role = guild.get_role(rid)
+            if role and not role.managed:
+                roles_to_add.append(role)
+
+        if not roles_to_add:
+            # Clean up — no restorable roles remain
+            data.get(guild_key, {}).pop(user_key, None)
+            if not data.get(guild_key):
+                data.pop(guild_key, None)
+            self._save(data)
+            return
+
+        try:
+            await member.add_roles(*roles_to_add, reason="AutoRole: restored from saved roles")
+            _log.info(
+                f"AutoRole: Restored {len(roles_to_add)} role(s) "
+                f"to {member} in guild {member.guild.id}"
+            )
+        except discord.Forbidden:
+            _log.warning(
+                f"AutoRole: No permission to restore {len(roles_to_add)} role(s) "
+                f"for {member} (roles: {[r.id for r in roles_to_add]}). "
+                f"Cleaning up entry — the bot cannot assign these roles."
+            )
+        except discord.HTTPException as e:
+            _log.warning(f"AutoRole: Failed to restore roles for {member}: {e}")
+            return  # Keep saved data for retry on transient failures
+
+        # Success — clean up the saved entry
+        data.get(guild_key, {}).pop(user_key, None)
+        if not data.get(guild_key):
+            data.pop(guild_key, None)
+        self._save(data)
 
 
 # ── Entry Point ────────────────────────────────────────

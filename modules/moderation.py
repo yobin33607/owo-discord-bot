@@ -89,6 +89,20 @@ def _get_muted_role_id():
     return cfg.get("muted_role_id", None)
 
 
+def _get_quarantine_role_id():
+    """Get the quarantine role ID from config."""
+    cfg = _get_mod_config()
+    return cfg.get("quarantine_role_id", None)
+
+
+def _ensure_quarantine_data():
+    """Load mod data, ensuring the quarantines key exists."""
+    data = _load_mod_data()
+    if "quarantines" not in data:
+        data["quarantines"] = {}
+    return data
+
+
 def _get_auto_mod_config():
     """Get auto-mod config."""
     cfg = _get_mod_config()
@@ -99,6 +113,68 @@ def _get_warn_thresholds():
     """Get warn thresholds config."""
     cfg = _get_mod_config()
     return cfg.get("warn_thresholds", {})
+
+
+def clear_user_violations(guild_id, user_id):
+    """Clear all warnings, violations, and active mutes for a user in a guild.
+    Returns (removed_count: int, had_timeout: bool).
+    """
+    import time as _time
+    data = _load_mod_data()
+    guild_key = str(guild_id)
+    user_key = str(user_id)
+    removed = 0
+
+    warns = data.get("warnings", {}).get(guild_key, {}).get(user_key, [])
+    if warns:
+        removed += len(warns)
+        data["warnings"].setdefault(guild_key, {})[user_key] = []
+
+    violations = data.get("violations", {}).get(guild_key, {}).get(user_key, [])
+    if violations:
+        removed += len(violations)
+        data["violations"].setdefault(guild_key, {})[user_key] = []
+
+    # Clear mute record
+    mutes = data.get("mutes", {}).get(guild_key, {})
+    if user_key in mutes:
+        del mutes[user_key]
+        removed += 1
+
+    if removed:
+        _save_mod_data(data)
+    return removed
+
+
+def _get_auto_slowmode_config():
+    """Get auto slowmode config with sensible defaults."""
+    cfg = _get_mod_config()
+    asm = cfg.get("auto_slowmode", {}) or {}
+    thresholds = asm.get("thresholds", {}) or {}
+    # Ensure thresholds keys are ints and sorted descending
+    clean_thresholds = {}
+    for k, v in thresholds.items():
+        try:
+            clean_thresholds[int(k)] = int(v)
+        except (ValueError, TypeError):
+            pass
+    return {
+        "enabled": bool(asm.get("enabled", False)),
+        "check_interval": max(10, int(asm.get("check_interval", 30))),
+        "thresholds": clean_thresholds,
+        "cooldown": max(0, int(asm.get("cooldown", 300))),
+        "min_slowmode": max(0, int(asm.get("min_slowmode", 0))),
+        "max_slowmode": min(21600, max(0, int(asm.get("max_slowmode", 21600)))),
+    }
+
+
+def _update_auto_slowmode(updates: dict):
+    """Update auto slowmode config keys and save."""
+    cfg = _get_mod_config()
+    existing = cfg.get("auto_slowmode", {}) or {}
+    existing.update(updates)
+    cfg["auto_slowmode"] = existing
+    return _save_mod_config(cfg)
 
 
 def _format_duration(seconds):
@@ -165,6 +241,8 @@ async def _send_mod_log(guild, action_type, target, moderator, reason, duration=
         "lock": 0xFF4444,
         "unlock": 0x44FF88,
         "automod": 0xFF44AA,
+        "quarantine": 0xFF6600,
+        "unquarantine": 0x44FF88,
     }
 
     emojis = {
@@ -183,6 +261,8 @@ async def _send_mod_log(guild, action_type, target, moderator, reason, duration=
         "lock": "🔒",
         "unlock": "🔓",
         "automod": "🤖",
+        "quarantine": "🔒",
+        "unquarantine": "🔓",
     }
 
     embed = discord.Embed(
@@ -279,6 +359,9 @@ class Moderation(commands.Cog):
         self.bot = bot
         self._locked_channels = set()  # Track locked channels per guild
         self._auto_unmute_loop.start()  # Start the expired mute checker
+        self._auto_slowmode_data = {}  # guild_id -> {channel_id: [timestamps]}
+        self._auto_slowmode_current = {}  # guild_id -> {channel_id: current_slowmode}
+        self._auto_slowmode_loop.start()  # Start the auto slowmode adjuster
 
     # ── Permission Helper ─────────────────────────────
 
@@ -1542,6 +1625,253 @@ class Moderation(commands.Cog):
         except Exception as e:
             await interaction.response.send_message(f"❌ Failed to unlock channel: {e}", ephemeral=True)
 
+    # ── Quarantine ───────────────────────────────────
+
+    @commands.command(name="quarantine")
+    @commands.has_permissions(moderate_members=True)
+    async def cmd_quarantine(self, ctx, member: discord.Member, *, reason: str = "No reason provided"):
+        """Quarantine a member: strip all roles, assign quarantine role.
+        Usage: !quarantine <member> [reason]
+        """
+        if member.top_role >= ctx.author.top_role and ctx.author != ctx.guild.owner:
+            await ctx.send("❌ You cannot quarantine someone with a higher or equal role.")
+            return
+
+        q_role_id = _get_quarantine_role_id()
+        if not q_role_id:
+            await ctx.send("❌ No quarantine role configured. Add `quarantine_role_id` to `manager_bot.moderation` in settings.")
+            return
+
+        q_role = ctx.guild.get_role(int(q_role_id))
+        if not q_role:
+            await ctx.send("❌ Quarantine role not found on this server. Check the role ID in config.")
+            return
+
+        if q_role in member.roles:
+            await ctx.send(f"⚠️ {member.mention} is already quarantined.")
+            return
+
+        # Save current roles (exclude @everyone and managed roles)
+        saved_roles = []
+        for role in member.roles:
+            if role.is_default():
+                continue
+            if role.managed:
+                continue
+            saved_roles.append(role.id)
+
+        # Remove all roles and assign quarantine role
+        try:
+            roles_to_remove = [r for r in member.roles if not r.is_default() and not r.managed]
+            if roles_to_remove:
+                await member.remove_roles(*roles_to_remove, reason=f"Quarantine: {reason} | By {ctx.author}")
+            await member.add_roles(q_role, reason=f"Quarantine: {reason} | By {ctx.author}")
+        except discord.Forbidden:
+            await ctx.send("❌ I don't have permission to manage this member's roles.")
+            return
+        except Exception as e:
+            await ctx.send(f"❌ Failed to quarantine {member.mention}: {e}")
+            return
+
+        # Persist saved roles
+        data = _ensure_quarantine_data()
+        guild_key = str(ctx.guild.id)
+        user_key = str(member.id)
+        if guild_key not in data["quarantines"]:
+            data["quarantines"][guild_key] = {}
+        data["quarantines"][guild_key][user_key] = {
+            "roles": saved_roles,
+            "moderator": f"{ctx.author} ({ctx.author.id})",
+            "reason": reason,
+            "timestamp": time.time(),
+        }
+        _save_mod_data(data)
+
+        await ctx.send(f"🔒 {member.mention} has been **quarantined**.\n**Reason:** {reason}\n"
+                       f"**Roles saved:** {len(saved_roles)}")
+        await _send_mod_log(ctx.guild, "quarantine", member, ctx.author, reason)
+        await self._store_mod_action(ctx.guild.id, "quarantine", member, ctx.author, reason)
+        await self._store_violation(ctx.guild.id, member.id, "quarantine", reason, ctx.author)
+
+    @app_commands.command(name="quarantine", description="Quarantine a member — strip all roles and assign quarantine role")
+    @app_commands.describe(member="The member to quarantine", reason="The reason for the quarantine")
+    @app_commands.checks.has_permissions(moderate_members=True)
+    async def slash_quarantine(self, interaction: discord.Interaction, member: discord.Member,
+                               reason: str = "No reason provided"):
+        """Quarantine a member."""
+        if member.top_role >= interaction.user.top_role and interaction.user != interaction.guild.owner:
+            await interaction.response.send_message(
+                "❌ You cannot quarantine someone with a higher or equal role.", ephemeral=True)
+            return
+
+        q_role_id = _get_quarantine_role_id()
+        if not q_role_id:
+            await interaction.response.send_message(
+                "❌ No quarantine role configured. Add `quarantine_role_id` to manager_bot.moderation in settings.",
+                ephemeral=True)
+            return
+
+        q_role = interaction.guild.get_role(int(q_role_id))
+        if not q_role:
+            await interaction.response.send_message(
+                "❌ Quarantine role not found on this server.", ephemeral=True)
+            return
+
+        if q_role in member.roles:
+            await interaction.response.send_message(f"⚠️ {member.mention} is already quarantined.", ephemeral=True)
+            return
+
+        saved_roles = []
+        for role in member.roles:
+            if role.is_default():
+                continue
+            if role.managed:
+                continue
+            saved_roles.append(role.id)
+
+        try:
+            roles_to_remove = [r for r in member.roles if not r.is_default() and not r.managed]
+            if roles_to_remove:
+                await member.remove_roles(*roles_to_remove, reason=f"Quarantine: {reason} | By {interaction.user}")
+            await member.add_roles(q_role, reason=f"Quarantine: {reason} | By {interaction.user}")
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "❌ I don't have permission to manage this member's roles.", ephemeral=True)
+            return
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Failed to quarantine {member.mention}: {e}", ephemeral=True)
+            return
+
+        data = _ensure_quarantine_data()
+        guild_key = str(interaction.guild_id)
+        user_key = str(member.id)
+        if guild_key not in data["quarantines"]:
+            data["quarantines"][guild_key] = {}
+        data["quarantines"][guild_key][user_key] = {
+            "roles": saved_roles,
+            "moderator": f"{interaction.user} ({interaction.user.id})",
+            "reason": reason,
+            "timestamp": time.time(),
+        }
+        _save_mod_data(data)
+
+        await interaction.response.send_message(
+            f"🔒 {member.mention} has been **quarantined**.\n**Reason:** {reason}\n**Roles saved:** {len(saved_roles)}")
+        await _send_mod_log(interaction.guild, "quarantine", member, interaction.user, reason)
+        await self._store_mod_action(interaction.guild_id, "quarantine", member, interaction.user, reason)
+        await self._store_violation(interaction.guild_id, member.id, "quarantine", reason, interaction.user)
+
+    @commands.command(name="unquarantine")
+    @commands.has_permissions(moderate_members=True)
+    async def cmd_unquarantine(self, ctx, member: discord.Member, *, reason: str = "Quarantine lifted"):
+        """Release a member from quarantine: remove quarantine role, restore saved roles.
+        Usage: !unquarantine <member> [reason]
+        """
+        q_role_id = _get_quarantine_role_id()
+        if not q_role_id:
+            await ctx.send("❌ No quarantine role configured.")
+            return
+
+        q_role = ctx.guild.get_role(int(q_role_id))
+        if not q_role:
+            await ctx.send("❌ Quarantine role not found on this server.")
+            return
+
+        if q_role not in member.roles:
+            await ctx.send(f"⚠️ {member.mention} is not currently quarantined.")
+            return
+
+        # Load saved roles
+        data = _ensure_quarantine_data()
+        guild_key = str(ctx.guild.id)
+        user_key = str(member.id)
+        record = data.get("quarantines", {}).get(guild_key, {}).get(user_key)
+        saved_role_ids = record.get("roles", []) if record else []
+
+        roles_to_restore = []
+        for rid in saved_role_ids:
+            role = ctx.guild.get_role(rid)
+            if role and not role.managed and role != q_role:
+                roles_to_restore.append(role)
+
+        try:
+            await member.remove_roles(q_role, reason=f"Unquarantine: {reason} | By {ctx.author}")
+            if roles_to_restore:
+                await member.add_roles(*roles_to_restore, reason=f"Unquarantine: {reason} | By {ctx.author}")
+        except discord.Forbidden:
+            await ctx.send("❌ I don't have permission to manage this member's roles.")
+            return
+        except Exception as e:
+            await ctx.send(f"❌ Failed to unquarantine {member.mention}: {e}")
+            return
+
+        # Clean up record
+        if guild_key in data.get("quarantines", {}):
+            data["quarantines"][guild_key].pop(user_key, None)
+            if not data["quarantines"][guild_key]:
+                del data["quarantines"][guild_key]
+        _save_mod_data(data)
+
+        await ctx.send(f"🔓 {member.mention} has been **unquarantined**.\n**Reason:** {reason}\n"
+                       f"**Roles restored:** {len(roles_to_restore)}")
+        await _send_mod_log(ctx.guild, "unquarantine", member, ctx.author, reason)
+        await self._store_mod_action(ctx.guild.id, "unquarantine", member, ctx.author, reason)
+
+    @app_commands.command(name="unquarantine", description="Release a member from quarantine and restore their roles")
+    @app_commands.describe(member="The member to release", reason="The reason for the release")
+    @app_commands.checks.has_permissions(moderate_members=True)
+    async def slash_unquarantine(self, interaction: discord.Interaction, member: discord.Member,
+                                 reason: str = "Quarantine lifted"):
+        """Release a member from quarantine."""
+        q_role_id = _get_quarantine_role_id()
+        if not q_role_id:
+            await interaction.response.send_message("❌ No quarantine role configured.", ephemeral=True)
+            return
+
+        q_role = interaction.guild.get_role(int(q_role_id))
+        if not q_role:
+            await interaction.response.send_message("❌ Quarantine role not found on this server.", ephemeral=True)
+            return
+
+        if q_role not in member.roles:
+            await interaction.response.send_message(f"⚠️ {member.mention} is not currently quarantined.", ephemeral=True)
+            return
+
+        data = _ensure_quarantine_data()
+        guild_key = str(interaction.guild_id)
+        user_key = str(member.id)
+        record = data.get("quarantines", {}).get(guild_key, {}).get(user_key)
+        saved_role_ids = record.get("roles", []) if record else []
+
+        roles_to_restore = []
+        for rid in saved_role_ids:
+            role = interaction.guild.get_role(rid)
+            if role and not role.managed and role != q_role:
+                roles_to_restore.append(role)
+
+        try:
+            await member.remove_roles(q_role, reason=f"Unquarantine: {reason} | By {interaction.user}")
+            if roles_to_restore:
+                await member.add_roles(*roles_to_restore, reason=f"Unquarantine: {reason} | By {interaction.user}")
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "❌ I don't have permission to manage this member's roles.", ephemeral=True)
+            return
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Failed to unquarantine {member.mention}: {e}", ephemeral=True)
+            return
+
+        if guild_key in data.get("quarantines", {}):
+            data["quarantines"][guild_key].pop(user_key, None)
+            if not data["quarantines"][guild_key]:
+                del data["quarantines"][guild_key]
+        _save_mod_data(data)
+
+        await interaction.response.send_message(
+            f"🔓 {member.mention} has been **unquarantined**.\n**Reason:** {reason}\n**Roles restored:** {len(roles_to_restore)}")
+        await _send_mod_log(interaction.guild, "unquarantine", member, interaction.user, reason)
+        await self._store_mod_action(interaction.guild_id, "unquarantine", member, interaction.user, reason)
+
     # ── Auto-Unmute Background Task ──────────────────
 
     @tasks.loop(seconds=30)
@@ -1619,13 +1949,16 @@ class Moderation(commands.Cog):
     # ── Cog Lifecycle ────────────────────────────────
 
     async def cog_load(self):
-        """Called when the cog is loaded. Start the auto-unmute loop if not already running."""
+        """Called when the cog is loaded. Start background loops if not already running."""
         if not self._auto_unmute_loop.is_running():
             self._auto_unmute_loop.start()
+        if not self._auto_slowmode_loop.is_running():
+            self._auto_slowmode_loop.start()
 
     async def cog_unload(self):
-        """Called when the cog is unloaded. Cancel the auto-unmute loop."""
+        """Called when the cog is unloaded. Cancel background loops."""
         self._auto_unmute_loop.cancel()
+        self._auto_slowmode_loop.cancel()
 
     # ── Discord AutoMod Action Listener ─────────────────
 
@@ -1636,6 +1969,10 @@ class Moderation(commands.Cog):
         Sends a DM warning to the user when their message triggers an AutoMod rule.
         """
         if not execution.guild:
+            return
+
+        # Ignore actions attributed to Discord's AutoMod system user
+        if execution.user_id == 1533732730401980588:
             return
 
         guild = execution.guild
@@ -1717,6 +2054,404 @@ class Moderation(commands.Cog):
             f"Discord AutoMod: {reason_label}"
             + (f" — {matched_keyword[:80]}" if matched_keyword else "")
         )
+
+    # ── Auto Slowmode: Message Tracker ────────────────
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        """Track message timestamps per channel for auto slowmode."""
+        if not message.guild:
+            return
+        if message.author.bot:
+            return
+
+        cfg = _get_auto_slowmode_config()
+        if not cfg.get("enabled", False):
+            return
+
+        guild_key = str(message.guild.id)
+        channel_key = str(message.channel.id)
+
+        if guild_key not in self._auto_slowmode_data:
+            self._auto_slowmode_data[guild_key] = {}
+        if channel_key not in self._auto_slowmode_data[guild_key]:
+            self._auto_slowmode_data[guild_key][channel_key] = []
+
+        self._auto_slowmode_data[guild_key][channel_key].append(time.time())
+
+        # Keep only timestamps from the last check window
+        window = cfg.get("check_interval", 30) * 2
+        cutoff = time.time() - window
+        self._auto_slowmode_data[guild_key][channel_key] = [
+            t for t in self._auto_slowmode_data[guild_key][channel_key]
+            if t >= cutoff
+        ]
+
+    # ── Auto Slowmode: Background Adjuster ────────────
+
+    @tasks.loop(seconds=30)
+    async def _auto_slowmode_loop(self):
+        """Periodically check message rates and adjust slowmode."""
+        cfg = _get_auto_slowmode_config()
+        if not cfg.get("enabled", False):
+            return
+
+        now = time.time()
+        interval = cfg.get("check_interval", 30)
+        thresholds = cfg.get("thresholds", {})
+        cooldown = cfg.get("cooldown", 300)
+        min_sm = cfg.get("min_slowmode", 0)
+        max_sm = cfg.get("max_slowmode", 21600)
+
+        if not thresholds:
+            return
+
+        # Sort thresholds descending: highest msg/min first
+        sorted_thresholds = sorted(thresholds.items(), key=lambda x: x[0], reverse=True)
+
+        for guild_key, channels in list(self._auto_slowmode_data.items()):
+            guild = self.bot.get_guild(int(guild_key))
+            if not guild:
+                continue
+
+            for channel_key, timestamps in list(channels.items()):
+                channel = guild.get_channel(int(channel_key))
+                if not channel or not hasattr(channel, "edit"):
+                    continue
+
+                # Count messages in the last check_interval seconds
+                cutoff = now - interval
+                recent = [t for t in timestamps if t >= cutoff]
+                msg_count = len(recent)
+                msg_per_min = msg_count * (60 / interval) if interval > 0 else 0
+
+                # Determine target slowmode based on thresholds
+                target_slowmode = min_sm  # Default: no slowmode
+                for threshold_msgs, threshold_slowmode in sorted_thresholds:
+                    if msg_per_min >= threshold_msgs:
+                        target_slowmode = threshold_slowmode
+                        break
+
+                # Clamp
+                target_slowmode = max(min_sm, min(target_slowmode, max_sm))
+
+                # Get the current channel slowmode
+                current_slowmode = channel.slowmode_delay
+
+                # Track what we last set (dict: guild -> channel -> (slowmode, timestamp))
+                if guild_key not in self._auto_slowmode_current:
+                    self._auto_slowmode_current[guild_key] = {}
+                last_entry = self._auto_slowmode_current[guild_key].get(channel_key)
+                last_set = last_entry[0] if last_entry else None
+                last_set_time = last_entry[1] if last_entry else 0
+
+                # If slowmode was changed manually (not by us), skip — don't override
+                if last_set is not None and current_slowmode != last_set:
+                    continue
+
+                # Only adjust if target differs from current
+                if target_slowmode == current_slowmode:
+                    continue
+
+                # If we're reducing slowmode, check cooldown
+                if target_slowmode < current_slowmode and last_set_time > 0:
+                    elapsed = now - last_set_time
+                    if elapsed < cooldown:
+                        continue  # Still in cooldown, don't relax yet
+
+                try:
+                    await channel.edit(slowmode_delay=target_slowmode)
+                    self._auto_slowmode_current[guild_key][channel_key] = (target_slowmode, now)
+                    _log.info(
+                        f"AutoSlowmode: Set #{channel.name} in {guild.name} "
+                        f"to {target_slowmode}s (rate: {msg_per_min:.0f} msg/min)"
+                    )
+                except Exception as e:
+                    _log.warning(f"AutoSlowmode: Failed to set slowmode on #{channel}: {e}")
+
+            # Clean up channels with no recent messages (prevent memory leak)
+            empty_channels = [
+                ck for ck, ts in channels.items()
+                if not [t for t in ts if t >= now - interval]
+            ]
+            for ck in empty_channels:
+                del channels[ck]
+                self._auto_slowmode_current.get(guild_key, {}).pop(ck, None)
+            if not channels:
+                del self._auto_slowmode_data[guild_key]
+                self._auto_slowmode_current.pop(guild_key, None)
+
+    @_auto_slowmode_loop.before_loop
+    async def _before_auto_slowmode(self):
+        """Wait for the bot to be ready before starting the loop, then sync interval from config."""
+        await self.bot.wait_until_ready()
+        cfg = _get_auto_slowmode_config()
+        self._auto_slowmode_loop.change_interval(seconds=cfg.get("check_interval", 30))
+
+    # ── Auto Slowmode: Commands ──────────────────────
+
+    @commands.command(name="autoslowmode")
+    @commands.has_permissions(manage_channels=True)
+    async def cmd_autoslowmode(self, ctx, action: str = "", *, value: str = ""):
+        """Configure auto slowmode. Usage:
+          !autoslowmode                    — Show current config
+          !autoslowmode on/off             — Enable/disable
+          !autoslowmode interval <sec>     — Set check interval (10-300s)
+          !autoslowmode cooldown <sec>     — Set cooldown before relaxing (0-3600s)
+          !autoslowmode threshold <msgs> <slowmode_sec>
+                                           — Add/update a threshold
+          !autoslowmode delthreshold <msgs>— Remove a threshold
+          !autoslowmode min <sec>          — Minimum slowmode
+          !autoslowmode max <sec>          — Maximum slowmode
+        """
+        if not action:
+            cfg = _get_auto_slowmode_config()
+            embed = discord.Embed(
+                title="🐢 Auto Slowmode Configuration",
+                color=0xAA88FF,
+                timestamp=discord.utils.utcnow(),
+            )
+            embed.add_field(name="Status", value="🟢 Enabled" if cfg["enabled"] else "🔴 Disabled", inline=True)
+            embed.add_field(name="Check Interval", value=f"{cfg['check_interval']}s", inline=True)
+            embed.add_field(name="Cooldown", value=f"{cfg['cooldown']}s", inline=True)
+            embed.add_field(name="Min Slowmode", value=f"{cfg['min_slowmode']}s", inline=True)
+            embed.add_field(name="Max Slowmode", value=f"{cfg['max_slowmode']}s", inline=True)
+            if cfg["thresholds"]:
+                lines = []
+                for msgs, sm in sorted(cfg["thresholds"].items(), reverse=True):
+                    lines.append(f"  ≥{msgs} msg/min → **{sm}s** slowmode")
+                embed.add_field(name="Thresholds", value="\n".join(lines), inline=False)
+            else:
+                embed.add_field(name="Thresholds", value="*No thresholds configured.*", inline=False)
+            embed.set_footer(text=f"Use !autoslowmode <action> to configure • {ctx.guild.name}")
+            await ctx.send(embed=embed)
+            return
+
+        action = action.strip().lower()
+
+        if action in ("on", "enable", "true", "1"):
+            _update_auto_slowmode({"enabled": True})
+            await ctx.send("🐢 Auto slowmode has been **enabled**.")
+            await self._store_mod_action(ctx.guild.id, "autoslowmode", "enabled", ctx.author)
+        elif action in ("off", "disable", "false", "0"):
+            _update_auto_slowmode({"enabled": False})
+            # Clear tracking data so stale data doesn't sit forever
+            self._auto_slowmode_data.clear()
+            self._auto_slowmode_current.clear()
+            await ctx.send("🐢 Auto slowmode has been **disabled**.")
+            await self._store_mod_action(ctx.guild.id, "autoslowmode", "disabled", ctx.author)
+        elif action == "interval":
+            try:
+                secs = int(value)
+                if secs < 10 or secs > 300:
+                    await ctx.send("❌ Interval must be between 10 and 300 seconds.")
+                    return
+                _update_auto_slowmode({"check_interval": secs})
+                # Update loop interval
+                self._auto_slowmode_loop.change_interval(seconds=secs)
+                await ctx.send(f"🐢 Check interval set to **{secs}s**.")
+                await self._store_mod_action(ctx.guild.id, "autoslowmode", f"interval={secs}s", ctx.author)
+            except ValueError:
+                await ctx.send("❌ Invalid number. Use e.g. `!autoslowmode interval 30`")
+        elif action == "cooldown":
+            try:
+                secs = int(value)
+                if secs < 0 or secs > 3600:
+                    await ctx.send("❌ Cooldown must be between 0 and 3600 seconds.")
+                    return
+                _update_auto_slowmode({"cooldown": secs})
+                await ctx.send(f"🐢 Cooldown set to **{secs}s**.")
+                await self._store_mod_action(ctx.guild.id, "autoslowmode", f"cooldown={secs}s", ctx.author)
+            except ValueError:
+                await ctx.send("❌ Invalid number.")
+        elif action == "min":
+            try:
+                secs = int(value)
+                if secs < 0 or secs > 21600:
+                    await ctx.send("❌ Min slowmode must be between 0 and 21600.")
+                    return
+                _update_auto_slowmode({"min_slowmode": secs})
+                await ctx.send(f"🐢 Min slowmode set to **{secs}s**.")
+                await self._store_mod_action(ctx.guild.id, "autoslowmode", f"min={secs}s", ctx.author)
+            except ValueError:
+                await ctx.send("❌ Invalid number.")
+        elif action == "max":
+            try:
+                secs = int(value)
+                if secs < 0 or secs > 21600:
+                    await ctx.send("❌ Max slowmode must be between 0 and 21600.")
+                    return
+                _update_auto_slowmode({"max_slowmode": secs})
+                await ctx.send(f"🐢 Max slowmode set to **{secs}s**.")
+                await self._store_mod_action(ctx.guild.id, "autoslowmode", f"max={secs}s", ctx.author)
+            except ValueError:
+                await ctx.send("❌ Invalid number.")
+        elif action == "threshold":
+            parts = value.split()
+            if len(parts) < 2:
+                await ctx.send("❌ Usage: `!autoslowmode threshold <msg_per_min> <slowmode_seconds>`")
+                return
+            try:
+                msgs = int(parts[0])
+                sm = int(parts[1])
+                if msgs < 1:
+                    await ctx.send("❌ Message threshold must be at least 1.")
+                    return
+                if sm < 0 or sm > 21600:
+                    await ctx.send("❌ Slowmode must be between 0 and 21600s.")
+                    return
+                cfg = _get_auto_slowmode_config()
+                thresholds = cfg["thresholds"]
+                thresholds[msgs] = sm
+                _update_auto_slowmode({"thresholds": {str(k): v for k, v in thresholds.items()}})
+                await ctx.send(f"🐢 Threshold added: **≥{msgs} msg/min → {sm}s slowmode**.")
+                await self._store_mod_action(ctx.guild.id, "autoslowmode", f"threshold {msgs}msgs→{sm}s", ctx.author)
+            except ValueError:
+                await ctx.send("❌ Invalid numbers.")
+        elif action in ("delthreshold", "removethreshold", "rmthreshold"):
+            try:
+                msgs = int(value)
+                cfg = _get_auto_slowmode_config()
+                thresholds = cfg["thresholds"]
+                if msgs in thresholds:
+                    del thresholds[msgs]
+                    _update_auto_slowmode({"thresholds": {str(k): v for k, v in thresholds.items()}})
+                    await ctx.send(f"🐢 Threshold at **{msgs} msg/min** removed.")
+                    await self._store_mod_action(ctx.guild.id, "autoslowmode", f"removed threshold {msgs}msgs", ctx.author)
+                else:
+                    await ctx.send(f"❌ No threshold found at **{msgs} msg/min**.")
+            except ValueError:
+                await ctx.send("❌ Invalid number.")
+        else:
+            await ctx.send(f"❌ Unknown action: `{action}`. Use `!autoslowmode` to see options.")
+
+    @app_commands.command(name="autoslowmode", description="Configure auto slowmode — adjusts slowmode based on message rate")
+    @app_commands.describe(
+        action="Action: on, off, interval, cooldown, threshold, delthreshold, min, max",
+        value="Value for the action (e.g. seconds, or 'msgs slowmode' for threshold)",
+    )
+    @app_commands.checks.has_permissions(manage_channels=True)
+    async def slash_autoslowmode(self, interaction: discord.Interaction, action: str = "", value: str = ""):
+        """Configure auto slowmode."""
+        if not action:
+            cfg = _get_auto_slowmode_config()
+            embed = discord.Embed(
+                title="🐢 Auto Slowmode Configuration",
+                color=0xAA88FF,
+                timestamp=discord.utils.utcnow(),
+            )
+            embed.add_field(name="Status", value="🟢 Enabled" if cfg["enabled"] else "🔴 Disabled", inline=True)
+            embed.add_field(name="Check Interval", value=f"{cfg['check_interval']}s", inline=True)
+            embed.add_field(name="Cooldown", value=f"{cfg['cooldown']}s", inline=True)
+            embed.add_field(name="Min Slowmode", value=f"{cfg['min_slowmode']}s", inline=True)
+            embed.add_field(name="Max Slowmode", value=f"{cfg['max_slowmode']}s", inline=True)
+            if cfg["thresholds"]:
+                lines = []
+                for msgs, sm in sorted(cfg["thresholds"].items(), reverse=True):
+                    lines.append(f"  ≥{msgs} msg/min → **{sm}s** slowmode")
+                embed.add_field(name="Thresholds", value="\n".join(lines), inline=False)
+            else:
+                embed.add_field(name="Thresholds", value="*No thresholds configured.*", inline=False)
+            embed.set_footer(text=f"Use /autoslowmode <action> to configure • {interaction.guild.name}")
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        action = action.strip().lower()
+
+        if action in ("on", "enable", "true", "1"):
+            _update_auto_slowmode({"enabled": True})
+            await interaction.response.send_message("🐢 Auto slowmode has been **enabled**.")
+            await self._store_mod_action(interaction.guild_id, "autoslowmode", "enabled", interaction.user)
+        elif action in ("off", "disable", "false", "0"):
+            _update_auto_slowmode({"enabled": False})
+            self._auto_slowmode_data.clear()
+            self._auto_slowmode_current.clear()
+            await interaction.response.send_message("🐢 Auto slowmode has been **disabled**.")
+            await self._store_mod_action(interaction.guild_id, "autoslowmode", "disabled", interaction.user)
+        elif action == "interval":
+            try:
+                secs = int(value)
+                if secs < 10 or secs > 300:
+                    await interaction.response.send_message("❌ Interval must be between 10 and 300 seconds.", ephemeral=True)
+                    return
+                _update_auto_slowmode({"check_interval": secs})
+                self._auto_slowmode_loop.change_interval(seconds=secs)
+                await interaction.response.send_message(f"🐢 Check interval set to **{secs}s**.")
+                await self._store_mod_action(interaction.guild_id, "autoslowmode", f"interval={secs}s", interaction.user)
+            except ValueError:
+                await interaction.response.send_message("❌ Invalid number.", ephemeral=True)
+        elif action == "cooldown":
+            try:
+                secs = int(value)
+                if secs < 0 or secs > 3600:
+                    await interaction.response.send_message("❌ Cooldown must be between 0 and 3600 seconds.", ephemeral=True)
+                    return
+                _update_auto_slowmode({"cooldown": secs})
+                await interaction.response.send_message(f"🐢 Cooldown set to **{secs}s**.")
+                await self._store_mod_action(interaction.guild_id, "autoslowmode", f"cooldown={secs}s", interaction.user)
+            except ValueError:
+                await interaction.response.send_message("❌ Invalid number.", ephemeral=True)
+        elif action == "min":
+            try:
+                secs = int(value)
+                if secs < 0 or secs > 21600:
+                    await interaction.response.send_message("❌ Min slowmode must be between 0 and 21600.", ephemeral=True)
+                    return
+                _update_auto_slowmode({"min_slowmode": secs})
+                await interaction.response.send_message(f"🐢 Min slowmode set to **{secs}s**.")
+                await self._store_mod_action(interaction.guild_id, "autoslowmode", f"min={secs}s", interaction.user)
+            except ValueError:
+                await interaction.response.send_message("❌ Invalid number.", ephemeral=True)
+        elif action == "max":
+            try:
+                secs = int(value)
+                if secs < 0 or secs > 21600:
+                    await interaction.response.send_message("❌ Max slowmode must be between 0 and 21600.", ephemeral=True)
+                    return
+                _update_auto_slowmode({"max_slowmode": secs})
+                await interaction.response.send_message(f"🐢 Max slowmode set to **{secs}s**.")
+                await self._store_mod_action(interaction.guild_id, "autoslowmode", f"max={secs}s", interaction.user)
+            except ValueError:
+                await interaction.response.send_message("❌ Invalid number.", ephemeral=True)
+        elif action == "threshold":
+            parts = value.split()
+            if len(parts) < 2:
+                await interaction.response.send_message(
+                    "❌ Usage: `/autoslowmode threshold <msg_per_min> <slowmode_seconds>`", ephemeral=True)
+                return
+            try:
+                msgs = int(parts[0])
+                sm = int(parts[1])
+                if msgs < 1:
+                    await interaction.response.send_message("❌ Message threshold must be at least 1.", ephemeral=True)
+                    return
+                if sm < 0 or sm > 21600:
+                    await interaction.response.send_message("❌ Slowmode must be between 0 and 21600s.", ephemeral=True)
+                    return
+                cfg = _get_auto_slowmode_config()
+                thresholds = cfg["thresholds"]
+                thresholds[msgs] = sm
+                _update_auto_slowmode({"thresholds": {str(k): v for k, v in thresholds.items()}})
+                await interaction.response.send_message(f"🐢 Threshold added: **≥{msgs} msg/min → {sm}s slowmode**.")
+                await self._store_mod_action(interaction.guild_id, "autoslowmode", f"threshold {msgs}msgs→{sm}s", interaction.user)
+            except ValueError:
+                await interaction.response.send_message("❌ Invalid numbers.", ephemeral=True)
+        elif action in ("delthreshold", "removethreshold", "rmthreshold"):
+            try:
+                msgs = int(value)
+                cfg = _get_auto_slowmode_config()
+                thresholds = cfg["thresholds"]
+                if msgs in thresholds:
+                    del thresholds[msgs]
+                    _update_auto_slowmode({"thresholds": {str(k): v for k, v in thresholds.items()}})
+                    await interaction.response.send_message(f"🐢 Threshold at **{msgs} msg/min** removed.")
+                    await self._store_mod_action(interaction.guild_id, "autoslowmode", f"removed threshold {msgs}msgs", interaction.user)
+                else:
+                    await interaction.response.send_message(f"❌ No threshold found at **{msgs} msg/min**.", ephemeral=True)
+            except ValueError:
+                await interaction.response.send_message("❌ Invalid number.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"❌ Unknown action: `{action}`. Use `/autoslowmode` to see options.", ephemeral=True)
 
         # Store a violation
         await self._store_violation(

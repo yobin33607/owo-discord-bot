@@ -1217,6 +1217,15 @@ def settings():
                     'token': '',
                     'prefix': '!'
                 }
+            mb = data.get('manager_bot', {})
+            if not isinstance(mb, dict):
+                mb = data['manager_bot'] = {}
+            if 'announcements' not in mb:
+                mb['announcements'] = {
+                    'channel_id': '',
+                    'auto_post': False,
+                    'post_time': '09:00'
+                }
             if 'discord_oauth' not in data:
                 data['discord_oauth'] = {
                     'client_id': '',
@@ -1229,7 +1238,12 @@ def settings():
             return jsonify({
                 'manager_bot': {
                     'token': '',
-                    'prefix': '!'
+                    'prefix': '!',
+                    'announcements': {
+                        'channel_id': '',
+                        'auto_post': False,
+                        'post_time': '09:00'
+                    }
                 },
                 'discord_oauth': {
                     'client_id': '',
@@ -1736,6 +1750,82 @@ def quests_retry():
     if e:
         return jsonify({'success': False, 'error': e}), 503
     return jsonify({'success': True, 'message': 'Quest retry started'})
+
+
+# ── Mass Dismantle (Weapons) API ───────────────────────
+
+def _get_weapon_manager(account_id):
+    """Get the WeaponManager for an account. Returns (manager, error)."""
+    bot = get_bot(account_id)
+    if not bot:
+        return None, "Bot not found"
+    wm = getattr(bot, 'weapon_manager', None)
+    if not wm:
+        return None, "Mass Dismantle not initialized for this account"
+    return wm, None
+
+
+@app.route('/api/weapons/status')
+@login_required
+def weapons_status():
+    """Live weapon list + manager status for an account."""
+    wm, err = _get_weapon_manager(request.args.get('id'))
+    if not wm:
+        return jsonify({'success': False, 'error': err}), 404
+    return jsonify({'success': True, **wm.status_dict()})
+
+
+@app.route('/api/weapons/fetch', methods=['POST'])
+@require_permission('manage')
+def weapons_fetch():
+    """Ask the selfbot to type `owo weapons` and parse the weapon list."""
+    data = request.json or {}
+    wm, err = _get_weapon_manager(data.get('id'))
+    if not wm:
+        return jsonify({'success': False, 'error': err}), 404
+    e = _run_on_bot_loop(wm.bot, wm.fetch_weapons())
+    if e:
+        return jsonify({'success': False, 'error': e}), 503
+    return jsonify({'success': True, 'message': 'Fetching weapons...'})
+
+
+@app.route('/api/weapons/action', methods=['POST'])
+@require_permission('manage')
+def weapons_action():
+    """Sell or dismantle one weapon: owo sell <id> / owo dismantle <id>."""
+    data = request.json or {}
+    wm, err = _get_weapon_manager(data.get('id'))
+    if not wm:
+        return jsonify({'success': False, 'error': err}), 404
+    action = data.get('action', '')
+    weapon_id = str(data.get('weapon_id', '')).strip()
+    if action not in ('sell', 'dismantle'):
+        return jsonify({'success': False, 'error': 'Action must be "sell" or "dismantle"'}), 400
+    if not weapon_id:
+        return jsonify({'success': False, 'error': 'Missing weapon_id'}), 400
+    coro = wm.sell_weapon(weapon_id) if action == 'sell' else wm.dismantle_weapon(weapon_id)
+    e = _run_on_bot_loop(wm.bot, coro)
+    if e:
+        return jsonify({'success': False, 'error': e}), 503
+    return jsonify({'success': True, 'message': f'owo {action} {weapon_id} sent'})
+
+
+@app.route('/api/weapons/bulk', methods=['POST'])
+@require_permission('manage')
+def weapons_bulk():
+    """Bulk action: sell/dismantle all weapons (owo sell all / owo dismantle all)."""
+    data = request.json or {}
+    wm, err = _get_weapon_manager(data.get('id'))
+    if not wm:
+        return jsonify({'success': False, 'error': err}), 404
+    action = data.get('action', '')
+    if action not in ('sell', 'dismantle'):
+        return jsonify({'success': False, 'error': 'Action must be "sell" or "dismantle"'}), 400
+    coro = wm.sell_all() if action == 'sell' else wm.dismantle_all()
+    e = _run_on_bot_loop(wm.bot, coro)
+    if e:
+        return jsonify({'success': False, 'error': e}), 503
+    return jsonify({'success': True, 'message': f'owo {action} all sent'})
 
 
 _pending_captchas = {}

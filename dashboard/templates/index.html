@@ -103,6 +103,8 @@
                         style="--icon: url('/static/assets/limey_icons/chart-pie.svg');"></span> Dashboard</a>
                 <a class="nav-item" onclick="nav('orb-grinder', this)"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/coins.svg');"></span> Orb Grinder</a>
+                <a class="nav-item" onclick="nav('mass-dismantle', this)"><span class="icon-svg"
+                        style="--icon: url('/static/assets/limey_icons/gun.svg');"></span> Mass Dismantle</a>
                 <a class="nav-item" onclick="nav('config', this)"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/sliders.svg');"></span> Configuration</a>
                 <a class="nav-item" onclick="nav('proxies', this)"><span class="icon-svg"
@@ -400,6 +402,49 @@
                     </div>
                     <div id="quest-grinder-logs" class="quest-logs-body">
                         <div class="no-data">No grinder activity yet.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mass Dismantle Tab -->
+            <div id="mass-dismantle" class="view">
+                <div class="quest-grinder-header">
+                    <h2><span class="icon-svg"
+                            style="--icon: url('/static/assets/limey_icons/gun.svg');"></span> Mass Dismantle
+                    </h2>
+                    <div class="quest-header-right">
+                        <span id="weapons-account" style="color:#94a3b8; font-size:0.9rem;">Loading account...</span>
+                        <span id="weapons-ready" class="quest-ready-badge off">CONNECTING…</span>
+                        <span id="weapons-status" class="quest-auto-chip off">IDLE</span>
+                    </div>
+                </div>
+                <p class="accounts-page-hint">Fetches this account's weapon list with
+                    <code style="color:#ff8c00;">owo weapons</code>, then lets you
+                    <strong style="color:#3b82f6;">sell</strong> (<code>owo sell &lt;id&gt;</code>) or
+                    <strong style="color:#ff3e3e;">dismantle</strong> (<code>owo dismantle &lt;id&gt;</code>) any weapon.
+                    Dismantling destroys the weapon permanently — it cannot be undone.</p>
+
+                <div class="quest-controls">
+                    <button class="btn-control" onclick="weaponsFetch(this)"><span class="icon-svg"
+                            style="--icon: url('/static/assets/limey_icons/rotate.svg');"></span> <span class="btn-text">FETCH WEAPONS</span></button>
+                    <div style="width:1px;height:28px;background:rgba(255,255,255,0.1);margin:0 4px;"></div>
+                    <button class="btn-control red" onclick="weaponsBulk('dismantle', this)"><span class="icon-svg"
+                            style="--icon: url('/static/assets/limey_icons/battle-net.svg');"></span> <span class="btn-text">DISMANTLE ALL</span></button>
+                </div>
+
+                <div id="weapons-kpi" class="kpi-grid" style="margin-bottom:20px;"></div>
+
+                <div id="weapons-list" class="quest-grid">
+                    <div class="no-data">Hit <strong>FETCH WEAPONS</strong> to load this account's weapons.</div>
+                </div>
+
+                <div class="quest-logs-panel">
+                    <div class="quest-logs-head">
+                        <h3><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/terminal.svg');"></span> Activity</h3>
+                    </div>
+                    <div id="weapons-logs" class="quest-logs-body">
+                        <div class="no-data">No activity yet.</div>
                     </div>
                 </div>
             </div>
@@ -1033,6 +1078,7 @@
     <script src="/static/js/config.js"></script>
     <script src="/static/js/dashboard.js"></script>
     <script src="/static/js/quests.js"></script>
+    <script src="/static/js/weapons.js"></script>
     <script src="/static/js/history.js"></script>
     <script src="/static/js/moderation.js"></script>
     <script src="/static/js/init.js"></script>

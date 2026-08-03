@@ -105,6 +105,7 @@ class LimeyBot(commands.Bot):
         self.limey_scheduler_task = None
         self.is_busy = False
         self.quest_grinder = None
+        self.weapon_manager = None
         self.grind_active_time = 0.0
         self.last_break_check = 0.0
         self.is_on_break = False
@@ -167,6 +168,15 @@ class LimeyBot(commands.Bot):
             self.log("SYS", "Orb Grinder initialized")
         except Exception as e:
             self.log("ERROR", f"Failed to initialize Orb Grinder: {e}")
+
+        # Mass Dismantle / Weapon manager (owo weapons, owo sell/dismantle)
+        try:
+            from modules.weapon_manager import WeaponManager
+            self.weapon_manager = WeaponManager(self)
+            await self.add_cog(self.weapon_manager)
+            self.log("SYS", "Mass Dismantle initialized")
+        except Exception as e:
+            self.log("ERROR", f"Failed to initialize Mass Dismantle: {e}")
         
         try:
             history = state.ht.load_history()

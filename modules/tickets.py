@@ -25,6 +25,7 @@ import logging
 import io
 import textwrap
 import asyncio
+import requests
 
 _log = logging.getLogger("ticket_bot")
 
@@ -40,8 +41,31 @@ TICKET_TYPES = {
     "report": {"emoji": "🚩", "label": "Report", "color": 0xFF4444, "description": "Report a user or issue"},
     "appeal": {"emoji": "⚖️", "label": "Appeal", "color": 0xFF8800, "description": "Appeal a mute, ban, or warning"},
     "question": {"emoji": "💡", "label": "Question", "color": 0x44FF88, "description": "Ask a general question"},
+    "gambling": {"emoji": "🎰", "label": "Turn on Gambling", "color": 0xFFD700, "description": "Request access to gambling features"},
+    "selfbot": {"emoji": "🤖", "label": "Manage Selfbot", "color": 0x8888FF, "description": "Manage your selfbot account"},
     "other": {"emoji": "📝", "label": "Other", "color": 0xAA88FF, "description": "Something else"},
 }
+
+GAMBLING_ROLE_ID = 1531214791354482729
+
+
+def _check_selfbot_account(user_id: str):
+    """Check if a user has a selfbot account via the dashboard API.
+    Returns (has_account: bool, account_data: dict or None).
+    """
+    try:
+        accounts = requests.get(
+            "http://localhost:8000/api/accounts/list",
+            headers={"Content-Type": "application/json"},
+            timeout=5,
+        ).json()
+        if isinstance(accounts, list):
+            for acc in accounts:
+                if str(acc.get("id", "")) == str(user_id):
+                    return True, acc
+        return False, None
+    except Exception:
+        return False, None
 
 
 def _load_ticket_data():
@@ -706,6 +730,39 @@ class TicketCreateModal(discord.ui.Modal):
 
             await channel.send(content=staff_role.mention if staff_role else "", embed=welcome_embed, view=ticket_view)
 
+            # ── Selfbot ticket: post account panel after welcome ─────
+            if ticket_type == "selfbot":
+                has_account, account_data = _check_selfbot_account(str(user.id))
+                if has_account and account_data:
+                    cash = account_data.get("cash", 0) or 0
+                    paused = account_data.get("paused", True)
+                    username = account_data.get("username", "Unknown")
+                    status_str = "🔴 PAUSED" if paused else "🟢 RUNNING"
+                    panel = discord.Embed(
+                        title="🤖 Your Selfbot Account",
+                        description=f"Here's what we found for your account:",
+                        color=0x44FF88,
+                    )
+                    panel.add_field(name="Username", value=username, inline=True)
+                    panel.add_field(name="Status", value=status_str, inline=True)
+                    panel.add_field(name="Cash", value=f"{cash:,}", inline=True)
+                    panel.add_field(name="Account ID", value=f"`{user.id}`", inline=False)
+                    panel.set_footer(text="A staff member will assist you with account management")
+                    await channel.send(embed=panel)
+                else:
+                    no_account = discord.Embed(
+                        title="⚠️ No Selfbot Account Found",
+                        description=(
+                            "We couldn't find a selfbot account linked to your Discord ID.\n\n"
+                            "**This won't work** unless you have a selfbot connected. "
+                            "Please make sure your selfbot is running and linked to this account.\n\n"
+                            "A staff member will assist you with setup if needed."
+                        ),
+                        color=0xFF4444,
+                    )
+                    no_account.set_footer(text="No selfbot account found for this user")
+                    await channel.send(embed=no_account)
+
             # Confirm to the user
             confirm_embed = discord.Embed(
                 title="✅ Ticket Created",
@@ -1267,6 +1324,65 @@ class Tickets(commands.Cog):
         ticket["closed_by"] = str(user.id)
         ticket["transcript"] = transcript_text
         _save_ticket_data(data)
+
+        # ── Gambling ticket: add gambling role to user ─────────
+        if ticket.get("type") == "gambling":
+            ticket_user_id = ticket.get("user_id", "")
+            if ticket_user_id:
+                try:
+                    member = guild.get_member(int(ticket_user_id))
+                    if member:
+                        gambling_role = guild.get_role(GAMBLING_ROLE_ID)
+                        if gambling_role:
+                            await member.add_roles(gambling_role, reason=f"Gambling ticket #{ticket_num} approved by {user}")
+                            _log.info(f"Tickets: Added gambling role to {member} via ticket #{ticket_num}")
+                            try:
+                                await channel.send(f"🎰 Gambling role has been assigned to <@{ticket_user_id}>.")
+                            except Exception:
+                                pass
+                        else:
+                            _log.warning(f"Tickets: Gambling role {GAMBLING_ROLE_ID} not found in guild")
+                            try:
+                                await channel.send(
+                                    f"⚠️ Could not assign gambling role — role ID `{GAMBLING_ROLE_ID}` "
+                                    f"not found on this server. Please create it or update the config."
+                                )
+                            except Exception:
+                                pass
+                except Exception as e:
+                    _log.warning(f"Tickets: Failed to assign gambling role via ticket #{ticket_num}: {e}")
+
+        # ── Appeal ticket: remove warnings/violations for user ─
+        if ticket.get("type") == "appeal":
+            ticket_user_id = ticket.get("user_id", "")
+            if ticket_user_id:
+                try:
+                    from modules.moderation import clear_user_violations
+                    removed = clear_user_violations(guild.id, ticket_user_id)
+                    if removed:
+                        _log.info(
+                            f"Tickets: Cleared {removed} warning(s)/violation(s) "
+                            f"for {ticket_user_id} via appeal ticket #{ticket_num}"
+                        )
+                        try:
+                            await channel.send(
+                                f"⚖️ Appeal accepted — cleared {removed} warning(s)/violation(s) "
+                                f"for <@{ticket_user_id}>."
+                            )
+                        except Exception:
+                            pass
+
+                    # Also clear any active timeouts for the user
+                    member = guild.get_member(int(ticket_user_id))
+                    if member and member.is_timed_out():
+                        try:
+                            await member.timeout(None, reason=f"Appeal ticket #{ticket_num} accepted")
+                            _log.info(f"Tickets: Removed timeout for {member} via appeal ticket #{ticket_num}")
+                        except Exception as e:
+                            _log.warning(f"Tickets: Failed to remove timeout for {member}: {e}")
+
+                except Exception as e:
+                    _log.warning(f"Tickets: Failed to clear violations via appeal ticket #{ticket_num}: {e}")
 
         # Send transcript to log channel
         log_channel_id = data.get("config", {}).get("log_channel_id")

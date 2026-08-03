@@ -454,3 +454,63 @@
     color: #cbd5e1;
     word-break: break-word;
 }
+
+/* ── Mass Dismantle (Weapons) Page ───────────────────── */
+
+.weapon-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.weapon-card:hover {
+    border-color: rgba(255, 68, 68, 0.35);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    transform: translateY(-1px);
+}
+
+.weapon-card-top {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+.weapon-index {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--primary);
+    opacity: 0.8;
+    white-space: nowrap;
+}
+
+.weapon-name {
+    font-weight: 600;
+    color: #eee;
+    font-size: 0.95rem;
+    word-break: break-word;
+}
+
+.weapon-id {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: #888;
+    word-break: break-all;
+}
+
+.weapon-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: auto;
+}
+
+.weapon-actions .btn-control {
+    padding: 6px 12px;
+    font-size: 0.75rem;
+}

@@ -72,6 +72,11 @@ window.nav = function(id, el) {
     if (id === 'orb-grinder' && typeof window.loadQuestGrinder === 'function') {
         window.loadQuestGrinder();
     }
+    // Mass Dismantle page: stop any polling when leaving, start it when entering
+    if (typeof window.stopWeaponsPolling === 'function') window.stopWeaponsPolling();
+    if (id === 'mass-dismantle' && typeof window.loadWeapons === 'function') {
+        window.loadWeapons();
+    }
 };
 
 window.toggleMobileMenu = function() {

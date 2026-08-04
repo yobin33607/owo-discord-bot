@@ -22,10 +22,20 @@ import sqlite3
 from datetime import datetime
 import calendar
 
-HISTORY_FILE = 'data/limey_history.db'
-LEGACY_HISTORY_FILE = 'data/history.json'
+# Anchor paths to the project base dir (NOT the cwd): history_tracker is
+# imported at module load time — before limey.py chdirs — and on fresh
+# checkouts (e.g. Render deploys) the data/ dir may not exist yet, so a
+# relative path would crash the import with "unable to open database file".
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+HISTORY_FILE = os.path.join(DATA_DIR, 'limey_history.db')
+LEGACY_HISTORY_FILE = os.path.join(DATA_DIR, 'history.json')
 
 def get_db():
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+    except Exception:
+        pass
     conn = sqlite3.connect(HISTORY_FILE, check_same_thread=False)
     conn.execute('pragma journal_mode=wal')
     return conn
@@ -106,8 +116,12 @@ def migrate_legacy_json():
         print(f"Failed to migrate legacy history: {e}")
 
 
-init_db()
-migrate_legacy_json()
+try:
+    init_db()
+    migrate_legacy_json()
+except Exception as e:
+    # History tracking is non-critical: never let a DB failure block startup.
+    print(f"Warning: could not initialize history database: {e}")
 
 def load_history():
     return {} 

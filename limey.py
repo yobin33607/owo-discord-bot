@@ -140,14 +140,86 @@ def _start_manager_bot_subprocess():
     except Exception as e:
         console.print(f"[dim]  Failed to start Manager Bot: {e}[/dim]")
 
+async def start_limey():
+    """Start all enabled accounts (menu option 1, or `limey.py -1`).
+
+    Returns True if accounts were started, False if there was nothing to start.
+    """
+    try:
+        acc_data = ghd.read_json("config/accounts.json", default={"accounts": []})
+        if acc_data:
+            accounts = [a for a in acc_data.get('accounts', []) if a.get('enabled', True)]
+        else:
+            accounts = []
+    except Exception:
+        accounts = []
+    if not accounts:
+        console.print("[bold red]No active accounts? Add some in the Account Manager (Option 2).[/bold red]")
+        return False
+
+    import utils.history_tracker as ht
+    ht.start_session()
+    dashboard_thread = threading.Thread(target=run_dashboard, daemon=True)
+    dashboard_thread.start()
+
+    # Start the manager bot as a separate subprocess (uses standard discord.py)
+    if _manager_bot_available:
+        console.print("[dim]Starting Manager Bot subprocess...[/dim]")
+        _start_manager_bot_subprocess()
+
+    console.print(f"[bold yellow]Initializing {len(accounts)} accounts...[/bold yellow]")
+    bots = []
+    for i, acc in enumerate(accounts):
+        token = acc.get('token')
+        channels = acc.get('channels')
+        if not token or "YOUR_TOKEN_HERE" in token or "PLACEHOLDER" in token:
+            continue
+        valid_channels = []
+        if channels:
+            for ch in channels:
+                if ch and "YOUR_CHANNEL_ID_HERE" not in str(ch) and "PLACEHOLDER" not in str(ch):
+                    valid_channels.append(ch)
+        try:
+            proxy_url, proxy_auth, proxy_label = proxy_manager.resolve_account_proxy(acc)
+            bot = LimeyBot(
+                token=token,
+                channels=valid_channels,
+                proxy_url=proxy_url,
+                proxy_auth=proxy_auth,
+                proxy_label=proxy_label,
+            )
+            state.bot_instances.append(bot)
+            bots.append(bot)
+            if i > 0:
+                delay = random.uniform(2.5, 4.5)
+                console.print(f"[dim]Waiting {delay:.1f}s for next account...[/dim]")
+                time.sleep(delay)
+            asyncio.create_task(bot.run_bot())
+            console.print(f"[green]Starting Account {i+1}/{len(accounts)} ({acc.get('name', 'Unknown')})[/green]")
+        except Exception as e:
+            console.print(f"[bold red]Failed to initialize Account {i+1}: {e}[/bold red]")
+            continue
+    console.print("[bold green]All accounts are now connecting in background...[/bold green]")
+    return True
+
 async def main():
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    show_banner()
+    is_termux = detect_platform()
+    state.load_account_stats()
+    console.print(f"[cyan]Config Directory:[/cyan] {state.CONFIG_DIR}")
+    console.print(f"[cyan]Accounts File:[/cyan] {os.path.join(state.CONFIG_DIR, 'accounts.json')}\n")
+
+    # `limey.py -1` → skip the menu and start the bot directly
+    if "-1" in sys.argv[1:]:
+        console.print("[bold cyan]Direct start mode (-1): launching Limey without the menu...[/bold cyan]")
+        if not await start_limey():
+            sys.exit(1)
+        while True:
+            await asyncio.sleep(60)
+        return
+
     while True:
-        show_banner()
-        is_termux = detect_platform()
-        state.load_account_stats()
-        console.print(f"[cyan]Config Directory:[/cyan] {state.CONFIG_DIR}")
-        console.print(f"[cyan]Accounts File:[/cyan] {os.path.join(state.CONFIG_DIR, 'accounts.json')}\n")
         console.print("\n[bold cyan]1.[/bold cyan] Start Limey")
         console.print("[bold cyan]2.[/bold cyan] Manage Accounts")
         console.print("[bold cyan]3.[/bold cyan] Exit")
@@ -160,62 +232,9 @@ async def main():
         elif choice == "3":
             console.print("\n[yellow]Shutting down. See you next time![/yellow]")
             sys.exit(0)
-        try:
-            acc_data = ghd.read_json("config/accounts.json", default={"accounts": []})
-            if acc_data:
-                accounts = [a for a in acc_data.get('accounts', []) if a.get('enabled', True)]
-            else:
-                accounts = []
-        except:
-            accounts = []
-        if not accounts:
-            console.print("[bold red]No active accounts? Add some in the Account Manager (Option 2).[/bold red]")
+        if not await start_limey():
             time.sleep(2)
             continue
-        import utils.history_tracker as ht
-        ht.start_session()
-        dashboard_thread = threading.Thread(target=run_dashboard, daemon=True)
-        dashboard_thread.start()
-
-        # Start the manager bot as a separate subprocess (uses standard discord.py)
-        if _manager_bot_available:
-            console.print("[dim]Starting Manager Bot subprocess...[/dim]")
-            _start_manager_bot_subprocess()
-
-        console.print(f"[bold yellow]Initializing {len(accounts)} accounts...[/bold yellow]")
-        bots = []
-        tasks = []
-        for i, acc in enumerate(accounts):
-            token = acc.get('token')
-            channels = acc.get('channels')
-            if not token or "YOUR_TOKEN_HERE" in token or "PLACEHOLDER" in token:
-                continue
-            valid_channels = []
-            if channels:
-                for ch in channels:
-                    if ch and "YOUR_CHANNEL_ID_HERE" not in str(ch) and "PLACEHOLDER" not in str(ch):
-                        valid_channels.append(ch)
-            try:
-                proxy_url, proxy_auth, proxy_label = proxy_manager.resolve_account_proxy(acc)
-                bot = LimeyBot(
-                    token=token,
-                    channels=valid_channels,
-                    proxy_url=proxy_url,
-                    proxy_auth=proxy_auth,
-                    proxy_label=proxy_label,
-                )
-                state.bot_instances.append(bot)
-                bots.append(bot)
-                if i > 0:
-                    delay = random.uniform(2.5, 4.5)
-                    console.print(f"[dim]Waiting {delay:.1f}s for next account...[/dim]")
-                    time.sleep(delay)
-                asyncio.create_task(bot.run_bot())
-                console.print(f"[green]Starting Account {i+1}/{len(accounts)} ({acc.get('name', 'Unknown')})[/green]")
-            except Exception as e:
-                console.print(f"[bold red]Failed to initialize Account {i+1}: {e}[/bold red]")
-                continue
-        console.print("[bold green]All accounts are now connecting in background...[/bold green]")
         while True:
             await asyncio.sleep(60)
         break

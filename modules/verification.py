@@ -785,69 +785,117 @@ class Verification(commands.Cog):
 
     @app_commands.command(name="verifyconfig", description="View or update verification configuration")
     @app_commands.describe(
-        setting="Setting to change (e.g. verified_role_id, captcha_enabled). Leave empty to view config.",
-        value="New value for the setting.",
+        setting="What to configure — leave as 'View config' to just show current settings",
+        role="Role to use (for verified / unverified role)",
+        channel="Channel to use (for welcome / log channel)",
+        enabled="Turn the captcha on or off",
+        difficulty="Captcha difficulty level",
+        days="Minimum account age in days (0 to disable)",
+        message="Custom welcome message",
     )
+    @app_commands.choices(setting=[
+        app_commands.Choice(name="View current config", value="view"),
+        app_commands.Choice(name="Verified role", value="verified_role_id"),
+        app_commands.Choice(name="Unverified role", value="unverified_role_id"),
+        app_commands.Choice(name="Welcome channel", value="welcome_channel_id"),
+        app_commands.Choice(name="Log channel", value="log_channel_id"),
+        app_commands.Choice(name="Minimum account age (days)", value="min_account_age_days"),
+        app_commands.Choice(name="Enable/disable captcha", value="captcha_enabled"),
+        app_commands.Choice(name="Captcha difficulty", value="captcha_difficulty"),
+        app_commands.Choice(name="Welcome message", value="welcome_message"),
+    ])
+    @app_commands.choices(enabled=[
+        app_commands.Choice(name="On", value="on"),
+        app_commands.Choice(name="Off", value="off"),
+    ])
+    @app_commands.choices(difficulty=[
+        app_commands.Choice(name="Easy", value="easy"),
+        app_commands.Choice(name="Medium", value="medium"),
+        app_commands.Choice(name="Hard", value="hard"),
+    ])
     @app_commands.checks.has_permissions(administrator=True)
-    async def slash_verifyconfig(self, interaction: discord.Interaction, setting: str = "", value: str = ""):
-        """View or update verification config.
+    async def slash_verifyconfig(self, interaction: discord.Interaction, setting: str = "view", role: discord.Role = None, channel: discord.TextChannel = None, enabled: str = None, difficulty: str = None, days: int = None, message: str = None):
+        """View or update verification config — pick settings from dropdowns, no typing needed.
 
-        Usage:
-          /verifyconfig                                  — Show current config
-          /verifyconfig setting:verified_role_id value:<id>   — Set the verified role
-          /verifyconfig setting:captcha_enabled value:off     — Disable captcha
-          /verifyconfig setting:captcha_difficulty value:hard — Set difficulty
+        Examples:
+          /verifyconfig setting:Verified role role:<pick a role>
+          /verifyconfig setting:Enable/disable captcha enabled:Off
+          /verifyconfig setting:Captcha difficulty difficulty:Hard
         """
         cfg = _load_verification_config()
 
-        # If a setting was provided, apply the change
-        if setting.strip():
-            # Defer first: _save_verification_config does a GitHub write that can
-            # exceed Discord's 3-second interaction window.
-            await interaction.response.defer(ephemeral=True)
-            changed, error = _apply_config_setting(cfg, setting, value, interaction.guild_id)
+        if setting == "view":
+            # Show the current config
+            embed = discord.Embed(
+                title="⚙️ Verification Configuration",
+                color=0x4488FF,
+                timestamp=discord.utils.utcnow(),
+            )
 
-            if error:
-                await interaction.followup.send(error, ephemeral=True)
-                return
+            fields = [
+                ("Verified Role", f"<@&{cfg.get('verified_role_id', 'Not set')}>" if cfg.get('verified_role_id') else "❌ Not set"),
+                ("Unverified Role", f"<@&{cfg.get('unverified_role_id', 'Not set')}>" if cfg.get('unverified_role_id') else "Not configured"),
+                ("Welcome Channel", f"<#{cfg.get('welcome_channel_id', 'Not set')}>" if cfg.get('welcome_channel_id') else "Not configured"),
+                ("Log Channel", f"<#{cfg.get('log_channel_id', 'Not set')}>" if cfg.get('log_channel_id') else "Not configured"),
+                ("Min Account Age", f"{cfg.get('min_account_age_days', 0)} day(s)"),
+                ("Captcha Enabled", "✅ Yes" if cfg.get('captcha_enabled', True) else "❌ No"),
+                ("Captcha Difficulty", cfg.get('captcha_difficulty', 'medium').capitalize()),
+                ("Guild ID", cfg.get('guild_id', 'Auto-detected')),
+            ]
 
-            if changed:
-                _save_verification_config(cfg)
-                _log.info(f"Verification config updated via slash: {setting} = {value}")
-                await interaction.followup.send(
-                    f"✅ `{setting.strip().lower()}` has been updated.", ephemeral=True
-                )
-            else:
-                await interaction.followup.send("⚠️ No changes were made.", ephemeral=True)
+            for name, val in fields:
+                embed.add_field(name=name, value=val, inline=True)
+
+            welcome_msg = cfg.get('welcome_message', '')
+            if welcome_msg:
+                embed.add_field(name="Welcome Message", value=f"```{welcome_msg[:100]}```", inline=False)
+
+            embed.set_footer(text="Use /verifyconfig setting:<dropdown> to change")
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        # Otherwise, show the current config
-        embed = discord.Embed(
-            title="⚙️ Verification Configuration",
-            color=0x4488FF,
-            timestamp=discord.utils.utcnow(),
-        )
+        # Resolve the typed value for the selected setting
+        if setting == "verified_role_id":
+            value = str(role.id) if role else None
+        elif setting == "unverified_role_id":
+            value = str(role.id) if role else None
+        elif setting in ("welcome_channel_id", "log_channel_id"):
+            value = str(channel.id) if channel else None
+        elif setting == "min_account_age_days":
+            value = str(days) if days is not None else None
+        elif setting == "captcha_enabled":
+            value = enabled
+        elif setting == "captcha_difficulty":
+            value = difficulty
+        elif setting == "welcome_message":
+            value = message
+        else:
+            value = None
 
-        fields = [
-            ("Verified Role", f"<@&{cfg.get('verified_role_id', 'Not set')}>" if cfg.get('verified_role_id') else "❌ Not set"),
-            ("Unverified Role", f"<@&{cfg.get('unverified_role_id', 'Not set')}>" if cfg.get('unverified_role_id') else "Not configured"),
-            ("Welcome Channel", f"<#{cfg.get('welcome_channel_id', 'Not set')}>" if cfg.get('welcome_channel_id') else "Not configured"),
-            ("Log Channel", f"<#{cfg.get('log_channel_id', 'Not set')}>" if cfg.get('log_channel_id') else "Not configured"),
-            ("Min Account Age", f"{cfg.get('min_account_age_days', 0)} day(s)"),
-            ("Captcha Enabled", "✅ Yes" if cfg.get('captcha_enabled', True) else "❌ No"),
-            ("Captcha Difficulty", cfg.get('captcha_difficulty', 'medium').capitalize()),
-            ("Guild ID", cfg.get('guild_id', 'Auto-detected')),
-        ]
+        if not value or not str(value).strip():
+            await interaction.response.send_message(
+                f"❌ Missing the value for **{setting}** — fill in the matching option for this setting.",
+                ephemeral=True,
+            )
+            return
 
-        for name, val in fields:
-            embed.add_field(name=name, value=val, inline=True)
+        # Defer first: _save_verification_config does a GitHub write that can
+        # exceed Discord's 3-second interaction window.
+        await interaction.response.defer(ephemeral=True)
+        changed, error = _apply_config_setting(cfg, setting, value, interaction.guild_id)
 
-        welcome_msg = cfg.get('welcome_message', '')
-        if welcome_msg:
-            embed.add_field(name="Welcome Message", value=f"```{welcome_msg[:100]}```", inline=False)
+        if error:
+            await interaction.followup.send(error, ephemeral=True)
+            return
 
-        embed.set_footer(text="Use /verifyconfig setting:<name> value:<value> to change")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        if changed:
+            _save_verification_config(cfg)
+            _log.info(f"Verification config updated via slash: {setting} = {value}")
+            await interaction.followup.send(
+                f"✅ `{setting}` has been updated.", ephemeral=True
+            )
+        else:
+            await interaction.followup.send("⚠️ No changes were made.", ephemeral=True)
 
 
 # ── Setup ──────────────────────────────────────────────

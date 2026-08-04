@@ -79,6 +79,11 @@ venv-*-artifact/
 dist/
 
 # ===============================
+# Obfuscated builds (obfuscate_limey.sh)
+# ===============================
+limey-obfuscated-*.zip
+
+# ===============================
 # Dependency managers
 # ===============================
 Pipfile.lock

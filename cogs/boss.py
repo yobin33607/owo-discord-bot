@@ -209,6 +209,7 @@ class Boss(commands.Cog):
             message_id=data.get("id"),
             channel_id=channel_id,
             author_id=data.get("author", {}).get("id"),
+            application_id=data.get("application_id"),
             guild_id=guild_id,
             flags=data.get("flags", 0)
         )

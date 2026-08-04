@@ -184,6 +184,7 @@ class Quest(commands.Cog):
                             message_id=message_data.get("id"),
                             channel_id=channel_id,
                             author_id=message_data.get("author", {}).get("id"),
+                            application_id=message_data.get("application_id"),
                             guild_id=message_data.get("guild_id"),
                             flags=message_data.get("flags", 0)
                         ))

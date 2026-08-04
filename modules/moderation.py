@@ -2055,6 +2055,14 @@ class Moderation(commands.Cog):
             + (f" — {matched_keyword[:80]}" if matched_keyword else "")
         )
 
+        # Store a violation
+        await self._store_violation(
+            guild.id, user_id, "automod",
+            f"Discord AutoMod: {reason_label}"
+            + (f" — {matched_keyword[:80]}" if matched_keyword else ""),
+            guild.me
+        )
+
     # ── Auto Slowmode: Message Tracker ────────────────
 
     @commands.Cog.listener()
@@ -2327,13 +2335,26 @@ class Moderation(commands.Cog):
 
     @app_commands.command(name="autoslowmode", description="Configure auto slowmode — adjusts slowmode based on message rate")
     @app_commands.describe(
-        action="Action: on, off, interval, cooldown, threshold, delthreshold, min, max",
-        value="Value for the action (e.g. seconds, or 'msgs slowmode' for threshold)",
+        action="What to do — leave as 'View config' to just show current settings",
+        seconds="Seconds — used by interval / cooldown / min / max",
+        msgs="Messages per minute — used by threshold / delthreshold",
+        slowmode="Slowmode seconds for the threshold",
     )
+    @app_commands.choices(action=[
+        app_commands.Choice(name="View current config", value="view"),
+        app_commands.Choice(name="Enable auto slowmode", value="on"),
+        app_commands.Choice(name="Disable auto slowmode", value="off"),
+        app_commands.Choice(name="Set check interval (10-300s)", value="interval"),
+        app_commands.Choice(name="Set cooldown before relaxing (0-3600s)", value="cooldown"),
+        app_commands.Choice(name="Set minimum slowmode (0-21600s)", value="min"),
+        app_commands.Choice(name="Set maximum slowmode (0-21600s)", value="max"),
+        app_commands.Choice(name="Add or update a threshold", value="threshold"),
+        app_commands.Choice(name="Remove a threshold", value="delthreshold"),
+    ])
     @app_commands.checks.has_permissions(manage_channels=True)
-    async def slash_autoslowmode(self, interaction: discord.Interaction, action: str = "", value: str = ""):
-        """Configure auto slowmode."""
-        if not action:
+    async def slash_autoslowmode(self, interaction: discord.Interaction, action: str = "view", seconds: int = 0, msgs: int = 0, slowmode: int = 0):
+        """Configure auto slowmode — pick an action from the dropdown, no typing needed."""
+        if action == "view":
             cfg = _get_auto_slowmode_config()
             embed = discord.Embed(
                 title="🐢 Auto Slowmode Configuration",
@@ -2347,16 +2368,14 @@ class Moderation(commands.Cog):
             embed.add_field(name="Max Slowmode", value=f"{cfg['max_slowmode']}s", inline=True)
             if cfg["thresholds"]:
                 lines = []
-                for msgs, sm in sorted(cfg["thresholds"].items(), reverse=True):
-                    lines.append(f"  ≥{msgs} msg/min → **{sm}s** slowmode")
+                for msgs_k, sm in sorted(cfg["thresholds"].items(), reverse=True):
+                    lines.append(f"  ≥{msgs_k} msg/min → **{sm}s** slowmode")
                 embed.add_field(name="Thresholds", value="\n".join(lines), inline=False)
             else:
                 embed.add_field(name="Thresholds", value="*No thresholds configured.*", inline=False)
             embed.set_footer(text=f"Use /autoslowmode <action> to configure • {interaction.guild.name}")
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
-
-        action = action.strip().lower()
 
         if action in ("on", "enable", "true", "1"):
             _update_auto_slowmode({"enabled": True})
@@ -2369,97 +2388,66 @@ class Moderation(commands.Cog):
             await interaction.response.send_message("🐢 Auto slowmode has been **disabled**.")
             await self._store_mod_action(interaction.guild_id, "autoslowmode", "disabled", interaction.user)
         elif action == "interval":
-            try:
-                secs = int(value)
-                if secs < 10 or secs > 300:
-                    await interaction.response.send_message("❌ Interval must be between 10 and 300 seconds.", ephemeral=True)
-                    return
-                _update_auto_slowmode({"check_interval": secs})
-                self._auto_slowmode_loop.change_interval(seconds=secs)
-                await interaction.response.send_message(f"🐢 Check interval set to **{secs}s**.")
-                await self._store_mod_action(interaction.guild_id, "autoslowmode", f"interval={secs}s", interaction.user)
-            except ValueError:
-                await interaction.response.send_message("❌ Invalid number.", ephemeral=True)
-        elif action == "cooldown":
-            try:
-                secs = int(value)
-                if secs < 0 or secs > 3600:
-                    await interaction.response.send_message("❌ Cooldown must be between 0 and 3600 seconds.", ephemeral=True)
-                    return
-                _update_auto_slowmode({"cooldown": secs})
-                await interaction.response.send_message(f"🐢 Cooldown set to **{secs}s**.")
-                await self._store_mod_action(interaction.guild_id, "autoslowmode", f"cooldown={secs}s", interaction.user)
-            except ValueError:
-                await interaction.response.send_message("❌ Invalid number.", ephemeral=True)
-        elif action == "min":
-            try:
-                secs = int(value)
-                if secs < 0 or secs > 21600:
-                    await interaction.response.send_message("❌ Min slowmode must be between 0 and 21600.", ephemeral=True)
-                    return
-                _update_auto_slowmode({"min_slowmode": secs})
-                await interaction.response.send_message(f"🐢 Min slowmode set to **{secs}s**.")
-                await self._store_mod_action(interaction.guild_id, "autoslowmode", f"min={secs}s", interaction.user)
-            except ValueError:
-                await interaction.response.send_message("❌ Invalid number.", ephemeral=True)
-        elif action == "max":
-            try:
-                secs = int(value)
-                if secs < 0 or secs > 21600:
-                    await interaction.response.send_message("❌ Max slowmode must be between 0 and 21600.", ephemeral=True)
-                    return
-                _update_auto_slowmode({"max_slowmode": secs})
-                await interaction.response.send_message(f"🐢 Max slowmode set to **{secs}s**.")
-                await self._store_mod_action(interaction.guild_id, "autoslowmode", f"max={secs}s", interaction.user)
-            except ValueError:
-                await interaction.response.send_message("❌ Invalid number.", ephemeral=True)
-        elif action == "threshold":
-            parts = value.split()
-            if len(parts) < 2:
-                await interaction.response.send_message(
-                    "❌ Usage: `/autoslowmode threshold <msg_per_min> <slowmode_seconds>`", ephemeral=True)
+            secs = seconds
+            if secs < 10 or secs > 300:
+                await interaction.response.send_message("❌ Interval must be between 10 and 300 seconds.", ephemeral=True)
                 return
-            try:
-                msgs = int(parts[0])
-                sm = int(parts[1])
-                if msgs < 1:
-                    await interaction.response.send_message("❌ Message threshold must be at least 1.", ephemeral=True)
-                    return
-                if sm < 0 or sm > 21600:
-                    await interaction.response.send_message("❌ Slowmode must be between 0 and 21600s.", ephemeral=True)
-                    return
-                cfg = _get_auto_slowmode_config()
-                thresholds = cfg["thresholds"]
-                thresholds[msgs] = sm
-                _update_auto_slowmode({"thresholds": {str(k): v for k, v in thresholds.items()}})
-                await interaction.response.send_message(f"🐢 Threshold added: **≥{msgs} msg/min → {sm}s slowmode**.")
-                await self._store_mod_action(interaction.guild_id, "autoslowmode", f"threshold {msgs}msgs→{sm}s", interaction.user)
-            except ValueError:
-                await interaction.response.send_message("❌ Invalid numbers.", ephemeral=True)
+            _update_auto_slowmode({"check_interval": secs})
+            self._auto_slowmode_loop.change_interval(seconds=secs)
+            await interaction.response.send_message(f"🐢 Check interval set to **{secs}s**.")
+            await self._store_mod_action(interaction.guild_id, "autoslowmode", f"interval={secs}s", interaction.user)
+        elif action == "cooldown":
+            secs = seconds
+            if secs < 0 or secs > 3600:
+                await interaction.response.send_message("❌ Cooldown must be between 0 and 3600 seconds.", ephemeral=True)
+                return
+            _update_auto_slowmode({"cooldown": secs})
+            await interaction.response.send_message(f"🐢 Cooldown set to **{secs}s**.")
+            await self._store_mod_action(interaction.guild_id, "autoslowmode", f"cooldown={secs}s", interaction.user)
+        elif action == "min":
+            secs = seconds
+            if secs < 0 or secs > 21600:
+                await interaction.response.send_message("❌ Min slowmode must be between 0 and 21600.", ephemeral=True)
+                return
+            _update_auto_slowmode({"min_slowmode": secs})
+            await interaction.response.send_message(f"🐢 Min slowmode set to **{secs}s**.")
+            await self._store_mod_action(interaction.guild_id, "autoslowmode", f"min={secs}s", interaction.user)
+        elif action == "max":
+            secs = seconds
+            if secs < 0 or secs > 21600:
+                await interaction.response.send_message("❌ Max slowmode must be between 0 and 21600.", ephemeral=True)
+                return
+            _update_auto_slowmode({"max_slowmode": secs})
+            await interaction.response.send_message(f"🐢 Max slowmode set to **{secs}s**.")
+            await self._store_mod_action(interaction.guild_id, "autoslowmode", f"max={secs}s", interaction.user)
+        elif action == "threshold":
+            if msgs < 1:
+                await interaction.response.send_message("❌ Message threshold must be at least 1.", ephemeral=True)
+                return
+            if slowmode < 0 or slowmode > 21600:
+                await interaction.response.send_message("❌ Slowmode must be between 0 and 21600s.", ephemeral=True)
+                return
+            cfg = _get_auto_slowmode_config()
+            thresholds = cfg["thresholds"]
+            thresholds[msgs] = slowmode
+            _update_auto_slowmode({"thresholds": {str(k): v for k, v in thresholds.items()}})
+            await interaction.response.send_message(f"🐢 Threshold added: **≥{msgs} msg/min → {slowmode}s slowmode**.")
+            await self._store_mod_action(interaction.guild_id, "autoslowmode", f"threshold {msgs}msgs→{slowmode}s", interaction.user)
         elif action in ("delthreshold", "removethreshold", "rmthreshold"):
-            try:
-                msgs = int(value)
-                cfg = _get_auto_slowmode_config()
-                thresholds = cfg["thresholds"]
-                if msgs in thresholds:
-                    del thresholds[msgs]
-                    _update_auto_slowmode({"thresholds": {str(k): v for k, v in thresholds.items()}})
-                    await interaction.response.send_message(f"🐢 Threshold at **{msgs} msg/min** removed.")
-                    await self._store_mod_action(interaction.guild_id, "autoslowmode", f"removed threshold {msgs}msgs", interaction.user)
-                else:
-                    await interaction.response.send_message(f"❌ No threshold found at **{msgs} msg/min**.", ephemeral=True)
-            except ValueError:
-                await interaction.response.send_message("❌ Invalid number.", ephemeral=True)
+            if msgs < 1:
+                await interaction.response.send_message("❌ Please provide the messages-per-minute value (msgs) for the threshold to remove.", ephemeral=True)
+                return
+            cfg = _get_auto_slowmode_config()
+            thresholds = cfg["thresholds"]
+            if msgs in thresholds:
+                del thresholds[msgs]
+                _update_auto_slowmode({"thresholds": {str(k): v for k, v in thresholds.items()}})
+                await interaction.response.send_message(f"🐢 Threshold at **{msgs} msg/min** removed.")
+                await self._store_mod_action(interaction.guild_id, "autoslowmode", f"removed threshold {msgs}msgs", interaction.user)
+            else:
+                await interaction.response.send_message(f"❌ No threshold found at **{msgs} msg/min**.", ephemeral=True)
         else:
             await interaction.response.send_message(f"❌ Unknown action: `{action}`. Use `/autoslowmode` to see options.", ephemeral=True)
-
-        # Store a violation
-        await self._store_violation(
-            guild.id, user_id, "automod",
-            f"Discord AutoMod: {reason_label}"
-            + (f" — {matched_keyword[:80]}" if matched_keyword else ""),
-            guild.me
-        )
 
     # ── Interaction error handling ─────────────────────
 

@@ -12,3 +12,7 @@ numpy
 Pillow
 onnxruntime
 nopecha
+# ── Voice support ─────────────────────────────────────────
+# PyNaCl: required by discord.py-self's VoiceClient (declared voice extra).
+davey
+PyNaCl>=1.5.0,<1.6

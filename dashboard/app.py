@@ -76,6 +76,24 @@ except AttributeError:
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
+
+@app.route('/health')
+def health():
+    """Health check endpoint — used by uptime monitors / platform probes.
+
+    No auth required on purpose: it only reports process-level liveness and a
+    count of ready bots, never sensitive data.
+    """
+    ready = sum(1 for bot in state.bot_instances if getattr(bot, 'is_ready', False))
+    return jsonify({
+        'status': 'ok',
+        'uptime_seconds': int(time.time() - state.active_session_start),
+        'bots_total': len(state.bot_instances),
+        'bots_ready': ready,
+        'timestamp': time.time(),
+    })
+
+
 LOGIN_ATTEMPTS = {}
 BLOCK_DURATION = 300  
 MAX_ATTEMPTS = 5

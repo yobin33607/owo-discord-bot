@@ -7,7 +7,7 @@ plyer==2.1.0
 playsound3==3.3.0
 python-dotenv==1.2.2
 aiohttp-socks==0.10.1
-cryptography==48.0.1
+cryptography==50.0.0
 numpy
 Pillow
 onnxruntime

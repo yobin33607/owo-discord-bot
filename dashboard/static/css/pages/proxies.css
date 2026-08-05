@@ -116,3 +116,17 @@
 .proxy-bulk-result { margin-top: 10px; font-size: 0.85rem; }
 .proxy-bulk-ok { color: #22c55e; }
 .proxy-bulk-err { color: #f59e0b; margin-top: 6px; }
+
+.proxy-attempts {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid;
+    white-space: nowrap;
+}
+.proxy-attempts.all { color: #22c55e; border-color: #22c55e44; background: #22c55e14; }
+.proxy-attempts.partial { color: #f59e0b; border-color: #f59e0b44; background: #f59e0b14; }
+.proxy-attempts.none { color: #888; border-color: #444; background: rgba(255,255,255,0.03); }
+.proxy-table td { vertical-align: middle; }

@@ -240,7 +240,9 @@ async def test_proxy(proxy_dict, attempts=5):
     All attempts run in parallel, so wall-clock time is roughly one attempt
     (up to `timeout`), not attempts × timeout. The proxy counts as OK if ANY
     attempt gets a valid response — a flaky proxy that only connects on some
-    tries still passes. Returns as soon as the first attempt succeeds.
+    tries still passes. The per-attempt success count is stored in
+    proxy_dict['last_attempts'] (e.g. {"ok": 3, "total": 5}) so the dashboard
+    can display attempt results like "3/5".
     """
     async def _attempt():
         # Tiny random stagger so the attempts don't hit the proxy in an
@@ -248,47 +250,40 @@ async def test_proxy(proxy_dict, attempts=5):
         await asyncio.sleep(random.uniform(0, 0.3))
         return await _request_through_proxy(proxy_dict)
 
-    pending = [asyncio.create_task(_attempt()) for _ in range(max(1, attempts))]
-    ok = False
-    try:
-        # Run all attempts in parallel; short-circuit on the FIRST success so
-        # a working proxy reports OK immediately instead of waiting for the
-        # slowest attempt to finish. Remaining attempts are cancelled once
-        # a verdict is reached.
-        while pending and not ok:
-            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
-            for task in done:
-                try:
-                    succeeded = task.result() is True
-                except Exception:
-                    succeeded = False
-                if succeeded:
-                    ok = True
-                    break
-    finally:
-        for task in pending:
-            task.cancel()
-        # Await cancelled tasks so their async-with blocks (aiohttp sessions)
-        # unwind cleanly before the event loop closes — avoids 'Task was
-        # destroyed but it is pending!' warnings and leaked connections.
-        if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
+    total = max(1, attempts)
+    # Run ALL attempts to completion (no early exit) so the success count is
+    # accurate for display. Every attempt runs concurrently, so worst-case
+    # wall-clock is still ~one timeout, not attempts × timeout.
+    results = await asyncio.gather(
+        *[_attempt() for _ in range(total)],
+        return_exceptions=True,
+    )
+    ok_count = sum(1 for r in results if r is True)
+    ok = ok_count > 0
 
     proxy_dict["status"] = "ok" if ok else "fail"
     proxy_dict["last_check"] = datetime.now(timezone.utc).isoformat()
+    proxy_dict["last_attempts"] = {"ok": ok_count, "total": total}
     return ok
 
 
-async def test_all_proxies():
+async def test_all_proxies(max_concurrent=8):
+    """Test all enabled proxies in parallel (bounded concurrency).
+
+    Each proxy itself still runs its 5 attempts in parallel; proxies are
+    additionally tested side-by-side, up to `max_concurrent` at a time.
+    """
     proxies = load_proxies()
-    results = []
-    for proxy in proxies:
-        if not proxy.get("enabled", True):
-            continue
-        ok = await test_proxy(proxy)
-        results.append({"id": proxy.get("id"), "ok": ok})
+    targets = [p for p in proxies if p.get("enabled", True)]
+    sem = asyncio.Semaphore(max(1, max_concurrent))
+
+    async def _test_one(proxy):
+        async with sem:
+            await test_proxy(proxy)
+
+    await asyncio.gather(*(_test_one(p) for p in targets))
     save_proxies(proxies)
-    return results
+    return [{"id": p.get("id"), "ok": p.get("status") == "ok"} for p in targets]
 
 
 def _sync_assigned_to(proxies, accounts):

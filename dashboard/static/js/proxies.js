@@ -28,7 +28,7 @@ window.fetchProxies = async function() {
     } catch (e) {
         console.error('Failed to fetch proxies', e);
         const el = document.getElementById('proxy-table-body');
-        if (el) el.innerHTML = `<tr><td colspan="7" class="no-data error">Failed to load proxies</td></tr>`;
+        if (el) el.innerHTML = `<tr><td colspan="8" class="no-data error">Failed to load proxies</td></tr>`;
     }
 };
 
@@ -53,12 +53,23 @@ function statusBadge(status) {
     return `<span class="proxy-status-badge ${cls}">${label}</span>`;
 }
 
+// Render the attempt results from the last test, e.g. "3/5"
+function attemptsBadge(p) {
+    const a = p.last_attempts;
+    if (!a || a.total == null) return '<span class="proxy-attempts none">—</span>';
+    const all = a.ok >= a.total;
+    const partial = a.ok > 0;
+    const cls = all ? 'all' : (partial ? 'partial' : 'none');
+    const pct = a.total > 0 ? Math.round((a.ok / a.total) * 100) : 0;
+    return `<span class="proxy-attempts ${cls}" title="${a.ok} of ${a.total} attempts succeeded (${pct}%)">${a.ok}/${a.total}</span>`;
+}
+
 function renderProxyTable() {
     const body = document.getElementById('proxy-table-body');
     if (!body) return;
 
     if (!proxyList.length) {
-        body.innerHTML = '<tr><td colspan="7" class="no-data">No proxies yet. Use bulk import or add one.</td></tr>';
+        body.innerHTML = '<tr><td colspan="8" class="no-data">No proxies yet. Use bulk import or add one.</td></tr>';
         return;
     }
 
@@ -69,6 +80,7 @@ function renderProxyTable() {
             <td>${p.type || 'socks5'}</td>
             <td class="mono">${p.host}:${p.port}</td>
             <td>${statusBadge(p.status || 'unknown')}</td>
+            <td>${attemptsBadge(p)}</td>
             <td>${p.assigned_to || '-'}</td>
             <td class="proxy-actions">
                 <button class="btn-proxy-sm" onclick="testProxy('${p.id}')">Test</button>
@@ -119,6 +131,7 @@ window.bulkImportProxies = async function() {
 
 let proxyTesting = false;
 let proxyTestStopRequested = false;
+const PROXY_TEST_CONCURRENCY = 8; // max proxies tested at the same time
 
 function applyProxyTestResult(data) {
     if (!data || data.id == null) return;
@@ -129,10 +142,36 @@ function applyProxyTestResult(data) {
     } else {
         if (data.status) proxyList[idx].status = data.status;
         if (data.last_check) proxyList[idx].last_check = data.last_check;
+        if (data.last_attempts) proxyList[idx].last_attempts = data.last_attempts;
     }
 }
 
-async function testProxiesSequential(filter) {
+// Marks a proxy failed after a REQUEST-level error (no backend verdict).
+// last_attempts is left untouched so the row shows "—" instead of a fake 0/5.
+function markProxyFail(p) {
+    const idx = proxyList.findIndex(x => x.id === p.id);
+    if (idx !== -1) {
+        proxyList[idx].status = 'fail';
+        proxyList[idx].last_check = new Date().toISOString();
+    }
+}
+
+// Test a single proxy via the API (used by the pool and the row button)
+async function testProxyRequest(p, persist) {
+    const res = await fetch('/api/proxies/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: p.id, persist: persist }),
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) return { ok: true, data };
+    return { ok: false, data };
+}
+
+// Test many proxies in PARALLEL, up to PROXY_TEST_CONCURRENCY at a time.
+// Each proxy's 5 attempts also run in parallel on the backend, so a whole
+// pool can be verified in a single round-trip's worth of time.
+async function testProxiesParallel(filter) {
     if (proxyTesting) {
         showToast('A proxy test is already running', 'info');
         return;
@@ -167,49 +206,51 @@ async function testProxiesSequential(filter) {
 
     proxyTestStopRequested = false;
     let okCount = 0;
-    let testedCount = 0;
+    let completedCount = 0;
     let stopped = false;
     showProgress(true);
     setProgress(`Testing 0/${targets.length}...`, 0);
+
+    const tick = (label, done) => {
+        setProgress(label, done / targets.length);
+        renderProxyStats();
+        renderProxyTable();
+    };
+
     try {
-        for (let i = 0; i < targets.length; i++) {
-            if (proxyTestStopRequested) {
-                stopped = true;
-                break;
-            }
-            const p = targets[i];
-            setProgress(`Testing ${i + 1}/${targets.length}: ${p.host}:${p.port}...`, i / targets.length);
-            try {
-                const res = await fetch('/api/proxies/test', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: p.id, persist: false }),
-                });
-                const data = await res.json();
-                if (res.ok && data.ok) okCount++;
-                applyProxyTestResult(data);
-                if (!res.ok || data.ok === false) {
-                    const idx = proxyList.findIndex(x => x.id === p.id);
-                    if (idx !== -1) {
-                        proxyList[idx].status = 'fail';
-                        proxyList[idx].last_check = new Date().toISOString();
-                    }
+        // Run the test in a small worker pool: each worker pulls the next
+        // proxy and tests it. Concurrency stays bounded by the pool size.
+        const workers = [];
+        let nextIdx = 0;
+        const runWorker = async () => {
+            while (true) {
+                if (proxyTestStopRequested) {
+                    stopped = true;
+                    return;
                 }
-            } catch (e) {
-                const idx = proxyList.findIndex(x => x.id === p.id);
-                if (idx !== -1) {
-                    proxyList[idx].status = 'fail';
-                    proxyList[idx].last_check = new Date().toISOString();
+                const i = nextIdx++;
+                if (i >= targets.length) return;
+                const p = targets[i];
+                setProgress(`Testing ${p.host}:${p.port}...`, completedCount / targets.length);
+                try {
+                    const { ok, data } = await testProxyRequest(p, false);
+                    if (ok) okCount++;
+                    applyProxyTestResult(data);
+                    if (!ok) markProxyFail(p);
+                } catch (e) {
+                    markProxyFail(p);
                 }
+                completedCount++;
+                tick(`Tested ${completedCount}/${targets.length}: ${p.host}:${p.port}`, completedCount);
             }
-            testedCount = i + 1;
-            setProgress(`Tested ${testedCount}/${targets.length}: ${p.host}:${p.port}`, testedCount / targets.length);
-            renderProxyStats();
-            renderProxyTable();
-        }
+        };
+        const poolSize = Math.min(PROXY_TEST_CONCURRENCY, targets.length);
+        for (let w = 0; w < poolSize; w++) workers.push(runWorker());
+        await Promise.all(workers);
+
         // Persist the results collected so far in a single write
         // (avoids one GitHub commit per proxy; skipped if nothing was tested)
-        if (testedCount > 0) {
+        if (completedCount > 0) {
             try {
                 const persistRes = await fetch('/api/proxies', {
                     method: 'POST',
@@ -232,7 +273,7 @@ async function testProxiesSequential(filter) {
         proxyTestStopRequested = false;
     }
     if (stopped) {
-        showToast(testedCount > 0 ? `Test stopped: ${okCount}/${testedCount} OK so far` : 'Test stopped — no proxies tested yet', 'info');
+        showToast(completedCount > 0 ? `Test stopped: ${okCount}/${completedCount} OK so far` : 'Test stopped — no proxies tested yet', 'info');
     } else {
         showToast(`Test complete: ${okCount}/${targets.length} OK`, okCount === targets.length ? 'success' : 'info');
     }
@@ -246,21 +287,20 @@ window.stopProxyTests = function() {
     showToast('Stopping proxy test...', 'info');
 };
 
-window.testAllProxies = function() { testProxiesSequential('all'); };
-window.testUnverifiedProxies = function() { testProxiesSequential('unverified'); };
+window.testAllProxies = function() { testProxiesParallel('all'); };
+window.testUnverifiedProxies = function() { testProxiesParallel('unverified'); };
 
 window.testProxy = async function(id) {
     try {
-        const res = await fetch('/api/proxies/test', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id }),
-        });
-        const data = await res.json();
+        const p = proxyList.find(x => x.id === id);
+        if (!p) return;
+        const { ok, data } = await testProxyRequest(p, true);
         applyProxyTestResult(data);
         renderProxyStats();
         renderProxyTable();
-        showToast(data.ok ? 'Proxy OK' : 'Proxy failed', data.ok ? 'success' : 'error');
+        const a = data.last_attempts || (data.proxy && data.proxy.last_attempts);
+        const suffix = a ? ` (${a.ok}/${a.total} attempts)` : '';
+        showToast(ok ? `Proxy OK${suffix}` : 'Proxy failed', ok ? 'success' : 'error');
     } catch (e) {
         showToast('Test failed', 'error');
     }

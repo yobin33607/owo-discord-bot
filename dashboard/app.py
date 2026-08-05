@@ -1430,9 +1430,10 @@ def proxies_test():
                     if p.get('id') == proxy_id:
                         p['status'] = proxy['status']
                         p['last_check'] = proxy['last_check']
+                        p['last_attempts'] = proxy.get('last_attempts')
                         updated = p
                 proxy_manager.save_proxies(proxies)
-            return {"ok": ok, "id": proxy_id, "status": proxy['status'], "last_check": proxy['last_check'], "proxy": updated}
+            return {"ok": ok, "id": proxy_id, "status": proxy['status'], "last_check": proxy['last_check'], "last_attempts": proxy.get('last_attempts'), "proxy": updated}
         results = await proxy_manager.test_all_proxies()
         return {"results": results, "proxies": proxy_manager.load_proxies()}
 

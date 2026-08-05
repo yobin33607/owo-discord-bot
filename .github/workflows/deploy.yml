@@ -1,0 +1,33 @@
+name: Deploy
+
+on:
+  repository_dispatch:
+    types:
+      - deploy-prebuilt
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy via hook
+    runs-on: ubuntu-latest
+
+    # Only one deploy at a time; a newer trigger cancels a pending deploy.
+    concurrency:
+      group: deploy
+      cancel-in-progress: true
+
+    steps:
+      - name: Trigger deploy hook
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL }}
+          COMMIT_SHA: ${{ github.event.client_payload.commit || github.sha }}
+        run: |
+          if [ -z "$DEPLOY_HOOK_URL" ]; then
+            echo "::error::DEPLOY_HOOK_URL secret is not set — add it in Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+          echo "Deploying commit ${COMMIT_SHA} via deploy hook..."
+          curl -fsS --max-time 120 -X POST "$DEPLOY_HOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{\"ref\": \"$GITHUB_REF\", \"commit\": \"$COMMIT_SHA\"}"

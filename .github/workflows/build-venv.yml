@@ -152,14 +152,34 @@ jobs:
           done
 
       - name: Commit pre-built venvs (replace existing)
+        id: commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add prebuilt
-          git diff --cached --quiet && echo "No changes to pre-built venvs" || \
+          if git diff --cached --quiet; then
+            echo "No changes to pre-built venvs"
+            echo "committed=false" >> "$GITHUB_OUTPUT"
+          else
             git commit -m "chore: update pre-built venvs [skip ci]"
+            echo "committed=true" >> "$GITHUB_OUTPUT"
+            echo "new_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          fi
 
           branch="${GITHUB_REF#refs/heads/}"
           git fetch origin "$branch" 2>/dev/null || true
           git push --force-with-lease origin "HEAD:$branch"
+
+      - name: Trigger deploy workflow
+        # Only deploy when a new "chore: update pre-built venvs [skip ci]" commit was actually made.
+        # repository_dispatch is NOT affected by [skip ci], so the Deploy workflow will run.
+        if: steps.commit.outputs.committed == 'true'
+        env:
+          NEW_SHA: ${{ steps.commit.outputs.new_sha }}
+        run: |
+          curl -fsS --max-time 120 -X POST \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/dispatches" \
+            -d "{\"event_type\": \"deploy-prebuilt\", \"client_payload\": {\"commit\": \"${NEW_SHA}\", \"ref\": \"${{ github.ref }}\"}}"

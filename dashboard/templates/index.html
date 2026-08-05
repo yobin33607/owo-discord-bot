@@ -203,12 +203,20 @@
                     <button class="btn-control" id="testUnverifiedProxiesBtn" onclick="testUnverifiedProxies()"><span class="icon-svg"
                             style="--icon: url('/static/assets/limey_icons/flask.svg');"></span> <span
                             class="btn-text">Test Unverified</span></button>
-                    <span id="proxy-test-progress" class="proxy-test-progress"></span>
+                    <button class="btn-control red" id="stopProxyTestsBtn" onclick="stopProxyTests()" disabled><span class="icon-svg"
+                            style="--icon: url('/static/assets/limey_icons/stop.svg');"></span> <span
+                            class="btn-text">Stop</span></button>
+                    <div id="proxy-test-progress" class="proxy-test-progress" style="display:none;">
+                        <div class="proxy-test-progress-bar">
+                            <div class="proxy-test-progress-fill" id="proxy-test-progress-fill"></div>
+                        </div>
+                        <span class="proxy-test-progress-text" id="proxy-test-progress-text"></span>
+                    </div>
                     <button class="btn-control gold" onclick="autoAssignProxies()"><span class="icon-svg"
                             style="--icon: url('/static/assets/limey_icons/link.svg');"></span> <span
                             class="btn-text">Auto-Assign</span></button>
                     <!-- NEW: Delete Failed & Delete All buttons -->
-                    <button class="btn-control red" onclick="deleteFailedProxies()"><span class="icon-svg"
+                    <button class="btn-control red" id="deleteFailedProxiesBtn" onclick="deleteFailedProxies()"><span class="icon-svg"
                             style="--icon: url('/static/assets/limey_icons/trash.svg');"></span> <span
                             class="btn-text">Delete Failed</span></button>
                     <button class="btn-control red" onclick="deleteAllProxies()"><span class="icon-svg"

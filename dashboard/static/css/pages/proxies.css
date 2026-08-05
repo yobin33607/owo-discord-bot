@@ -49,12 +49,39 @@
     margin-bottom: 20px;
 }
 .proxy-test-progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1 1 220px;
+    min-width: 200px;
+    max-width: 360px;
     align-self: center;
-    font-family: var(--font-mono);
-    font-size: 0.8rem;
-    color: var(--primary);
     margin-left: 4px;
-    min-height: 1.2em;
+}
+.proxy-test-progress-bar {
+    flex: 1;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+}
+.proxy-test-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--primary), #a855f7);
+    border-radius: 999px;
+    transition: width 0.35s ease;
+    box-shadow: 0 0 8px var(--primary);
+}
+.proxy-test-progress-text {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
     animation: proxyProgressPulse 1.2s ease-in-out infinite;
 }
 .proxy-toolbar .btn-control:disabled {

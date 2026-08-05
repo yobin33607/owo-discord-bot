@@ -1369,17 +1369,21 @@ def proxies_test():
 
     async def _run():
         if proxy_id:
+            persist = payload.get('persist', True)
             proxy = proxy_manager.get_proxy_by_id(proxy_id)
             if not proxy:
                 return {"ok": False, "error": "not found"}
             ok = await proxy_manager.test_proxy(proxy)
-            proxies = proxy_manager.load_proxies()
-            for p in proxies:
-                if p.get('id') == proxy_id:
-                    p['status'] = proxy['status']
-                    p['last_check'] = proxy['last_check']
-            proxy_manager.save_proxies(proxies)
-            return {"ok": ok, "id": proxy_id, "status": proxy['status']}
+            updated = proxy
+            if persist:
+                proxies = proxy_manager.load_proxies()
+                for p in proxies:
+                    if p.get('id') == proxy_id:
+                        p['status'] = proxy['status']
+                        p['last_check'] = proxy['last_check']
+                        updated = p
+                proxy_manager.save_proxies(proxies)
+            return {"ok": ok, "id": proxy_id, "status": proxy['status'], "last_check": proxy['last_check'], "proxy": updated}
         results = await proxy_manager.test_all_proxies()
         return {"results": results, "proxies": proxy_manager.load_proxies()}
 

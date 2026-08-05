@@ -48,6 +48,24 @@
     gap: 10px;
     margin-bottom: 20px;
 }
+.proxy-test-progress {
+    align-self: center;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--primary);
+    margin-left: 4px;
+    min-height: 1.2em;
+    animation: proxyProgressPulse 1.2s ease-in-out infinite;
+}
+.proxy-toolbar .btn-control:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+@keyframes proxyProgressPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+}
 .proxy-bulk-panel {
     background: rgba(0, 0, 0, 0.25);
     border: 1px solid var(--border);

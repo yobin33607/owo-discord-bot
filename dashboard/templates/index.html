@@ -197,9 +197,13 @@
                     <button class="btn-control green" onclick="showAddProxyModal()"><span class="icon-svg"
                             style="--icon: url('/static/assets/limey_icons/plus.svg');"></span> <span
                             class="btn-text">Add Proxy</span></button>
-                    <button class="btn-control" onclick="testAllProxies()"><span class="icon-svg"
+                    <button class="btn-control" id="testAllProxiesBtn" onclick="testAllProxies()"><span class="icon-svg"
                             style="--icon: url('/static/assets/limey_icons/rotate.svg');"></span> <span
                             class="btn-text">Test All</span></button>
+                    <button class="btn-control" id="testUnverifiedProxiesBtn" onclick="testUnverifiedProxies()"><span class="icon-svg"
+                            style="--icon: url('/static/assets/limey_icons/flask.svg');"></span> <span
+                            class="btn-text">Test Unverified</span></button>
+                    <span id="proxy-test-progress" class="proxy-test-progress"></span>
                     <button class="btn-control gold" onclick="autoAssignProxies()"><span class="icon-svg"
                             style="--icon: url('/static/assets/limey_icons/link.svg');"></span> <span
                             class="btn-text">Auto-Assign</span></button>

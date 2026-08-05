@@ -117,20 +117,102 @@ window.bulkImportProxies = async function() {
     }
 };
 
-window.testAllProxies = async function() {
-    showToast('Testing all proxies...', 'info');
-    try {
-        const res = await fetch('/api/proxies/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-        const data = await res.json();
-        proxyList = data.proxies || proxyList;
-        renderProxyStats();
-        renderProxyTable();
-        const ok = (data.results || []).filter(r => r.ok).length;
-        showToast(`Test complete: ${ok} OK`, 'success');
-    } catch (e) {
-        showToast('Proxy test failed', 'error');
+let proxyTesting = false;
+
+function applyProxyTestResult(data) {
+    if (!data || data.id == null) return;
+    const idx = proxyList.findIndex(x => x.id === data.id);
+    if (idx === -1) return;
+    if (data.proxy) {
+        proxyList[idx] = data.proxy;
+    } else {
+        if (data.status) proxyList[idx].status = data.status;
+        if (data.last_check) proxyList[idx].last_check = data.last_check;
     }
-};
+}
+
+async function testProxiesSequential(filter) {
+    if (proxyTesting) {
+        showToast('A proxy test is already running', 'info');
+        return;
+    }
+
+    const targets = proxyList.filter(p =>
+        p.enabled !== false && (filter === 'all' || (p.status || 'unknown') !== 'ok')
+    );
+    if (!targets.length) {
+        showToast(filter === 'all' ? 'No enabled proxies to test' : 'No unverified proxies to test', 'info');
+        return;
+    }
+
+    proxyTesting = true;
+    const progressEl = document.getElementById('proxy-test-progress');
+    const setProgress = (text) => { if (progressEl) progressEl.textContent = text; };
+    const toggleBtns = (busy) => {
+        ['testAllProxiesBtn', 'testUnverifiedProxiesBtn'].forEach(id => {
+            const b = document.getElementById(id);
+            if (b) b.disabled = busy;
+        });
+    };
+    toggleBtns(true);
+
+    let okCount = 0;
+    setProgress(`Testing 0/${targets.length}...`);
+    try {
+        for (let i = 0; i < targets.length; i++) {
+            const p = targets[i];
+            setProgress(`Testing ${i + 1}/${targets.length}: ${p.host}:${p.port}...`);
+            try {
+                const res = await fetch('/api/proxies/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: p.id, persist: false }),
+                });
+                const data = await res.json();
+                if (res.ok && data.ok) okCount++;
+                applyProxyTestResult(data);
+                if (!res.ok || data.ok === false) {
+                    const idx = proxyList.findIndex(x => x.id === p.id);
+                    if (idx !== -1) {
+                        proxyList[idx].status = 'fail';
+                        proxyList[idx].last_check = new Date().toISOString();
+                    }
+                }
+            } catch (e) {
+                const idx = proxyList.findIndex(x => x.id === p.id);
+                if (idx !== -1) {
+                    proxyList[idx].status = 'fail';
+                    proxyList[idx].last_check = new Date().toISOString();
+                }
+            }
+            renderProxyStats();
+            renderProxyTable();
+        }
+        try {
+            // Persist all results in a single write (avoids one GitHub commit per proxy)
+            const persistRes = await fetch('/api/proxies', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ proxies: proxyList }),
+            });
+            if (!persistRes.ok) {
+                console.error('Failed to persist proxy test results:', persistRes.status);
+                showToast('Warning: results could not be saved', 'error');
+            }
+        } catch (e) {
+            console.error('Failed to persist proxy test results', e);
+            showToast('Warning: results could not be saved', 'error');
+        }
+    } finally {
+        setProgress('');
+        toggleBtns(false);
+        proxyTesting = false;
+    }
+    showToast(`Test complete: ${okCount}/${targets.length} OK`, okCount === targets.length ? 'success' : 'info');
+}
+
+window.testAllProxies = function() { testProxiesSequential('all'); };
+window.testUnverifiedProxies = function() { testProxiesSequential('unverified'); };
 
 window.testProxy = async function(id) {
     try {
@@ -140,7 +222,7 @@ window.testProxy = async function(id) {
             body: JSON.stringify({ id }),
         });
         const data = await res.json();
-        if (data.proxies) proxyList = data.proxies;
+        applyProxyTestResult(data);
         renderProxyStats();
         renderProxyTable();
         showToast(data.ok ? 'Proxy OK' : 'Proxy failed', data.ok ? 'success' : 'error');

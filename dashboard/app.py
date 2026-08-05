@@ -19,6 +19,7 @@ Limey - https://github.com/cubiced0/owo-discord-bot
 
 
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for, g
+from werkzeug.exceptions import HTTPException
 from functools import wraps
 import threading
 import time
@@ -861,6 +862,23 @@ def not_found(e):
     return render_template('404.html', first_segment=first_segment), 404
 
 
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Global handler: API routes must always return JSON, never an HTML error page.
+    The dashboard JS parses every /api response as JSON — an HTML 500/502/503 page
+    from here caused the 'Unexpected token <' / 'Unexpected end of JSON input'
+    crashes in the console. For /api/ paths we return a JSON error; other paths
+    get a plain 500 (same as Flask's default). HTTPExceptions (405, 403, etc.)
+    pass through unchanged so their real status codes are preserved.
+    """
+    if isinstance(e, HTTPException):
+        return e
+    app.logger.exception("Unhandled exception on %s: %s", request.path, e)
+    if request.path.startswith('/api/'):
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+    return "Internal Server Error", 500
+
+
 @app.route('/')
 def home():
     if 'logged_in' in session:
@@ -1080,6 +1098,33 @@ def stats():
     is_active = bot and str(bot.user.id) == uid if bot and bot.user else False
     current_status = ("PAUSED" if bot.paused else "ONLINE") if is_active else "OFFLINE"
 
+    # ── Defensive scheduling / throttle data ───────────────────
+    # cmd_states values are normally dicts, but a bad cog could store
+    # anything — never let that crash the stats endpoint.
+    cmd_states = {}
+    if bot:
+        try:
+            for k, v in bot.cmd_states.items():
+                if not isinstance(v, dict):
+                    continue
+                item = dict(v)
+                content = item.get('content')
+                item['content'] = '[Dynamic function]' if callable(content) else content
+                cmd_states[k] = item
+        except Exception:
+            cmd_states = {}
+
+    throttle_until = getattr(bot, 'throttle_until', 0) if is_active else 0
+    if is_active and throttle_until == float('inf'):
+        cooldown_remaining = 999999
+    elif is_active:
+        try:
+            cooldown_remaining = max(0, int(throttle_until - time.time()))
+        except Exception:
+            cooldown_remaining = 0
+    else:
+        cooldown_remaining = 0
+
     response_data = {
         'uptime': utils.format_seconds(elapsed),
         'cash': st.get('current_cash', 0),
@@ -1100,8 +1145,8 @@ def stats():
             'username': st.get('username', 'Unknown'),
             'channel_id': bot.channel_id if is_active else None,
             'paused': bot.paused if is_active else True,
-            'throttled': (time.time() < bot.throttle_until) if is_active else False,
-            'cooldown_remaining': 999999 if (is_active and bot.throttle_until == float('inf')) else (max(0, int(bot.throttle_until - time.time())) if is_active else 0),
+            'throttled': is_active and throttle_until != float('inf') and time.time() < throttle_until,
+            'cooldown_remaining': cooldown_remaining,
             'cooldown_command': bot.last_sent_command if is_active else None
         },
         'chart_data': {
@@ -1121,11 +1166,15 @@ def stats():
         },
         'quest_data': st.get('quest_data', []),
         'next_quest_timer': st.get('next_quest_timer'),
-        'cmd_states': {k: {**v, 'content': '[Dynamic function]' if callable(v.get('content')) else v.get('content')} for k, v in bot.cmd_states.items()} if bot else {},
+        'cmd_states': cmd_states,
         'gambling_stats': st.get('gambling_stats', {})
     }
     
-    return jsonify(response_data)
+    try:
+        return jsonify(protect_large_ints(response_data))
+    except Exception as e:
+        log.warning(f"Stats serialization failed: {e}")
+        return jsonify({'status': current_status}), 200
 
 @app.route('/api/debug')
 @login_required

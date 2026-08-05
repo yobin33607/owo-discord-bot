@@ -20,6 +20,7 @@ Limey - https://github.com/cubiced0/owo-discord-bot
 import asyncio
 import json
 import os
+import random
 import re
 import secrets
 import time
@@ -233,8 +234,46 @@ async def _request_through_proxy(proxy_dict, timeout=5):
         return False
 
 
-async def test_proxy(proxy_dict):
-    ok = await _request_through_proxy(proxy_dict)
+async def test_proxy(proxy_dict, attempts=5):
+    """Test a proxy with up to `attempts` concurrent connection attempts.
+
+    All attempts run in parallel, so wall-clock time is roughly one attempt
+    (up to `timeout`), not attempts × timeout. The proxy counts as OK if ANY
+    attempt gets a valid response — a flaky proxy that only connects on some
+    tries still passes. Returns as soon as the first attempt succeeds.
+    """
+    async def _attempt():
+        # Tiny random stagger so the attempts don't hit the proxy in an
+        # exact simultaneous burst (some providers flag parallel connections).
+        await asyncio.sleep(random.uniform(0, 0.3))
+        return await _request_through_proxy(proxy_dict)
+
+    pending = [asyncio.create_task(_attempt()) for _ in range(max(1, attempts))]
+    ok = False
+    try:
+        # Run all attempts in parallel; short-circuit on the FIRST success so
+        # a working proxy reports OK immediately instead of waiting for the
+        # slowest attempt to finish. Remaining attempts are cancelled once
+        # a verdict is reached.
+        while pending and not ok:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                try:
+                    succeeded = task.result() is True
+                except Exception:
+                    succeeded = False
+                if succeeded:
+                    ok = True
+                    break
+    finally:
+        for task in pending:
+            task.cancel()
+        # Await cancelled tasks so their async-with blocks (aiohttp sessions)
+        # unwind cleanly before the event loop closes — avoids 'Task was
+        # destroyed but it is pending!' warnings and leaked connections.
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+
     proxy_dict["status"] = "ok" if ok else "fail"
     proxy_dict["last_check"] = datetime.now(timezone.utc).isoformat()
     return ok

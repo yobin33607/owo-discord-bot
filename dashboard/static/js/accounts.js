@@ -15,12 +15,19 @@
 
 */
 
+let _accountsFailStreak = 0;
+let _lastAccountsFailAt = 0;
+
 window.fetchAccounts = async function() {
-    console.log("Fetching accounts...");
+    // Back off after repeated failures (server down) instead of hammering it every 5s
+    if (_accountsFailStreak >= 3 && (Date.now() - _lastAccountsFailAt) < 15000) return;
     try {
         const res = await fetch('/api/accounts/list');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) throw new Error('Non-JSON response');
         const data = await res.json();
-        console.log(`Fetched ${data.length} accounts`);
+        _accountsFailStreak = 0;
         accountsList = data;
         if (data.length > 0) {
             if (!currentAccountId || !data.find(a => a.id === currentAccountId)) {
@@ -30,9 +37,17 @@ window.fetchAccounts = async function() {
         renderAccountGrid();
         updateGlobalAccountName(); 
     } catch (e) {
-        console.error("Failed to fetch accounts", e);
+        _accountsFailStreak++;
+        _lastAccountsFailAt = Date.now();
+        if (_accountsFailStreak === 1 || _accountsFailStreak === 3) {
+            console.warn('Failed to fetch accounts (server unreachable?) — keeping last list:', e.message || e);
+        }
+        // Only show an error when there's nothing on screen already; don't wipe
+        // a previously-loaded grid because of a transient outage.
         const grid = document.getElementById('accounts-grid');
-        if (grid) grid.innerHTML = `<div class="no-data error">Error fetching accounts: ${e.message}</div>`;
+        if (grid && (!accountsList || accountsList.length === 0)) {
+            grid.innerHTML = `<div class="no-data error">Server unreachable — retrying automatically…</div>`;
+        }
     }
 };
 

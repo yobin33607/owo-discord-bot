@@ -92,54 +92,79 @@ function _updateCashCheckDisplay(lastCashUpdate) {
 }
 
     
-function update() {
-    const q = currentAccountId ? `?id=${currentAccountId}` : '';
-    fetch(`/api/stats${q}`).then(r => r.json()).then(d => {
-        console.log('Logs received:', d.logs);
-        if (!d || Object.keys(d).length === 0) return;
-        if (d.bot) {
-            console.log(`[Stats Update] ${d.bot.username} (#${d.bot.user_id}): ${Object.keys(d.cmd_states || {}).length} commands in scheduler.`);
-            const nameEl = document.getElementById('currentAccountName');
-            if (nameEl) nameEl.innerText = `ACCOUNT: ${d.bot.username}`;
-        }
-        if (d.cash) document.getElementById('cash').innerText = d.cash.toLocaleString();
-        if (d.uptime) document.getElementById('uptimeDisplay').innerText = d.uptime;
-        if (d.logs) renderLogs(d.logs);
-        const dot = document.getElementById('statusDot'), lbl = document.getElementById('botStatus');
-        lbl.innerText = d.status; dot.className = "ping-dot " + (d.status === "PAUSED" ? "paused" : "");
-        if (d.status === "PAUSED" && d.security && d.security.last_message) {
-            document.getElementById('securityAlert').style.display = 'flex';
-            document.getElementById('captchaMsg').innerText = d.security.last_message;
+let _statsFailStreak = 0;
+let _lastStatsFailAt = 0;
 
-            const acc = accountsList.find(a => a.id === currentAccountId);
-            if (acc) openEmbeddedCaptcha(currentAccountId, acc.username);
-        } else {
-            document.getElementById('securityAlert').style.display = 'none';
-        }
-        if (d.chart_data) {
-            document.getElementById('huntsToday').innerHTML = `${d.chart_data.hunt} <span style="font-size:0.5em; color:var(--success);" id="huntsSession">(${d.chart_data.session_hunt} this session)</span>`;
-            document.getElementById('battlesToday').innerHTML = `${d.chart_data.battle} <span style="font-size:0.5em; color:#3b82f6;" id="battlesSession">(${d.chart_data.session_battle} this session)</span>`;
-            document.getElementById('cpm').innerText = d.chart_data.perf_bpm;
-            if (document.getElementById('totalOwO')) document.getElementById('totalOwO').innerHTML = `${d.chart_data.owo} <span style="font-size:0.5em; color:#a855f7;" id="owoSession">(${d.chart_data.session_owo} this session)</span>`;
-        }
-        if (d.security) {
-            const sc = document.getElementById('sec-captchas'); if (sc) sc.innerText = d.security.captchas;
-            const sb = document.getElementById('sec-bans'); if (sb) sb.innerText = d.security.bans;
-            const sw = document.getElementById('sec-warns'); if (sw) sw.innerText = d.security.warnings;
-        }
-        // Update last cash check display
-        if (d.system && d.system.last_cash_update !== undefined) {
-            _updateCashCheckDisplay(d.system.last_cash_update);
-        }
-        if (lineChart && d.chart_data) {
-            lineChart.data.datasets[0].data.push(d.chart_data.perf_bpm);
-            lineChart.data.datasets[0].data.shift();
-            lineChart.update('none');
-        }
-        try { renderQuests(d.quest_data, d.next_quest_timer); } catch(e) { console.error("Quest Render Error:", e); }
-        try { if (d.cmd_states) renderScheduler(d.cmd_states); } catch(e) { console.error("Scheduler Render Error in update():\n", e); }
-        try { fetchSecuritySummary(); } catch(e) { console.error("Security Summary Error:\n", e); }
-    });
+// True when the last /api/stats response was not JSON (server down / HTML error page)
+function _statsSkipped() {
+    // After 3 consecutive failures, only retry every 15s instead of every 1s,
+    // so a down server isn't hammered and the console isn't flooded.
+    return _statsFailStreak >= 3 && (Date.now() - _lastStatsFailAt) < 15000;
+}
+
+function update() {
+    if (_statsSkipped()) return;
+    const q = currentAccountId ? `?id=${currentAccountId}` : '';
+    fetch(`/api/stats${q}`)
+        .then(r => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const ct = r.headers.get('content-type') || '';
+            if (!ct.includes('application/json')) throw new Error('Non-JSON response');
+            return r.json();
+        })
+        .then(d => {
+            _statsFailStreak = 0;
+            if (!d || Object.keys(d).length === 0) return;
+            if (d.bot) {
+                const nameEl = document.getElementById('currentAccountName');
+                if (nameEl) nameEl.innerText = `ACCOUNT: ${d.bot.username}`;
+            }
+            if (d.cash) document.getElementById('cash').innerText = d.cash.toLocaleString();
+            if (d.uptime) document.getElementById('uptimeDisplay').innerText = d.uptime;
+            if (d.logs) renderLogs(d.logs);
+            const dot = document.getElementById('statusDot'), lbl = document.getElementById('botStatus');
+            lbl.innerText = d.status; dot.className = "ping-dot " + (d.status === "PAUSED" ? "paused" : "");
+            if (d.status === "PAUSED" && d.security && d.security.last_message) {
+                document.getElementById('securityAlert').style.display = 'flex';
+                document.getElementById('captchaMsg').innerText = d.security.last_message;
+
+                const acc = accountsList.find(a => a.id === currentAccountId);
+                if (acc) openEmbeddedCaptcha(currentAccountId, acc.username);
+            } else {
+                document.getElementById('securityAlert').style.display = 'none';
+            }
+            if (d.chart_data) {
+                document.getElementById('huntsToday').innerHTML = `${d.chart_data.hunt} <span style="font-size:0.5em; color:var(--success);" id="huntsSession">(${d.chart_data.session_hunt} this session)</span>`;
+                document.getElementById('battlesToday').innerHTML = `${d.chart_data.battle} <span style="font-size:0.5em; color:#3b82f6;" id="battlesSession">(${d.chart_data.session_battle} this session)</span>`;
+                document.getElementById('cpm').innerText = d.chart_data.perf_bpm;
+                if (document.getElementById('totalOwO')) document.getElementById('totalOwO').innerHTML = `${d.chart_data.owo} <span style="font-size:0.5em; color:#a855f7;" id="owoSession">(${d.chart_data.session_owo} this session)</span>`;
+            }
+            if (d.security) {
+                const sc = document.getElementById('sec-captchas'); if (sc) sc.innerText = d.security.captchas;
+                const sb = document.getElementById('sec-bans'); if (sb) sb.innerText = d.security.bans;
+                const sw = document.getElementById('sec-warns'); if (sw) sw.innerText = d.security.warnings;
+            }
+            // Update last cash check display
+            if (d.system && d.system.last_cash_update !== undefined) {
+                _updateCashCheckDisplay(d.system.last_cash_update);
+            }
+            if (lineChart && d.chart_data) {
+                lineChart.data.datasets[0].data.push(d.chart_data.perf_bpm);
+                lineChart.data.datasets[0].data.shift();
+                lineChart.update('none');
+            }
+            try { renderQuests(d.quest_data, d.next_quest_timer); } catch(e) { console.error("Quest Render Error:", e); }
+            try { if (d.cmd_states) renderScheduler(d.cmd_states); } catch(e) { console.error("Scheduler Render Error in update():\n", e); }
+            try { fetchSecuritySummary(); } catch(e) { console.error("Security Summary Error:\n", e); }
+        })
+        .catch(e => {
+            _statsFailStreak++;
+            _lastStatsFailAt = Date.now();
+            // Keep the previous stats on screen; log only the first failure of a streak.
+            if (_statsFailStreak === 1 || _statsFailStreak === 3) {
+                console.warn('Stats update failed (server unreachable?) — keeping last data:', e.message || e);
+            }
+        });
 }
 
 

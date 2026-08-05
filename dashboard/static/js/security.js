@@ -201,10 +201,19 @@ window.fetchCaptchaBalance = async function() {
     }
 };
 
+let _captchaPollFailStreak = 0;
+let _lastCaptchaPollFailAt = 0;
+
 async function updatePendingCaptchas() {
+    // Back off after repeated failures (server down) instead of polling every 2s
+    if (_captchaPollFailStreak >= 3 && (Date.now() - _lastCaptchaPollFailAt) < 10000) return;
     try {
         const res = await fetch('/api/captcha/pending');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) throw new Error('Non-JSON response');
         const data = await res.json();
+        _captchaPollFailStreak = 0;
         const pending = data.pending || [];
         const newPending = {};
         pending.forEach(p => {
@@ -222,7 +231,12 @@ async function updatePendingCaptchas() {
         });
         updateNotificationUI();
     } catch (e) {
-        console.error('Failed to fetch pending captchas:', e);
+        _captchaPollFailStreak++;
+        _lastCaptchaPollFailAt = Date.now();
+        // Keep the last known pending captchas; log only the first failure of a streak.
+        if (_captchaPollFailStreak === 1 || _captchaPollFailStreak === 3) {
+            console.warn('Failed to fetch pending captchas (server unreachable?) — keeping last data:', e.message || e);
+        }
     }
 }
 

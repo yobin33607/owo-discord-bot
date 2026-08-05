@@ -19,13 +19,21 @@ Limey - https://github.com/cubiced0/owo-discord-bot
 import time
 import json
 import os
+from collections import deque
 from rich.console import Console
+
+# Cap on the dedup tracking dict. Without a bound, `last_logs` grows forever
+# (every unique log message adds a permanent entry) which slowly eats memory
+# on long-running instances until Render kills the process at ~512MB.
+_LAST_LOGS_MAX = 5000
+_LAST_LOGS_PRUNE_TO = 4000
 
 class LimeyLogs:
     def __init__(self):
         self.console = Console()
         self.log_config = {}
         self.last_logs = {}
+        self._last_log_keys = deque()  # insertion order for LRU-style pruning
         self._load_config()
 
     def _load_config(self):
@@ -45,7 +53,10 @@ class LimeyLogs:
         dedup_key = f"{bot_uid}:{log_type}:{message}"
         if now - self.last_logs.get(dedup_key, 0) < 1.0:
             return
+        if dedup_key not in self.last_logs:
+            self._last_log_keys.append(dedup_key)
         self.last_logs[dedup_key] = now
+        self._prune_last_logs()
 
         type_colors = self.log_config.get("colors", {})
         colors = {
@@ -82,5 +93,17 @@ class LimeyLogs:
         import core.state as state
         bot_id = str(bot.user.id) if (hasattr(bot, '_connection') and bot.user) else (getattr(bot, 'user_id', None))
         state.log_command(log_type, message, "info", bot_name=username, bot_id=bot_id)
+
+    def _prune_last_logs(self):
+        """Drop the oldest tracked keys once the dedup dict exceeds its cap.
+
+        Losing an entry only means one duplicate log line might slip through
+        the 1-second dedup window once — a harmless trade for bounded memory.
+        """
+        if len(self.last_logs) <= _LAST_LOGS_MAX:
+            return
+        while len(self.last_logs) > _LAST_LOGS_PRUNE_TO and self._last_log_keys:
+            old_key = self._last_log_keys.popleft()
+            self.last_logs.pop(old_key, None)
 
 limey_logger = LimeyLogs()

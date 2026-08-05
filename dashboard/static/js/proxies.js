@@ -171,19 +171,21 @@ async function testProxyRequest(p, persist) {
 // Test many proxies in PARALLEL, up to PROXY_TEST_CONCURRENCY at a time.
 // Each proxy's 5 attempts also run in parallel on the backend, so a whole
 // pool can be verified in a single round-trip's worth of time.
-async function testProxiesParallel(filter) {
+// `limit` (optional): only test the first N matching proxies (0/undefined = all).
+async function testProxiesParallel(filter, limit) {
     if (proxyTesting) {
         showToast('A proxy test is already running', 'info');
         return;
     }
 
-    const targets = proxyList.filter(p =>
+    const matches = proxyList.filter(p =>
         p.enabled !== false && (filter === 'all' || (p.status || 'unknown') !== 'ok')
     );
-    if (!targets.length) {
+    if (!matches.length) {
         showToast(filter === 'all' ? 'No enabled proxies to test' : 'No unverified proxies to test', 'info');
         return;
     }
+    const targets = (limit && limit > 0 && limit < matches.length) ? matches.slice(0, limit) : matches;
 
     proxyTesting = true;
     const progressWrap = document.getElementById('proxy-test-progress');
@@ -275,7 +277,10 @@ async function testProxiesParallel(filter) {
     if (stopped) {
         showToast(completedCount > 0 ? `Test stopped: ${okCount}/${completedCount} OK so far` : 'Test stopped — no proxies tested yet', 'info');
     } else {
-        showToast(`Test complete: ${okCount}/${targets.length} OK`, okCount === targets.length ? 'success' : 'info');
+        const scope = (limit && limit > 0 && targets.length < matches.length)
+            ? ` (first ${targets.length} of ${matches.length})`
+            : '';
+        showToast(`Test complete: ${okCount}/${targets.length} OK${scope}`, okCount === targets.length ? 'success' : 'info');
     }
 }
 
@@ -287,8 +292,59 @@ window.stopProxyTests = function() {
     showToast('Stopping proxy test...', 'info');
 };
 
-window.testAllProxies = function() { testProxiesParallel('all'); };
-window.testUnverifiedProxies = function() { testProxiesParallel('unverified'); };
+window.testAllProxies = function() { closeTestUnverifiedOptions(); testProxiesParallel('all'); };
+window.testUnverifiedProxies = function() {
+    // Read the current count from the popover input; default to a small batch
+    // (10) so "Test Unverified" stays quick unless the user asks for more.
+    const input = document.getElementById('testUnverifiedCount');
+    const raw = input ? parseInt(input.value, 10) : NaN;
+    const limit = (raw && raw > 0) ? raw : 10;
+    closeTestUnverifiedOptions();
+    testProxiesParallel('unverified', limit);
+};
+
+// Quick preset / custom-count entry from the options popover.
+window.quickTestUnverified = function(limit) {
+    if (limit === undefined) {
+        const input = document.getElementById('testUnverifiedCount');
+        const raw = input ? parseInt(input.value, 10) : NaN;
+        limit = (raw && raw > 0) ? raw : 10;
+    }
+    closeTestUnverifiedOptions();
+    testProxiesParallel('unverified', limit);
+};
+
+window.toggleTestUnverifiedOptions = function(e) {
+    if (e && e.stopPropagation) e.stopPropagation();
+    const pop = document.getElementById('testUnverifiedOptions');
+    if (!pop) return;
+    const open = pop.classList.toggle('open');
+    if (open) {
+        // Show how many unverified proxies are available to test
+        const hint = document.getElementById('testUnverifiedCountHint');
+        if (hint) {
+            const count = proxyList.filter(p => p.enabled !== false && (p.status || 'unknown') !== 'ok').length;
+            hint.textContent = count === 0 ? 'No unverified proxies' : `${count} unverified ready`;
+        }
+    }
+    // Mark the active preset chip (only when the custom input is empty)
+    const countInput = document.getElementById('testUnverifiedCount');
+    const noCustom = !countInput || !countInput.value;
+    pop.querySelectorAll('.proxy-test-option-chip').forEach(chip => {
+        chip.classList.toggle('active', noCustom && chip.dataset.limit === '10');
+    });
+};
+
+function closeTestUnverifiedOptions() {
+    const pop = document.getElementById('testUnverifiedOptions');
+    if (pop) pop.classList.remove('open');
+}
+
+// Close the popover when clicking anywhere outside it.
+document.addEventListener('click', function(e) {
+    const wrap = document.querySelector('.proxy-test-unverified-wrap');
+    if (wrap && !wrap.contains(e.target)) closeTestUnverifiedOptions();
+});
 
 window.testProxy = async function(id) {
     try {

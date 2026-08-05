@@ -79,6 +79,11 @@ class LimeyBot(commands.Bot):
             command_prefix=self.prefix,
             self_bot=True,
             enable_debug_events=True,
+            # Limey only sends commands and reacts to events — it never reads
+            # historical messages. Capping the internal message cache keeps
+            # memory flat on long-running instances (discord.py-self defaults
+            # to 1000 messages per bot, which multiplies across accounts).
+            max_messages=100,
             proxy=proxy_url,
             proxy_auth=proxy_auth,
         )

@@ -135,8 +135,35 @@ HEADERS = {
 _cache: dict[str, dict] = {}  # path -> {data, sha, fetched_at}
 _cache_ttl = 5.0  # seconds before re-fetching
 
+# Bounds for the cache so long-running processes don't accumulate every file
+# ever read in memory. Entries older than _cache_max_age are dropped whenever
+# the cache exceeds _cache_max_entries.
+_cache_max_entries = 200
+_cache_max_age = 600.0  # 10 minutes
+
 # Track recently written paths to avoid stale cache
 _written_paths: set[str] = set()
+
+
+def _prune_cache():
+    """Evict stale cache entries once the cache grows past its bound."""
+    if len(_cache) <= _cache_max_entries:
+        return
+    now = time.time()
+    stale = [
+        path for path, entry in _cache.items()
+        if path not in _written_paths
+        and now - entry.get("fetched_at", 0) > _cache_max_age
+    ]
+    for path in stale:
+        _cache.pop(path, None)
+
+    # Keep the written-paths set from growing forever alongside the cache.
+    # Entries older than the age bound no longer need write-protection — the
+    # next read simply refetches, which is safe and identical in outcome.
+    if len(_written_paths) > _cache_max_entries:
+        _written_paths.clear()
+
 
 # ── Internal helpers ──────────────────────────────────
 
@@ -286,6 +313,9 @@ class GitHubDataStore:
         Returns:
             Parsed JSON data, or default if not found
         """
+        # Keep the cache bounded — evict stale entries before growing further.
+        _prune_cache()
+
         # Check cache first
         now = time.time()
         if path in self._cache and path not in self._written_paths:

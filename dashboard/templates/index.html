@@ -200,9 +200,27 @@
                     <button class="btn-control" id="testAllProxiesBtn" onclick="testAllProxies()"><span class="icon-svg"
                             style="--icon: url('/static/assets/limey_icons/rotate.svg');"></span> <span
                             class="btn-text">Test All</span></button>
-                    <button class="btn-control" id="testUnverifiedProxiesBtn" onclick="testUnverifiedProxies()"><span class="icon-svg"
-                            style="--icon: url('/static/assets/limey_icons/flask.svg');"></span> <span
-                            class="btn-text">Test Unverified</span></button>
+                    <div class="proxy-test-unverified-wrap">
+                        <button class="btn-control" id="testUnverifiedProxiesBtn" onclick="testUnverifiedProxies()"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/flask.svg');"></span> <span
+                                class="btn-text">Test Unverified</span></button>
+                        <button class="proxy-test-options-toggle" id="testUnverifiedOptionsBtn" onclick="toggleTestUnverifiedOptions(event)" title="How many to test">▾</button>
+                        <div class="proxy-test-options" id="testUnverifiedOptions">
+                            <div class="proxy-test-options-title">Test how many?</div>
+                            <div class="proxy-test-options-presets">
+                                <button class="proxy-test-option-chip" data-limit="5" onclick="quickTestUnverified(5)">5</button>
+                                <button class="proxy-test-option-chip active" data-limit="10" onclick="quickTestUnverified(10)">10</button>
+                                <button class="proxy-test-option-chip" data-limit="25" onclick="quickTestUnverified(25)">25</button>
+                                <button class="proxy-test-option-chip" data-limit="all" onclick="quickTestUnverified(-1)">All</button>
+                            </div>
+                            <div class="proxy-test-options-custom">
+                                <input type="number" id="testUnverifiedCount" class="cfg-input" min="1" max="9999"
+                                    placeholder="Custom…" title="Custom count" onkeydown="if(event.key==='Enter')quickTestUnverified()">
+                                <button class="btn-control" onclick="quickTestUnverified()">Go</button>
+                            </div>
+                            <div class="proxy-test-options-hint" id="testUnverifiedCountHint"></div>
+                        </div>
+                    </div>
                     <button class="btn-control red" id="stopProxyTestsBtn" onclick="stopProxyTests()" disabled><span class="icon-svg"
                             style="--icon: url('/static/assets/limey_icons/stop.svg');"></span> <span
                             class="btn-text">Stop</span></button>

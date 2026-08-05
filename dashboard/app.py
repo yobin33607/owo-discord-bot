@@ -1902,6 +1902,25 @@ def weapons_bulk():
 
 _pending_captchas = {}
 
+# Pending captcha challenges are cleared when solved, but a bot that restarts
+# or disconnects mid-captcha leaves a stale entry forever. Prune anything
+# older than this so the dict can't grow without bound.
+_CAPTCHA_TTL = 15 * 60  # 15 minutes
+
+
+def _prune_pending_captchas():
+    """Drop captcha challenges that have been pending too long."""
+    if not _pending_captchas:
+        return
+    now = time.time()
+    stale = [
+        acc_id for acc_id, ch in _pending_captchas.items()
+        if now - ch.get('created_at', 0) > _CAPTCHA_TTL
+    ]
+    for acc_id in stale:
+        _pending_captchas.pop(acc_id, None)
+
+
 # ── System Control API ────────────────────────────────
 
 @app.route('/api/system/status')
@@ -2619,6 +2638,7 @@ def _save_mod_data(data):
 @app.route('/api/captcha/pending', methods=['GET'])
 @login_required
 def pending_captchas():
+    _prune_pending_captchas()
     pending = []
     for acc_id, challenge in _pending_captchas.items():
         pending.append({

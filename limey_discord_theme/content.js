@@ -224,6 +224,29 @@
     }
   }
 
+  // One-time DOM probe printed when author detection fails — shows what the
+  // page actually contains so the selectors can be pinned to the real client
+  // (mods like Vencord change Discord's markup). Best-effort, never throws.
+  function domProbe() {
+    try {
+      if (!document.querySelectorAll) return;
+      const primary = document.querySelectorAll(CONFIG.messageSelector).length;
+      const loose = document.querySelectorAll('[class*="message"]').length;
+      const authorIds = document.querySelectorAll('[data-author-id]').length;
+      const tags = document.querySelectorAll(CONFIG.tagSelector).length;
+      const classes = [];
+      const els = document.querySelectorAll('[class]');
+      for (let i = 0; i < els.length && classes.length < 16; i++) {
+        const list = els[i].classList;
+        if (!list || typeof list.forEach !== 'function') continue;
+        list.forEach((c) => { if (/message|author|avatar|chat/i.test(c)) classes.push(c); });
+      }
+      const sample = [...new Set(classes)].slice(0, 12).join(', ') || '(no message/author/avatar classes found)';
+      log('DOM probe: primaryRows=' + primary + ' [class*="message"]=' + loose +
+        ' [data-author-id]=' + authorIds + ' tags=' + tags + ' | classes: ' + sample, 'warn');
+    } catch (e) { /* probe is best-effort */ }
+  }
+
   function clearAll() {
     document.querySelectorAll('.limey-captcha').forEach((el) => {
       el.classList.remove('limey-captcha', 'is-alert');
@@ -323,6 +346,7 @@
       if (!warnedNoAuthor) {
         warnedNoAuthor = true;
         log('Could not determine the message author (no id attribute or avatar found) — Discord may have changed its DOM. Falling back to name/tag/keyword matching.', 'warn');
+        domProbe();
       }
     }
 

@@ -43,27 +43,27 @@ If you ever see the console warning *"Could not determine the message
 author…"* or *"captcha-like message whose author has no WEBHOOK/BOT tag"*, the
 captcha alert message itself is being found but Discord changed its markup in a
 way even the fallbacks can't read (client mods like Vencord patch the DOM and
-can cause this). Open F12 → Console **in the channel that has a captcha alert**
-and run:
+can cause this). The extension also logs a **DOM probe** line right after that
+warning (row counts + the class names in use) — paste that too.
+
+Open F12 → Console **in the channel that has a captcha alert** and run these
+three (they don't depend on the extension's selector, so they always return
+something when messages are on screen):
 
 ```js
-// Dumps the last visible message row — no keyword filter, so it always
-// returns markup when any messages are on screen. `undefined` means no
-// message rows matched the selector at all (tell me that too).
-const e = [...document.querySelectorAll('[class*="messageListItem"], li[data-list-item-id]')].pop();
+// 1) How many message-like elements exist (0 means the selector is wrong):
+document.querySelectorAll('[class*="message"]').length
+
+// 2) The class names Discord is actually using:
+[...document.querySelectorAll('[class]')].flatMap(e => [...e.classList])
+  .filter(c => /message|author|avatar|chat/i.test(c)).slice(0, 30).join(' | ')
+
+// 3) Dump the last message-like element's HTML:
+const e = [...document.querySelectorAll('[class*="message"]')].pop();
 e && copy(e.outerHTML.slice(0, 4000));
 ```
 
-If you want the specific captcha alert row instead, prefer rows whose text
-looks like an alert:
-
-```js
-const e = [...document.querySelectorAll('[class*="messageListItem"], li[data-list-item-id]')]
-  .filter(e => /captcha|slow-down|autohunt|verify/i.test(e.textContent)).pop();
-e && copy(e.outerHTML.slice(0, 4000));
-```
-
-Paste the output here and the exact selectors will be updated.
+Paste the three outputs here and the exact selectors will be updated.
 
 Note: if the tag is missing entirely, the **on-screen lock** button needs a
 WEBHOOK-tagged message to work — in that situation paste the webhook id from
@@ -197,14 +197,14 @@ First package the extension (this validates the manifest and zips it with
 
 ```bash
 cd limey_discord_theme
-python3 pack.py          # -> limey-captcha-alert-theme-1.5.2.zip
+python3 pack.py          # -> limey-captcha-alert-theme-1.5.3.zip
 ```
 
 ### Chrome Web Store (public)
 
 1. Register at the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole)
    — one-time **$5 fee** (use an email you'll keep; it can't be changed later).
-2. Click **Add new item** → upload `limey-captcha-alert-theme-1.5.2.zip`.
+2. Click **Add new item** → upload `limey-captcha-alert-theme-1.5.3.zip`.
 3. Fill in the listing tabs:
    - **Store listing**: title, description, category, icon, **at least 1
      screenshot (1280×800 or 640×400)**, and the mandatory **small promo
@@ -274,7 +274,7 @@ Notes:
    You can also add the webhook's id to `LIMEY_AUTHOR_IDS` or its display name
    to `LIMEY_AUTHOR_NAMES` in `content.js`.
 6. **A human named "Limey" or another bot is getting flagged?** — that should
-   be impossible in 1.5.2: name matching requires a bot/webhook tag, and the
+   be impossible in 1.5.3: name matching requires a bot/webhook tag, and the
    keyword fallback only applies to messages tagged "WEBHOOK". If you still
    see it, Discord likely changed its tag markup — tell me and we'll update
    `TAG_SELECTOR` in `content.js`.

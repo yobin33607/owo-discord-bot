@@ -67,6 +67,9 @@ window.nav = function(id, el) {
     if (id === 'admin-users') {
         if (typeof fetchUsers === 'function') fetchUsers();
     }
+    if (id === 'extension' && typeof window.loadExtensionInfo === 'function') {
+        window.loadExtensionInfo();
+    }
     // Orb Grinder page: stop any polling when leaving, start it when entering
     if (typeof window.stopQuestPolling === 'function') window.stopQuestPolling();
     if (id === 'orb-grinder' && typeof window.loadQuestGrinder === 'function') {

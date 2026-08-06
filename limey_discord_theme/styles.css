@@ -1,0 +1,113 @@
+/* =============================================================================
+   Limey Captcha Alert Theme — stylesheet
+   -----------------------------------------------------------------------------
+   Styles ONLY captcha-alert messages (tagged .limey-captcha by content.js)
+   to look like the Limey dashboard's auth/login screen
+   (dashboard/templates/login.html):
+
+     panel      rgba(10,0,0,0.92)     red      #ff0000
+     red dim    rgba(255,0,0,0.4)     glow     rgba(255,0,0,0.6)
+     text       #ffe0e0               mono     JetBrains Mono
+     sans       Outfit
+   ============================================================================= */
+
+/* ── The alert box: auth-card panel ─────────────────────────────────────── */
+.limey-captcha {
+  position: relative;
+  margin: 6px 0;
+  padding: 6px 10px;
+  background:
+    repeating-linear-gradient(0deg,
+      transparent 0 2px,
+      rgba(0, 0, 0, 0.08) 2px 4px),
+    linear-gradient(160deg, rgba(10, 0, 0, 0.94) 0%, rgba(5, 0, 0, 0.96) 100%);
+  border: 1px solid rgba(255, 0, 0, 0.4);
+  border-radius: 0;
+  box-shadow: 0 0 22px rgba(255, 0, 0, 0.16);
+}
+
+/* Corner brackets (like the auth card's terminal corners) */
+.limey-captcha::before,
+.limey-captcha::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-color: #ff0000;
+  border-style: solid;
+  pointer-events: none;
+}
+.limey-captcha::before {
+  top: -1px;
+  left: -1px;
+  border-width: 2px 0 0 2px;
+}
+.limey-captcha::after {
+  bottom: -1px;
+  right: -1px;
+  border-width: 0 2px 2px 0;
+}
+
+/* Author name → glowing auth-red mono title */
+.limey-captcha [class*="username"],
+.limey-captcha [class*="authorName"] {
+  color: #ff0000 !important;
+  font-family: "JetBrains Mono", "Roboto Mono", monospace !important;
+  font-size: 0.78rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 2px !important;
+  text-transform: uppercase !important;
+  text-shadow: 0 0 8px rgba(255, 0, 0, 0.6) !important;
+}
+
+/* Message text → auth-screen warm light */
+.limey-captcha [class*="messageContent"] {
+  color: #ffe0e0 !important;
+  font-family: "Outfit", "Segoe UI", sans-serif !important;
+}
+
+/* Embeds inside the alert → dark red-tinted panel */
+.limey-captcha [class*="embedFull"] {
+  background: rgba(10, 0, 0, 0.6) !important;
+  border: 1px solid rgba(255, 0, 0, 0.35) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* ── The ⚠ CAPTCHA ALERT label (auth-card title + sub) ────────────────────
+   Injected as a real element (.limey-alert-label) by content.js so it renders
+   on embed-only webhook posts too, not just text messages. */
+.limey-captcha.is-alert {
+  animation: limey-auth-pulse 2.4s ease-in-out infinite;
+}
+.limey-alert-label {
+  margin-bottom: 6px;
+  padding: 3px 8px;
+  background: rgba(255, 0, 0, 0.08);
+  border-left: 2px solid #ff0000;
+}
+.limey-alert-title {
+  font-family: "JetBrains Mono", "Roboto Mono", monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #ff0000;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px rgba(255, 0, 0, 0.6);
+}
+.limey-alert-sub {
+  font-family: "JetBrains Mono", "Roboto Mono", monospace;
+  font-size: 0.62rem;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: rgba(255, 60, 60, 0.5);
+}
+
+@keyframes limey-auth-pulse {
+  0%, 100% {
+    box-shadow: 0 0 16px rgba(255, 0, 0, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(255, 0, 0, 0.4);
+  }
+}

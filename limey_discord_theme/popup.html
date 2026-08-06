@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Limey Captcha Alert Theme</title>
+  <style>
+    :root {
+      --red: #ff3e3e;
+      --bg: #121216;
+      --card: #1a1a20;
+      --border: rgba(255, 62, 62, 0.35);
+      --text: #e9e9ec;
+      --muted: #9a9aa2;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 260px;
+      background: linear-gradient(160deg, var(--bg), #0a0a0c);
+      color: var(--text);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      padding: 16px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .brand .logo {
+      width: 26px; height: 26px;
+      background: var(--red);
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-family: "Orbitron", sans-serif;
+      font-weight: 700; font-size: 14px; color: #fff;
+    }
+    .brand h1 {
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+    .brand span { display: block; font-size: 9px; color: var(--muted); letter-spacing: 0.12em; }
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      transition: border-color 0.15s ease;
+    }
+    .row:hover { border-color: rgba(255, 62, 62, 0.6); }
+    .row .label { font-size: 12px; }
+    .row .sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
+    /* Toggle switch */
+    .switch { position: relative; width: 38px; height: 22px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0;
+      background: #2a2a30;
+      border-radius: 22px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    .slider::before {
+      content: "";
+      position: absolute;
+      height: 16px; width: 16px;
+      left: 3px; top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s ease;
+    }
+    .switch input:checked + .slider { background: var(--red); }
+    .switch input:checked + .slider::before { transform: translateX(16px); }
+    .status {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+    .status.ok { border-color: rgba(255, 62, 62, 0.5); }
+    .status.warn { border-color: rgba(255, 190, 60, 0.5); }
+    .status.error { border-color: rgba(255, 62, 62, 0.8); }
+    .btn {
+      width: 100%;
+      margin-top: 8px;
+      padding: 8px 12px;
+      background: transparent;
+      color: var(--red);
+      border: 1px solid rgba(255, 62, 62, 0.45);
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .btn:hover { background: rgba(255, 62, 62, 0.12); }
+    .wh-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .wh-input {
+      flex: 1;
+      min-width: 0;
+      padding: 8px 10px;
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid rgba(255, 62, 62, 0.35);
+      border-radius: 8px;
+      font-size: 11px;
+      font-family: "Roboto Mono", monospace;
+    }
+    .wh-input:focus { outline: none; border-color: rgba(255, 62, 62, 0.7); }
+    .btn-apply { width: auto; margin-top: 0; padding: 8px 14px; }
+    .foot { font-size: 9px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="brand">
+    <div class="logo">L</div>
+    <h1>Limey Captcha<span>ALERT THEME</span></h1>
+  </div>
+
+  <div class="row">
+    <div>
+      <div class="label">Style Limey bot messages</div>
+      <div class="sub">Dark red auth-screen panel on messages from bot 1514929209158402078</div>
+    </div>
+    <label class="switch">
+      <input type="checkbox" id="toggle-enabled" checked>
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div class="row">
+    <div>
+      <div class="label">CAPTCHA ALERT label</div>
+      <div class="sub">⚠ label + pulsing glow when the message looks like a captcha alert</div>
+    </div>
+    <label class="switch">
+      <input type="checkbox" id="toggle-captcha" checked>
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div class="row">
+    <div>
+      <div class="label">Captcha alert source</div>
+      <div class="sub" id="lock-sub">Not locked — any webhook that posts a captcha alert is flagged</div>
+    </div>
+  </div>
+  <button class="btn" id="btn-lock" style="margin-top:0;">Lock to the captcha webhook on screen</button>
+
+  <div class="row" style="margin-top:8px;">
+    <div>
+      <div class="label">Webhook ID (from dashboard)</div>
+      <div class="sub">Dashboard → Extension → copy the captcha webhook id and paste it here — no on-screen alert needed</div>
+    </div>
+  </div>
+  <div class="wh-row">
+    <input type="text" id="webhook-id-input" class="wh-input" placeholder="e.g. 123456789012345678" spellcheck="false">
+    <button class="btn btn-apply" id="btn-apply-webhook">Use</button>
+  </div>
+
+  <div class="status info" id="status" style="margin-top:8px;">
+    <div class="status-text" id="status-text">Checking…</div>
+    <button class="btn" id="btn-rescan">Re-scan messages now</button>
+  </div>
+
+  <div class="foot">Browser only — the Discord <b>desktop app</b> can't run extensions. Reload Discord (Ctrl+R) after loading the extension. Client-side only; nothing is read or sent.</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -30,6 +30,7 @@
     <link rel="stylesheet" href="/static/css/layout.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/components.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/pages/accounts.css?v=2.4.0.2">
+    <link rel="stylesheet" href="/static/css/pages/extension.css?v=1.1.0">
     <link rel="stylesheet" href="/static/css/pages/dashboard.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/pages/config.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/pages/proxies.css?v=2.4.0.1">
@@ -109,6 +110,8 @@
                         style="--icon: url('/static/assets/limey_icons/sliders.svg');"></span> Configuration</a>
                 <a class="nav-item" onclick="nav('proxies', this)"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/layers.svg');"></span> Proxies</a>
+                <a class="nav-item" onclick="nav('extension', this)"><span class="icon-svg"
+                        style="--icon: url('/static/assets/limey_icons/discord.svg');"></span> Extension</a>
                 <a class="nav-item" onclick="nav('security', this)"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/shield-halved.svg');"></span> Security</a>
                 <a class="nav-item" id="apiKeysNav" onclick="nav('api-keys', this)" style="display:none;"><span class="icon-svg"
@@ -291,6 +294,74 @@
                         <div class="proxy-modal-actions">
                             <button class="btn-control" onclick="hideAddProxyModal()">Cancel</button>
                             <button class="btn-control green" onclick="addSingleProxy()">Add</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Extension Tab -->
+            <div id="extension" class="view">
+                <h2 style="font-size:1.2rem; color:var(--primary); margin:0 0 20px 0;"><span class="icon-svg"
+                        style="--icon: url('/static/assets/limey_icons/discord.svg');"></span> Limey Browser Extension
+                </h2>
+                <p class="accounts-page-hint">Install the Limey captcha-alert theme in your browser. It restyles the
+                    captcha alerts your bot/webhook posts into Discord as dark red auth-screen alert boxes — pure
+                    client-side CSS, nothing leaves your machine.</p>
+
+                <div class="ext-card">
+                    <div class="ext-card-left">
+                        <div class="ext-version" id="ext-version">Loading…</div>
+                        <div class="ext-sub" id="ext-sub">Rebuilt every time Limey boots</div>
+                    </div>
+                    <a class="btn-control green ext-download-btn" href="/api/extension/download" id="ext-download-btn">
+                        <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/cloud-arrow-up.svg');"></span>
+                        <span class="btn-text">DOWNLOAD EXTENSION (.ZIP)</span>
+                    </a>
+                </div>
+
+                <div class="ext-card ext-webhook-card">
+                    <div class="ext-card-left">
+                        <div class="ext-version" id="ext-webhook-title">Captcha alert webhook</div>
+                        <div class="ext-sub" id="ext-webhook-sub">Read from the security webhook in your settings — no need to have an alert on screen</div>
+                        <div class="ext-webhook-id" id="ext-webhook-id">—</div>
+                    </div>
+                    <button class="btn-control" id="ext-webhook-copy" onclick="copyCaptchaWebhookId()" disabled>
+                        <span class="btn-text">COPY ID</span>
+                    </button>
+                </div>
+
+                <div class="ext-steps">
+                    <div class="ext-step">
+                        <span class="ext-step-num">1</span>
+                        <div><b>Download the zip</b>
+                            <p>Click the button above — the zip is rebuilt automatically whenever Limey boots.</p>
+                        </div>
+                    </div>
+                    <div class="ext-step">
+                        <span class="ext-step-num">2</span>
+                        <div><b>Extract it</b>
+                            <p>Unzip it anywhere on your computer — you'll load the extracted folder into the browser.</p>
+                        </div>
+                    </div>
+                    <div class="ext-step">
+                        <span class="ext-step-num">3</span>
+                        <div><b>Open your browser's extensions page</b>
+                            <p>Go to <code>chrome://extensions</code> (Chrome / Edge / Brave) and turn on
+                                <b>Developer mode</b> (top-right corner).</p>
+                        </div>
+                    </div>
+                    <div class="ext-step">
+                        <span class="ext-step-num">4</span>
+                        <div><b>Load unpacked</b>
+                            <p>Click <b>Load unpacked</b> and select the extracted folder (it contains
+                                <code>manifest.json</code>).</p>
+                        </div>
+                    </div>
+                    <div class="ext-step">
+                        <span class="ext-step-num">5</span>
+                        <div><b>Lock it to your captcha webhook</b>
+                            <p>Open the Discord channel with a captcha alert, click the extension icon, then press
+                                <b>Lock to the captcha webhook on screen</b> — only that webhook gets the ⚠ label.</p>
                         </div>
                     </div>
                 </div>
@@ -1115,6 +1186,7 @@
     <script src="/static/js/core.js"></script>
     <script src="/static/js/navigation.js"></script>
     <script src="/static/js/accounts.js?v=2.4.0.2"></script>
+    <script src="/static/js/extension.js?v=1.1.0"></script>
     <script src="/static/js/proxies.js"></script>
     <script src="/static/js/security.js"></script>
     <script src="/static/js/config.js"></script>

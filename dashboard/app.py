@@ -18,7 +18,7 @@ Limey - https://github.com/cubiced0/owo-discord-bot
 
 
 
-from flask import Flask, render_template, jsonify, request, session, redirect, url_for, g
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for, g, send_file
 from werkzeug.exceptions import HTTPException
 from functools import wraps
 import threading
@@ -984,6 +984,62 @@ def auth_users():
             'has_password': bool(user.get('password', ''))
         })
     return jsonify({'users': users})
+
+# ── Browser Extension Download ──────────────────────
+
+def _get_captcha_webhook_id():
+    """Best-effort: extract the security-alert webhook id from settings.
+
+    The captcha alerts that appear in the channel are posted by the webhook
+    configured at security.webhook.url (config/settings.json or per-account
+    settings files). A Discord webhook URL embeds its id:
+    https://discord.com/api/webhooks/<id>/<token>
+    """
+    candidates = []
+    try:
+        cfg = ghd.read_json("config/settings.json", default={})
+        if cfg:
+            candidates.append(cfg.get("security", {}).get("webhook", {}).get("url", ""))
+        for fpath in ghd.list_files("config") or []:
+            if fpath.startswith("config/settings_") and fpath.endswith(".json"):
+                per = ghd.read_json(fpath, default={})
+                if per:
+                    candidates.append(per.get("security", {}).get("webhook", {}).get("url", ""))
+    except Exception as e:
+        log.warning("Failed to read settings for captcha webhook id: %s", e)
+    for url in candidates:
+        if not url:
+            continue
+        m = re.search(r"/api/webhooks/(\d+)", url)
+        if m:
+            return m.group(1)
+    return None
+
+
+@app.route('/api/extension/info')
+@login_required
+def extension_info():
+    """Version/status of the built Limey browser extension (zip built at boot)."""
+    from utils import extension_builder
+    data = extension_builder.extension_info()
+    data['webhook_id'] = _get_captcha_webhook_id()
+    return jsonify({'success': True, **data})
+
+
+@app.route('/api/extension/download')
+@login_required
+def extension_download():
+    """Download the Limey browser extension zip (built when Limey boots)."""
+    from utils import extension_builder
+    zip_path, err = extension_builder.ensure_extension_zip()
+    if not zip_path or not os.path.exists(zip_path):
+        return jsonify({'success': False, 'error': f'Extension not available: {err or "not built"}'}), 500
+    return send_file(
+        zip_path,
+        as_attachment=True,
+        download_name=os.path.basename(zip_path),
+    )
+
 
 @app.route('/api/auth/users/<username>', methods=['DELETE'])
 @login_required

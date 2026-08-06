@@ -302,6 +302,16 @@ async def start_limey(switch_servers=False):
 async def main():
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     show_banner()
+    # Rebuild the browser-extension zip so Dashboard → Extension can serve it.
+    try:
+        from utils import extension_builder
+        _zip, _err = extension_builder.build_extension_zip()
+        if _zip:
+            console.print(f"[green]Extension zip built: {os.path.basename(_zip)}[/green]")
+        else:
+            console.print(f"[yellow]Extension zip build skipped ({_err}) — available in Dashboard → Extension[/yellow]")
+    except Exception as e:
+        console.print(f"[dim]Extension zip build skipped: {e}[/dim]")
     is_termux = detect_platform()
     state.load_account_stats()
     console.print(f"[cyan]Config Directory:[/cyan] {state.CONFIG_DIR}")

@@ -1,0 +1,107 @@
+/* Limey Extension tab — download card + install steps */
+
+.ext-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+}
+
+.ext-card-left {
+    min-width: 200px;
+}
+
+.ext-version {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--primary);
+    font-family: var(--font-mono);
+}
+
+.ext-sub {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.ext-download-btn {
+    text-decoration: none;
+}
+
+.ext-webhook-card {
+    margin-bottom: 20px;
+    padding: 16px 20px;
+}
+
+.ext-webhook-id {
+    margin-top: 8px;
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    color: #ff8c00;
+    letter-spacing: 0.5px;
+    word-break: break-all;
+}
+
+.ext-download-btn.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.ext-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.ext-step {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    transition: border-color 0.15s ease;
+}
+
+.ext-step:hover {
+    border-color: rgba(255, 62, 62, 0.4);
+}
+
+.ext-step-num {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #fff;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+}
+
+.ext-step b {
+    color: #e9e9ec;
+}
+
+.ext-step p {
+    margin: 4px 0 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.ext-step code {
+    color: #ff8c00;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+}

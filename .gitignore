@@ -84,6 +84,11 @@ dist/
 limey-obfuscated-*.zip
 
 # ===============================
+# Browser extension builds (rebuilt at boot)
+# ===============================
+limey_discord_theme/*.zip
+
+# ===============================
 # Dependency managers
 # ===============================
 Pipfile.lock

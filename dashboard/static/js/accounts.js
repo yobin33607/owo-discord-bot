@@ -18,6 +18,142 @@
 let _accountsFailStreak = 0;
 let _lastAccountsFailAt = 0;
 
+// Server-binding state for the account form (scan -> pick -> bind)
+let accountGuilds = [];
+
+function accountEsc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+}
+
+function getAccountFormToken() {
+    const index = parseInt(document.getElementById('acct-form-index').value, 10);
+    let token = document.getElementById('acct-form-token').value.trim();
+    if (!token && index >= 0 && accountConfigList[index]) {
+        token = accountConfigList[index].token || '';
+    }
+    return token;
+}
+
+function setGuildStatus(text, cls) {
+    const el = document.getElementById('acct-guild-status');
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'acct-guild-status' + (cls ? ' ' + cls : '');
+}
+
+window.scanAccountGuilds = async function() {
+    const token = getAccountFormToken();
+    if (!token) {
+        setGuildStatus('Enter (or keep) a token first, then scan.', 'err');
+        showToast('Token required to scan servers', 'error');
+        return;
+    }
+    const proxy_id = document.getElementById('acct-form-proxy').value || null;
+    setGuildStatus('Scanning your servers…', '');
+    try {
+        const res = await fetch('/api/accounts/scan-guilds', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, proxy_id }),
+        });
+        const data = await res.json();
+        if (!data.success) {
+            setGuildStatus(data.error || 'Scan failed', 'err');
+            showToast(data.error || 'Scan failed', 'error');
+            return;
+        }
+        accountGuilds = data.guilds || [];
+        const sel = document.getElementById('acct-form-guild');
+        sel.innerHTML = '<option value="">All servers (no binding)</option>' +
+            accountGuilds.map(g =>
+                `<option value="${accountEsc(g.id)}">${accountEsc(g.name)} (${accountEsc(g.id)})</option>`
+            ).join('');
+        // Keep the account's existing binding selected after a rescan
+        const accIndex = parseInt(document.getElementById('acct-form-index').value, 10);
+        const curAcc = (accIndex >= 0 && accountConfigList[accIndex]) ? accountConfigList[accIndex] : null;
+        if (curAcc && curAcc.guild_id) {
+            sel.value = String(curAcc.guild_id);
+        }
+        setGuildStatus(accountGuilds.length
+            ? `Found ${accountGuilds.length} server${accountGuilds.length === 1 ? '' : 's'} — pick one, or leave as All servers.`
+            : 'No servers found for this token.', 'ok');
+    } catch (e) {
+        setGuildStatus('Scan failed — is the dashboard reachable?', 'err');
+    }
+};
+
+window.loadGuildChannels = async function() {
+    const sel = document.getElementById('acct-form-guild');
+    const guild_id = sel ? sel.value : '';
+    if (!guild_id) {
+        setGuildStatus('Pick a server first (Scan Servers → choose one).', 'err');
+        return;
+    }
+    const token = getAccountFormToken();
+    if (!token) {
+        setGuildStatus('Token required to load channels.', 'err');
+        return;
+    }
+    const channelsInput = document.getElementById('acct-form-channels');
+    if (channelsInput.value.trim() &&
+        !confirm('Replace the current channel IDs with this server\'s text channels?')) {
+        return;
+    }
+    const proxy_id = document.getElementById('acct-form-proxy').value || null;
+    setGuildStatus('Loading channels…', '');
+    try {
+        const res = await fetch('/api/accounts/guild-channels', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, guild_id, proxy_id }),
+        });
+        const data = await res.json();
+        if (!data.success) {
+            setGuildStatus(data.error || 'Failed to load channels', 'err');
+            return;
+        }
+        channelsInput.value = (data.channels || []).map(c => c.id).join(' ');
+        setGuildStatus(`Loaded ${(data.channels || []).length} text channels — trim if needed.`, 'ok');
+    } catch (e) {
+        setGuildStatus('Failed to load channels.', 'err');
+    }
+};
+
+function populateGuildSelect(index) {
+    const sel = document.getElementById('acct-form-guild');
+    if (!sel) return;
+    const acc = (index >= 0 && accountConfigList[index]) ? accountConfigList[index] : null;
+    const boundId = acc && acc.guild_id ? String(acc.guild_id) : '';
+    if (accountGuilds.length) {
+        const inList = boundId && accountGuilds.some(g => String(g.id) === boundId);
+        sel.innerHTML = '<option value="">All servers (no binding)</option>' +
+            accountGuilds.map(g =>
+                `<option value="${accountEsc(g.id)}">${accountEsc(g.name)} (${accountEsc(g.id)})</option>`
+            ).join('') +
+            // Never lose the current binding to a stale cache: if the account's
+            // guild isn't in the last scan, keep it as a selected option.
+            (boundId && !inList
+                ? `<option value="${accountEsc(boundId)}" selected>${accountEsc(acc.guild_name || boundId)}</option>`
+                : '');
+        sel.value = boundId;
+        if (boundId) {
+            setGuildStatus(`Bound to server: ${accountEsc(acc.guild_name || boundId)}`, 'ok');
+        } else {
+            setGuildStatus('Not bound — click Scan Servers to choose a server.', '');
+        }
+    } else if (boundId) {
+        sel.innerHTML =
+            `<option value="${accountEsc(boundId)}" selected>${accountEsc(acc.guild_name || boundId)}</option>` +
+            '<option value="">All servers (no binding)</option>';
+        setGuildStatus(`Bound to server: ${accountEsc(acc.guild_name || boundId)} — click Scan Servers to change.`, 'ok');
+    } else {
+        sel.innerHTML = '<option value="">All servers (no binding)</option>';
+        setGuildStatus('Not bound — click Scan Servers to pick a server.', '');
+    }
+}
+
 window.fetchAccounts = async function() {
     // Back off after repeated failures (server down) instead of hammering it every 5s
     if (_accountsFailStreak >= 3 && (Date.now() - _lastAccountsFailAt) < 15000) return;
@@ -150,12 +286,13 @@ function renderAccountConfigList() {
         const token = acc.token_masked || '••••••';
         const proxy = acc.proxy_id ? `Proxy: ${acc.proxy_id}` : 'Direct';
         const status = acc.enabled !== false ? 'Enabled' : 'Disabled';
+        const server = acc.guild_name ? `Server: ${accountEsc(acc.guild_name)}` : 'All servers';
         return `
             <div class="account-config-card">
                 <div class="account-config-info">
                     <strong>${acc.name || 'Unnamed'}</strong>
                     <span class="mono">${token}</span>
-                    <span class="dim">${proxy} · ${status}</span>
+                    <span class="dim">${proxy} · ${status} · ${server}</span>
                 </div>
                 <div class="account-config-actions">
                     <button class="btn-proxy-sm" onclick="editAccountConfig(${i})">Edit</button>
@@ -180,6 +317,7 @@ window.showAccountForm = function(index = -1) {
         document.getElementById('acct-form-enabled').checked = acc.enabled !== false;
         if (typeof populateAccountProxyDropdown === 'function') populateAccountProxyDropdown();
         document.getElementById('acct-form-proxy').value = acc.proxy_id || '';
+        populateGuildSelect(index);
     } else {
         title.textContent = 'Add Account';
         document.getElementById('acct-form-name').value = '';
@@ -189,6 +327,7 @@ window.showAccountForm = function(index = -1) {
         document.getElementById('acct-form-enabled').checked = true;
         if (typeof populateAccountProxyDropdown === 'function') populateAccountProxyDropdown();
         document.getElementById('acct-form-proxy').value = '';
+        populateGuildSelect(-1);
     }
     if (modal) modal.classList.add('visible');
 };
@@ -215,11 +354,18 @@ window.saveAccountForm = async function() {
     const channels = document.getElementById('acct-form-channels').value.trim().split(/\s+/).filter(Boolean);
     const proxy_id = document.getElementById('acct-form-proxy').value || null;
     const enabled = document.getElementById('acct-form-enabled').checked;
+    const guildSel = document.getElementById('acct-form-guild');
+    const guild_id = guildSel ? guildSel.value : '';
+    let guild_name = '';
+    if (guildSel && guild_id) {
+        const opt = guildSel.options[guildSel.selectedIndex];
+        guild_name = opt ? opt.text.replace(/\s*\(\d+\)$/, '') : '';
+    }
     if (!name) {
         showToast('Account name is required', 'error');
         return;
     }
-    const entry = { name, channels, enabled, proxy_id };
+    const entry = { name, channels, enabled, proxy_id, guild_id, guild_name };
     if (index >= 0 && accountConfigList[index]) {
         entry.token = accountConfigList[index].token;
         if (token) entry.token = token;

@@ -44,7 +44,7 @@ from utils.github_data_store import ghd
 _log = logging.getLogger(__name__)
 
 class LimeyBot(commands.Bot):
-    def __init__(self, token=None, channels=None, proxy_url=None, proxy_auth=None, proxy_label="direct"):
+    def __init__(self, token=None, channels=None, proxy_url=None, proxy_auth=None, proxy_label="direct", guild_id=None, guild_name=None):
         self.session = None
         self.base_dir = state.BASE_DIR
         self.config_file = os.path.join(state.CONFIG_DIR, 'settings.json')
@@ -55,10 +55,11 @@ class LimeyBot(commands.Bot):
         self.accounts = []
         self.token = token
         self.channels = channels or []
-        self.channels = channels or []
         self.proxy_url = proxy_url
         self.proxy_auth = proxy_auth
         self.proxy_label = proxy_label or "direct"
+        self.guild_id = str(guild_id) if guild_id else None
+        self.guild_name = guild_name or ""
         self._load_config()
         
         if not self.token or not self.channels:
@@ -348,6 +349,40 @@ class LimeyBot(commands.Bot):
         self.captcha_solver = setup_solver(self)
         self.web_solver = setup_web_solver(self)
         
+        # ── Server binding: operate inside the chosen server only ─────────
+        if self.guild_id:
+            guild = None
+            if str(self.guild_id).isdigit():
+                guild = self.get_guild(int(self.guild_id))
+                if guild is None:
+                    try:
+                        guild = await self.fetch_guild(int(self.guild_id))
+                    except Exception:
+                        guild = None
+            if guild:
+                self.guild_name = guild.name
+                self.log("SYS", f"Operating in server: {guild.name} ({guild.id})")
+                channels = guild.channels
+                if not channels:
+                    try:
+                        channels = await guild.fetch_channels()
+                    except Exception:
+                        channels = []
+                guild_ch_ids = {str(c.id) for c in channels}
+                orig_len = len(self.channels)
+                kept = [c for c in self.channels if str(c) in guild_ch_ids]
+                if kept and len(kept) != orig_len:
+                    self.channels = kept
+                    self.log("SYS", f"Scoped channels to '{guild.name}': {len(kept)}/{orig_len} inside server")
+                elif not kept and orig_len:
+                    self.log("WARN", f"No configured channels are inside '{guild.name}' — using them anyway.")
+                if self.channels and str(self.channel_id) not in [str(c) for c in self.channels]:
+                    self.channel_id = int(self.channels[0])
+            else:
+                self.log("WARN", f"Server {self.guild_id} not found for this account — ignoring server binding.")
+        else:
+            self.log("SYS", "No server binding — operating on all configured channels.")
+
         self.log("INFO", f"Channel: {self.channel_id}")
         
         self.is_ready = True
@@ -666,6 +701,12 @@ class LimeyBot(commands.Bot):
                     current_acc = next((a for a in self.accounts if a.get('token') == self.token), None)
                 
                 if current_acc:
+                    # Sync the server binding from accounts.json (set in the
+                    # dashboard's server picker) so edits apply live.
+                    self.guild_id = str(current_acc['guild_id']) if current_acc.get('guild_id') else None
+                    self.guild_name = current_acc.get('guild_name') or ""
+                    if self.guild_id:
+                        self.log("SYS", f"Server binding: {self.guild_name or self.guild_id}")
                     new_channels = current_acc.get('channels', [])
                     if new_channels != self.channels:
                         self.channels = new_channels

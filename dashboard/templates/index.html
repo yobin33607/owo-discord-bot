@@ -29,7 +29,7 @@
     <link rel="stylesheet" href="/static/css/base.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/layout.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/components.css?v=2.4.0.1">
-    <link rel="stylesheet" href="/static/css/pages/accounts.css?v=2.4.0.1">
+    <link rel="stylesheet" href="/static/css/pages/accounts.css?v=2.4.0.2">
     <link rel="stylesheet" href="/static/css/pages/dashboard.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/pages/config.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/pages/proxies.css?v=2.4.0.1">
@@ -167,8 +167,19 @@
                         <input type="text" id="acct-form-name" class="cfg-input" placeholder="MainAccount">
                         <label class="form-label">Token</label>
                         <input type="password" id="acct-form-token" class="cfg-input" placeholder="Discord user token">
+                        <label class="form-label">Server (bind this account to one Discord server)</label>
+                        <div class="acct-guild-row">
+                            <select id="acct-form-guild" class="cfg-input">
+                                <option value="">All servers (no binding)</option>
+                            </select>
+                            <button type="button" class="btn-control" onclick="scanAccountGuilds()">Scan Servers</button>
+                        </div>
+                        <div id="acct-guild-status" class="acct-guild-status"></div>
                         <label class="form-label">Channel IDs (space separated)</label>
-                        <input type="text" id="acct-form-channels" class="cfg-input" placeholder="123456789 987654321">
+                        <div class="acct-channels-row">
+                            <input type="text" id="acct-form-channels" class="cfg-input" placeholder="123456789 987654321">
+                            <button type="button" class="btn-control" onclick="loadGuildChannels()" title="Auto-fill the text channels of the selected server">Load from Server</button>
+                        </div>
                         <label class="form-label">Proxy (optional)</label>
                         <select id="acct-form-proxy" class="cfg-input">
                             <option value="">None (direct)</option>
@@ -1103,7 +1114,7 @@
 
     <script src="/static/js/core.js"></script>
     <script src="/static/js/navigation.js"></script>
-    <script src="/static/js/accounts.js"></script>
+    <script src="/static/js/accounts.js?v=2.4.0.2"></script>
     <script src="/static/js/proxies.js"></script>
     <script src="/static/js/security.js"></script>
     <script src="/static/js/config.js"></script>

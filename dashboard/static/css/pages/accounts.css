@@ -181,3 +181,28 @@
 .account-config-info .mono { font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-muted); }
 .account-config-info .dim { font-size: 0.75rem; color: var(--text-muted); }
 .account-config-actions { display: flex; gap: 8px; }
+
+/* Server binding picker (account form) */
+.acct-guild-row {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+}
+.acct-guild-row select { flex: 1; min-width: 0; }
+.acct-guild-row .btn-control { white-space: nowrap; }
+.acct-guild-status {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    min-height: 1.2em;
+    margin: 6px 0 4px;
+    line-height: 1.4;
+}
+.acct-guild-status.ok { color: var(--success); }
+.acct-guild-status.err { color: #ff5555; }
+.acct-channels-row {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+}
+.acct-channels-row input { flex: 1; min-width: 0; }
+.acct-channels-row .btn-control { white-space: nowrap; }

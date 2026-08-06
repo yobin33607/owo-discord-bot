@@ -59,9 +59,15 @@
 #   --keep-temp           Keep the temporary build/staging directories.
 #   -h, --help            Show this help.
 #
+# PLATFORM SUPPORT
+#   Linux  : ./obfuscate_limey.sh      (native bash — default platform)
+#   macOS  : ./obfuscate_limey.sh      (native bash; macOS ships with bash)
+#   Windows: obfuscate_limey.bat       (delegates to obfuscate_limey.py)
+#
 # NOTE ON COMPATIBILITY
 #   Obfuscated code is tied to the Python version + platform used to build it.
-#   The .zip is built for the Python/OS of THIS machine — run it on the same.
+#   Build the .zip ON the OS you intend to distribute to:
+#   Linux -> Linux builds, macOS -> macOS builds, Windows -> Windows builds.
 # =============================================================================
 
 set -Eeuo pipefail
@@ -74,6 +80,7 @@ TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/limey-obfuscate"
 VENV_DIR="$CACHE_DIR/venv"
 WORK_DIR="$CACHE_DIR/work"          # neutral cwd for pyarmor -> keeps .pyarmor/ out of the project
+TMPBASE="${TMPDIR:-/tmp}"           # portable temp root (macOS sets TMPDIR; Linux defaults to /tmp)
 
 ZIP_OUT=""
 KEEP_TEMP=0
@@ -145,6 +152,16 @@ PY
     return 1
 }
 
+# Portable replacement for GNU `find -maxdepth 1` (macOS's BSD find lacks it).
+# Prints the pyarmor runtime dir directly inside $OUT, if present.
+find_runtime_dir() {
+    local d
+    for d in "$OUT"/pyarmor_runtime_*; do
+        [ -d "$d" ] && { echo "$d"; return 0; }
+    done
+    return 1
+}
+
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -169,11 +186,6 @@ done
 [ -z "$ZIP_OUT" ] && ZIP_OUT="$SCRIPT_DIR/limey-obfuscated-$TIMESTAMP.zip"
 [ -f "$PROJECT_DIR/limey.py" ] || fail "limey.py not found in $PROJECT_DIR — is this the Limey project?"
 
-# Resolve relative license paths up front (registration runs from another cwd)
-if [ -n "$REGCODE" ]; then
-    REGCODE="$(readlink -f "$REGCODE" 2>/dev/null || echo "$REGCODE")"
-fi
-
 # --max-file-size must be a positive integer
 if [ -n "$MAX_FILE_SIZE" ] && ! [[ "$MAX_FILE_SIZE" =~ ^[0-9]+$ ]]; then
     fail "--max-file-size must be a positive integer (bytes), got: $MAX_FILE_SIZE"
@@ -184,7 +196,12 @@ echo -e "${CYAN}=== ${APP_NAME} Obfuscation Builder ===${RESET}"
 # ---------------------------------------------------------------------------
 # Environment checks
 # ---------------------------------------------------------------------------
-[ "$(uname -s)" = "Linux" ] || fail "This script is for Linux only (got: $(uname -s))."
+OS_NAME="$(uname -s)"
+case "$OS_NAME" in
+    Linux|Darwin) : ;;
+    *) fail "This script supports Linux and macOS only (got: $OS_NAME). On Windows use obfuscate_limey.bat instead." ;;
+esac
+
 
 PY_CMD="$(find_python)" || fail "Python 3.10+ not found. Install it or pass --python /path/to/python."
 ok "Python detected: $("$PY_CMD" --version)"
@@ -297,7 +314,7 @@ choose_obfuscation_options() {
 # Build steps
 # ---------------------------------------------------------------------------
 stage_copy() {
-    STAGE="$(mktemp -d /tmp/limey-stage-XXXXXX)"
+    STAGE="$(mktemp -d "$TMPBASE/limey-stage-XXXXXX")"
     info "Copying project to staging area (originals untouched): $STAGE"
     if command -v rsync >/dev/null 2>&1; then
         rsync -a --delete \
@@ -319,7 +336,7 @@ stage_copy() {
 }
 
 run_pyarmor() {
-    OUT="$(mktemp -d /tmp/limey-out-XXXXXX)"
+    OUT="$(mktemp -d "$TMPBASE/limey-out-XXXXXX")"
 
     local max_size="${MAX_FILE_SIZE:-32768}"
     local skip_large=0
@@ -426,7 +443,7 @@ overlay_assets() {
 
 write_readme() {
     local runtime_dir runtime_name
-    runtime_dir="$(find "$OUT" -maxdepth 1 -type d -name 'pyarmor_runtime_*' | head -1 || true)"
+    runtime_dir="$(find_runtime_dir || true)"
     runtime_name="$(basename "${runtime_dir:-pyarmor_runtime_*}")"
     cat > "$OUT/README-OBFUSCATED.txt" <<EOF
 Limey — obfuscated build
@@ -477,7 +494,7 @@ verify_build() {
     fi
 
     local runtime_dir
-    runtime_dir="$(find "$OUT" -maxdepth 1 -type d -name 'pyarmor_runtime_*' | head -1 || true)"
+    runtime_dir="$(find_runtime_dir || true)"
     if [ -z "$runtime_dir" ]; then
         fail "PyArmor runtime package missing from the output!"
     fi
@@ -537,6 +554,9 @@ main() {
 
     # License registration / detection
     if [ -n "$REGCODE" ]; then
+        # Resolve to an absolute path (registration runs from another cwd).
+        # readlink -f is not available on macOS, so resolve via the detected Python.
+        REGCODE="$("$PY_CMD" -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$REGCODE")"
         register_license "$REGCODE"
     fi
     LICENSE_INFO="$(license_info)"

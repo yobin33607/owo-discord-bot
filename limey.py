@@ -47,6 +47,7 @@ from core.bot import LimeyBot
 from dashboard.app import app as flask_app
 import core.state as state
 from utils import proxy_manager
+from utils import guild_scanner
 from utils.github_data_store import ghd
 
 # ── Manager Bot (runs as subprocess with standard discord.py) ────
@@ -140,10 +141,89 @@ def _start_manager_bot_subprocess():
     except Exception as e:
         console.print(f"[dim]  Failed to start Manager Bot: {e}[/dim]")
 
-async def start_limey():
+async def _pick_and_bind_server(acc):
+    """Scan the account's servers and let the user pick one to bind."""
+    from rich.prompt import Prompt
+    try:
+        proxy_url, proxy_auth, _ = proxy_manager.resolve_account_proxy(acc)
+        guilds = await guild_scanner.scan_guilds(
+            acc.get("token", ""), proxy_url=proxy_url, proxy_auth=proxy_auth
+        )
+    except guild_scanner.TokenError as e:
+        console.print(f"[red]Could not scan servers for '{acc.get('name', 'Unknown')}': {e}[/red]")
+        return False
+    except Exception as e:
+        console.print(f"[red]Server scan failed for '{acc.get('name', 'Unknown')}': {e}[/red]")
+        return False
+    if not guilds:
+        console.print(f"[yellow]No servers found for '{acc.get('name', 'Unknown')}'.[/yellow]")
+        return False
+    console.print(f"\n[bold cyan]Servers for '{acc.get('name', 'Unknown')}':[/bold cyan]")
+    for i, g in enumerate(guilds, 1):
+        console.print(f"  [{i}] {g['name']} ({g['id']})")
+    choice = Prompt.ask("server no. (0 = all servers)", default="0")
+    try:
+        idx = int(choice) - 1
+    except ValueError:
+        return False
+    if idx < 0 or idx >= len(guilds):
+        acc.pop("guild_id", None)
+        acc.pop("guild_name", None)
+        console.print("[dim]Server binding removed — will use all servers.[/dim]")
+        return True
+    acc["guild_id"] = guilds[idx]["id"]
+    acc["guild_name"] = guilds[idx]["name"]
+    console.print(f"[green]Bound '{acc.get('name')}' to server: {guilds[idx]['name']}[/green]")
+    return True
+
+
+async def maybe_switch_servers():
+    """Before login: make sure every account has a server chosen (or switch it).
+
+    Accounts without a binding are asked to pick one (persisted); bound
+    accounts can optionally switch. Picking/editing is also available in the
+    dashboard (Accounts → Edit → Scan Servers).
+    """
+    from rich.prompt import Prompt
+    try:
+        acc_data = ghd.read_json("config/accounts.json", default={"accounts": []})
+    except Exception:
+        return
+    accounts = acc_data.get("accounts", []) if acc_data else []
+    if not accounts:
+        return
+    enabled = [a for a in accounts if a.get("enabled", True)]
+    if not enabled:
+        return
+    unbound = [a for a in enabled if not a.get("guild_id")]
+    changed = False
+    if unbound:
+        console.print(f"[yellow]{len(unbound)} account(s) have no server bound yet.[/yellow]")
+        for acc in unbound:
+            pick = Prompt.ask(
+                f"Choose a server for '{acc.get('name', 'Unknown')}' before login?",
+                choices=["y", "n"], default="y"
+            )
+            if pick == "y" and await _pick_and_bind_server(acc):
+                changed = True
+    else:
+        console.print("[dim]All accounts have a server binding (set in Dashboard → Accounts).[/dim]")
+        pick = Prompt.ask("Switch any account's server now?", choices=["y", "n"], default="n")
+        if pick == "y":
+            for acc in enabled:
+                if await _pick_and_bind_server(acc):
+                    changed = True
+    if changed:
+        ghd.write_json("config/accounts.json", {"accounts": accounts}, message="Update server bindings")
+        console.print("[green]Server bindings saved.[/green]")
+
+
+async def start_limey(switch_servers=False):
     """Start all enabled accounts (menu option 1, or `limey.py -1`).
 
-    Returns True if accounts were started, False if there was nothing to start.
+    With switch_servers=True the user is asked to choose/switch each account's
+    Discord server before logging on. Returns True if accounts were started,
+    False if there was nothing to start.
     """
     try:
         acc_data = ghd.read_json("config/accounts.json", default={"accounts": []})
@@ -156,6 +236,18 @@ async def start_limey():
     if not accounts:
         console.print("[bold red]No active accounts? Add some in the Account Manager (Option 2).[/bold red]")
         return False
+
+    if switch_servers:
+        await maybe_switch_servers()
+        # Reload — bindings may have changed above
+        try:
+            acc_data = ghd.read_json("config/accounts.json", default={"accounts": []})
+            accounts = [a for a in acc_data.get('accounts', []) if a.get('enabled', True)]
+        except Exception:
+            accounts = [a for a in accounts if a.get('enabled', True)]
+        if not accounts:
+            console.print("[bold red]No active accounts after server selection.[/bold red]")
+            return False
 
     import utils.history_tracker as ht
     ht.start_session()
@@ -181,12 +273,17 @@ async def start_limey():
                     valid_channels.append(ch)
         try:
             proxy_url, proxy_auth, proxy_label = proxy_manager.resolve_account_proxy(acc)
+            guild_id = acc.get('guild_id')
+            guild_name = acc.get('guild_name')
+            console.print(f"[dim]  Server: {guild_name or 'all servers'}[/dim]")
             bot = LimeyBot(
                 token=token,
                 channels=valid_channels,
                 proxy_url=proxy_url,
                 proxy_auth=proxy_auth,
                 proxy_label=proxy_label,
+                guild_id=guild_id,
+                guild_name=guild_name,
             )
             state.bot_instances.append(bot)
             bots.append(bot)
@@ -232,7 +329,7 @@ async def main():
         elif choice == "3":
             console.print("\n[yellow]Shutting down. See you next time![/yellow]")
             sys.exit(0)
-        if not await start_limey():
+        if not await start_limey(switch_servers=True):
             time.sleep(2)
             continue
         while True:

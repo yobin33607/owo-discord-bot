@@ -42,6 +42,7 @@ import re
 # ── Appeals System ───────────────────────────────────────
 
 from utils.github_data_store import ghd
+from utils import guild_scanner
 
 import discord
 
@@ -1318,6 +1319,70 @@ def settings():
                     'redirect_uri': 'http://localhost:8000/api/auth/discord/callback'
                 }
             })
+
+def _scan_proxy(proxy_id):
+    """Resolve a proxy id to (proxy_url, aiohttp auth) for outbound scans."""
+    from utils import proxy_manager
+    if not proxy_id:
+        return None, None
+    proxy = proxy_manager.get_proxy_by_id(proxy_id)
+    if not proxy:
+        return None, None
+    return proxy_manager.build_proxy_url(proxy), proxy_manager.get_proxy_auth(proxy)
+
+
+@app.route('/api/accounts/scan-guilds', methods=['POST'])
+@require_permission('manage')
+def accounts_scan_guilds():
+    """Scan the Discord servers a user token can access (server picker).
+
+    The token is the one already configured for this account; the scan runs
+    locally against Discord's REST API — nothing is sent to third parties.
+    """
+    payload = request.json or {}
+    token = (payload.get('token') or '').strip()
+    proxy_id = payload.get('proxy_id')
+    if not token:
+        return jsonify({'success': False, 'error': 'Token required'}), 400
+    proxy_url, proxy_auth = _scan_proxy(proxy_id)
+
+    async def _run():
+        return await guild_scanner.scan_guilds(
+            token, proxy_url=proxy_url, proxy_auth=proxy_auth)
+
+    try:
+        guilds = asyncio.run(_run())
+        return jsonify({'success': True, 'guilds': guilds, 'total': len(guilds)})
+    except guild_scanner.TokenError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Scan failed: {e}'}), 500
+
+
+@app.route('/api/accounts/guild-channels', methods=['POST'])
+@require_permission('manage')
+def accounts_guild_channels():
+    """List the text channels of a guild for the channel picker."""
+    payload = request.json or {}
+    token = (payload.get('token') or '').strip()
+    guild_id = (payload.get('guild_id') or '').strip()
+    proxy_id = payload.get('proxy_id')
+    if not token or not guild_id:
+        return jsonify({'success': False, 'error': 'Token and guild id required'}), 400
+    proxy_url, proxy_auth = _scan_proxy(proxy_id)
+
+    async def _run():
+        return await guild_scanner.scan_guild_channels(
+            token, guild_id, proxy_url=proxy_url, proxy_auth=proxy_auth)
+
+    try:
+        channels = asyncio.run(_run())
+        return jsonify({'success': True, 'channels': channels})
+    except guild_scanner.TokenError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Failed to load channels: {e}'}), 500
+
 
 @app.route('/api/accounts/config', methods=['GET', 'POST'])
 @login_required

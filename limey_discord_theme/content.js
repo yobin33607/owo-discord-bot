@@ -262,6 +262,14 @@
         const m = (img.getAttribute('src') || '').match(getAvatarRe());
         if (m) return m[1];
       }
+      // Some clients (e.g. Vencord) render avatars as CSS background images
+      // instead of <img> tags — check inline styles too.
+      const styled = node.querySelectorAll('[style*="avatars/"]');
+      for (const el of styled) {
+        if (el.closest && el.closest('[class*="embed"]')) continue;
+        const m = (el.getAttribute('style') || '').match(getAvatarRe());
+        if (m) return m[1];
+      }
     }
     return '';
   }

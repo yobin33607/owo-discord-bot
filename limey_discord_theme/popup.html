@@ -174,7 +174,12 @@
     <button class="btn" id="btn-rescan">Re-scan messages now</button>
   </div>
 
-  <div class="foot">Browser only — the Discord <b>desktop app</b> can't run extensions. Reload Discord (Ctrl+R) after loading the extension. Client-side only; nothing is read or sent.</div>
+  <div class="status info" id="update-status" style="margin-top:8px;">
+    <div class="status-text" id="update-text">…</div>
+    <button class="btn" id="btn-update">Check for updates</button>
+  </div>
+
+  <div class="foot">Browser only — the Discord <b>desktop app</b> can't run extensions. Reload Discord (Ctrl+R) after loading the extension. Client-side only; nothing is read or sent. Targeting config + styles auto-update from your server.</div>
 
   <script src="popup.js"></script>
 </body>

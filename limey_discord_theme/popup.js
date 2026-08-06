@@ -14,6 +14,12 @@
   const lockSub = document.getElementById('lock-sub');
   const whInput = document.getElementById('webhook-id-input');
   const applyBtn = document.getElementById('btn-apply-webhook');
+  const updateText = document.getElementById('update-text');
+  const updateBtn = document.getElementById('btn-update');
+
+  // Where updates are fetched from — must match content.js UPDATE_URL.
+  const UPDATE_URL = 'https://limeyself.onrender.com/ext/updates.json';
+  const LOCAL_VERSION = chrome.runtime.getManifest().version || '0';
 
   let lockState = { id: '', name: '' };
 
@@ -67,6 +73,66 @@
       cb(tab);
     });
   }
+
+  function semverGt(a, b) {
+    const pa = String(a || '0').split('.').map(Number);
+    const pb = String(b || '0').split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const x = pa[i] || 0;
+      const y = pb[i] || 0;
+      if (x !== y) return x > y;
+    }
+    return false;
+  }
+
+  function setUpdateStatus(html, cls) {
+    updateText.innerHTML = html;
+    updateBtn.textContent = cls === 'updating' ? 'Checking…' : 'Check for updates';
+  }
+
+  function fetchJson(url) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    return fetch(url, { cache: 'no-store', signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+      .finally(() => clearTimeout(timer));
+  }
+
+  function renderUpdateInfo(local, remote, applied) {
+    if (remote && semverGt(remote, local)) {
+      setUpdateStatus(
+        'v' + escapeHtml(local) + ' installed · <b>v' + escapeHtml(remote) + ' available</b>' +
+        (applied ? ' — applied to this page ✓' : ' — open Discord and press Check to apply.') +
+        '<br><small>Full-code releases need the new zip: <a href="https://limeyself.onrender.com/ext/limey-captcha-alert-theme-' + escapeHtml(remote) + '.zip" target="_blank" rel="noopener">download v' + escapeHtml(remote) + '</a></small>',
+        'warn'
+      );
+    } else if (remote && remote === local) {
+      setUpdateStatus('v' + escapeHtml(local) + ' · <b>up to date</b>' + (applied ? ' (server config applied)' : ''), 'ok');
+    } else {
+      setUpdateStatus('v' + escapeHtml(local) + ' · server unreachable — auto-update will retry', 'error');
+    }
+  }
+
+  function checkUpdatesFromPopup() {
+    setUpdateStatus('Checking ' + UPDATE_URL + '…', 'updating');
+    activeTab((tab) => {
+      chrome.tabs.sendMessage(tab.id, { type: 'LIMEY_CHECK_UPDATES' }, (resp) => {
+        if (chrome.runtime.lastError || !resp) {
+          // No Discord tab / content script — still show the version info.
+          fetchJson(UPDATE_URL).then((d) => renderUpdateInfo(LOCAL_VERSION, d ? String(d.version || '') : '', false));
+          return;
+        }
+        if (resp.ok && resp.remote) {
+          renderUpdateInfo(resp.local || LOCAL_VERSION, resp.remote, !!resp.updated);
+        } else {
+          renderUpdateInfo(LOCAL_VERSION, '', false);
+        }
+      });
+    });
+  }
+
+  updateBtn.addEventListener('click', checkUpdatesFromPopup);
 
   function updateStatus() {
     setStatus('Checking Discord tab…', 'info');
@@ -182,4 +248,18 @@
   });
 
   updateStatus();
+
+  // Show the installed version immediately; fetch the remote version lazily.
+  setUpdateStatus('v' + escapeHtml(LOCAL_VERSION) + ' · checking for updates…', 'info');
+  fetchJson(UPDATE_URL).then((d) => {
+    const remote = d ? String(d.version || '') : '';
+    setUpdateStatus(
+      'v' + escapeHtml(LOCAL_VERSION) + (remote && !semverGt(remote, LOCAL_VERSION)
+        ? ' · <b>up to date</b>'
+        : remote && semverGt(remote, LOCAL_VERSION)
+          ? ' · <b>v' + escapeHtml(remote) + ' available</b> — press Check to apply'
+          : ' · server unreachable'),
+      remote && semverGt(remote, LOCAL_VERSION) ? 'warn' : 'ok'
+    );
+  });
 })();

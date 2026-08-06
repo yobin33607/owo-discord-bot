@@ -1041,6 +1041,57 @@ def extension_download():
     )
 
 
+# ── Extension Auto-Updater (public, no auth — serves only the extension's
+#    own config/CSS/zip, never any secrets) ──────────────────────────────────
+
+EXT_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "limey_discord_theme"))
+
+
+def _ext_cors(resp):
+    """Content scripts fetch these URLs cross-origin — allow it, and never cache
+    so a freshly deployed fix is picked up immediately."""
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.route('/ext/updates.json')
+def ext_updates():
+    """Public update manifest for the browser extension auto-updater.
+
+    Composed live from the same source files that pack.py zips, so a deploy
+    of this repo IS the extension update. The extension hot-applies
+    config.json + styles.css without a reload; the zip is for full releases.
+    """
+    try:
+        version = "0"
+        with open(os.path.join(EXT_DIR, "manifest.json"), encoding="utf-8") as f:
+            version = json.load(f).get("version", "0")
+        config = {}
+        cfg_path = os.path.join(EXT_DIR, "config.json")
+        if os.path.exists(cfg_path):
+            with open(cfg_path, encoding="utf-8") as f:
+                config = json.load(f)
+        return _ext_cors(jsonify({
+            "version": version,
+            "config": config,
+            "css_url": "/ext/styles.css",
+            "zip": "/ext/limey-captcha-alert-theme-" + version + ".zip",
+        }))
+    except Exception as e:
+        app.logger.warning("ext/updates.json failed: %s", e)
+        return _ext_cors(jsonify({"version": "0", "config": {}, "error": str(e)})), 500
+
+
+@app.route('/ext/<path:filename>')
+def ext_files(filename):
+    """Serve the extension's own files (styles.css, config.json, zips) publicly."""
+    full = os.path.realpath(os.path.join(EXT_DIR, filename))
+    if not full.startswith(os.path.realpath(EXT_DIR) + os.sep) or not os.path.isfile(full):
+        return _ext_cors(jsonify({"error": "not found"})), 404
+    return _ext_cors(send_file(full))
+
+
 @app.route('/api/auth/users/<username>', methods=['DELETE'])
 @login_required
 def auth_users_delete(username):

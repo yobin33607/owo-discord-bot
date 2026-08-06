@@ -35,7 +35,7 @@ def main():
     for root, dirs, names in os.walk(HERE):
         dirs[:] = [d for d in dirs if d not in EXCLUDE_NAMES and not d.startswith(".")]
         for n in names:
-            if n in EXCLUDE_NAMES or n.endswith(".zip"):
+            if n.startswith(".") or n in EXCLUDE_NAMES or n.endswith(".zip"):
                 continue
             full = os.path.join(root, n)
             rel = os.path.relpath(full, HERE).replace(os.sep, "/")

@@ -72,6 +72,35 @@ posts them. The dashboard reads it straight from your bot's config:
 If no security webhook is configured yet, the Extension tab will say so — set
 one in Configuration → Security first.
 
+## Auto-updates from your server
+
+Chrome **cannot silently update a "Load unpacked" extension** (auto-update only
+exists for Chrome Web Store / enterprise-managed installs) — so this extension
+uses a **remote-config updater** instead, which covers everything that actually
+breaks: Discord markup changes, new captcha wording, and styling tweaks.
+
+**How it works:**
+
+- Every installed copy checks `https://limeyself.onrender.com/ext/updates.json`
+  on page load (and via the popup's **Check for updates** button). That
+  endpoint is served by this dashboard app and is composed live from the same
+  `manifest.json` + `config.json` + `styles.css` in this folder.
+- When the server version is newer, the extension **hot-applies** the new
+  targeting config (author ids/names, keywords, selectors) and the new CSS to
+  the already-open Discord page — no reload, no reinstall.
+- Full-code releases are rarer; the popup then shows the new version with a
+  direct zip download link from the server.
+
+**To ship a fix:** edit `config.json` (or `content.js`/`styles.css` for code/CSS
+changes) → commit → the deploy workflow redeploys to Render → every installed
+extension picks it up. No user action needed for config/CSS fixes.
+
+**Security note:** this makes the extension trust `limeyself.onrender.com` —
+that server can push new config and CSS (never arbitrary code, and nothing is
+ever sent to it). That's fine for a personal extension; if you ever publish to
+the Chrome Web Store, remote-config behavior must be disclosed in the privacy
+listing and the update URL pointed at a store-approved host.
+
 ## Install from the Limey dashboard
 
 If you run Limey with its dashboard, you don't need to clone anything — the
@@ -124,13 +153,17 @@ The extension is deliberately conservative to avoid false positives
    against the name shown above the message) but **only for authors that carry
    Discord's bot/webhook tag** (BOT / APP / WEBHOOK). A human user named
    "Limey" has no tag and is never styled.
-3. **Webhook keyword fallback** — `FALLBACK_KEYWORD_ALERTS` (default `true`).
-   Only messages whose author shows the **"WEBHOOK" tag** AND whose text
-   contains a **strong** captcha keyword (`captcha`, `hcaptcha`, `recaptcha`,
-   `autohunt`, `slow-down`) get the ⚠ label. The official Discord bot (tagged
-   BOT) and human users never qualify, so they can't be mistaken for captcha
-   alerts. Broad words like `verify` are not used in this tier — they only
-   trigger the label on confirmed Limey/locked messages.
+3. **Alert phrasing, not bare mentions** — the ⚠ label is only given to
+   messages that actually **demand** a captcha/verification:
+   - direct signals: `slow-down`, `rate limited`, `autohunt`, `hcaptcha`,
+     `recaptcha`, `⚠`
+   - demand phrasing: "captcha/verify …" combined with `complete`, `solve`,
+     `detected`, `required`, `please`, `continue`, `click`, … (either order)
+
+   A message that merely **mentions** captcha — like the bot's stats
+   announcement (`✅ 12 captchas solved`) — is never flagged. Webhook-keyword
+   fallback uses the same rule, so the official Discord bot (tagged BOT) and
+   human users never qualify.
 4. **Webhook lock (recommended)** — two ways, no on-screen alert needed:
    - **From the server (best):** Dashboard → **Extension** tab shows the
      captcha alert webhook id read from your bot's settings
@@ -152,14 +185,14 @@ First package the extension (this validates the manifest and zips it with
 
 ```bash
 cd limey_discord_theme
-python3 pack.py          # -> limey-captcha-alert-theme-1.4.1.zip
+python3 pack.py          # -> limey-captcha-alert-theme-1.5.1.zip
 ```
 
 ### Chrome Web Store (public)
 
 1. Register at the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole)
    — one-time **$5 fee** (use an email you'll keep; it can't be changed later).
-2. Click **Add new item** → upload `limey-captcha-alert-theme-1.4.1.zip`.
+2. Click **Add new item** → upload `limey-captcha-alert-theme-1.5.1.zip`.
 3. Fill in the listing tabs:
    - **Store listing**: title, description, category, icon, **at least 1
      screenshot (1280×800 or 640×400)**, and the mandatory **small promo
@@ -229,7 +262,7 @@ Notes:
    You can also add the webhook's id to `LIMEY_AUTHOR_IDS` or its display name
    to `LIMEY_AUTHOR_NAMES` in `content.js`.
 6. **A human named "Limey" or another bot is getting flagged?** — that should
-   be impossible in 1.4.1: name matching requires a bot/webhook tag, and the
+   be impossible in 1.5.1: name matching requires a bot/webhook tag, and the
    keyword fallback only applies to messages tagged "WEBHOOK". If you still
    see it, Discord likely changed its tag markup — tell me and we'll update
    `TAG_SELECTOR` in `content.js`.

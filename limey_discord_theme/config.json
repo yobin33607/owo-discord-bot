@@ -1,0 +1,36 @@
+{
+  "_comment": "Updateable targeting config for the Limey Captcha Alert Theme. content.js loads this file at startup (packaged locally) and the update server can push a newer version of it live via /ext/updates.json — no reload needed. Keys must match the defaults in content.js.",
+  "authorIds": [
+    "1514929209158402078"
+  ],
+  "authorNames": [
+    "limey"
+  ],
+  "fallbackKeywordAlerts": true,
+  "alertKeywords": [
+    "slow-down",
+    "rate limited",
+    "autohunt",
+    "hcaptcha",
+    "recaptcha",
+    "⚠"
+  ],
+  "alertPatterns": [
+    "(captcha|hcaptcha|recaptcha|verification|verify)\\b[^.!?\\n]{0,40}\\b(complete|solve|solving|detected|required|confirm|continue|click|banned|ban|timeout|must|need|please)\\b",
+    "\\b(complete|solve|solving|detected|required|confirm|continue|click|banned|ban|timeout|must|need|please)[^.!?\\n]{0,40}(captcha|hcaptcha|recaptcha|verification|verify)\\b"
+  ],
+  "messageSelector": "[class*=\"messageListItem\"], li[data-list-item-id]",
+  "userIdAttrs": [
+    "data-author-id",
+    "data-user-id"
+  ],
+  "avatarSrcRe": "avatars/(\\d{15,20})/",
+  "nameSelector": "[class*=\"username\"], [class*=\"authorName\"], [class*=\"headerText\"]",
+  "tagSelector": "[class*=\"botTag\"]",
+  "tagPillSelector": "[class*=\"botTag\"], [class*=\"tag\"], [class*=\"badge\"], [class*=\"pill\"]",
+  "tagWords": [
+    "bot",
+    "app",
+    "webhook"
+  ]
+}

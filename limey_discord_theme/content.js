@@ -49,10 +49,22 @@
   // Message rows in Discord are <li> with hashed class names, e.g.
   // "messageListItem-..." — match by attribute prefix instead of exact name.
   const MESSAGE_SELECTOR = '[class*="messageListItem"], li[data-list-item-id]';
-  const AUTHOR_SELECTOR = '[data-author-id]';
+  // Author id attributes (Discord has historically used data-author-id; some
+  // layouts use data-user-id) — we try several strategies below.
+  const USER_ID_ATTRS = ['data-author-id', 'data-user-id'];
+  // Avatar images are served from cdn.discordapp.com/avatars/<id>/<hash>.png
+  // (and sometimes media.discordapp.net) for BOTH normal users and webhooks —
+  // a stable fallback if the id attributes ever move (as the 'no
+  // data-author-id' warning suggested). Attachment URLs never contain
+  // 'avatars/', so a bare `img[src*="avatars/"]` search is safe.
+  const AVATAR_SRC_RE = /avatars\/(\d{15,20})\//;
   const NAME_SELECTOR = '[class*="username"], [class*="authorName"], [class*="headerText"]';
   // The small pill next to the author name: text is "BOT", "APP" or "WEBHOOK".
+  // Discord may rename the class, so tagTextOf() also scans pill/badge/tag
+  // elements by their exact text.
   const TAG_SELECTOR = '[class*="botTag"]';
+  const TAG_PILL_SELECTOR = '[class*="botTag"], [class*="tag"], [class*="badge"], [class*="pill"]';
+  const TAG_WORDS = ['bot', 'app', 'webhook'];
 
   let styleEl = null;
   let state = { enabled: true, captchaHighlight: true, webhookAuthorId: '' };
@@ -113,10 +125,28 @@
   }
 
   function authorIdOf(node) {
-    let host = null;
-    if (node.querySelector) host = node.querySelector(AUTHOR_SELECTOR);
-    if (!host && node.closest) host = node.closest(AUTHOR_SELECTOR);
-    return host ? (host.getAttribute('data-author-id') || '') : '';
+    // 1) Author/user id attributes (self, descendants, ancestors).
+    for (const attr of USER_ID_ATTRS) {
+      let host = null;
+      if (node.querySelector) host = node.querySelector('[' + attr + ']');
+      if (!host && node.closest) host = node.closest('[' + attr + ']');
+      if (host) {
+        const v = host.getAttribute(attr);
+        if (v) return v;
+      }
+    }
+    // 2) Avatar image src — users AND webhooks are served avatar URLs that
+    //    survive markup renames. Skip avatars inside embeds: an embed may
+    //    cite an arbitrary other user, so its avatar is not the author.
+    if (node.querySelectorAll) {
+      const imgs = node.querySelectorAll('img[src*="avatars/"]');
+      for (const img of imgs) {
+        if (img.closest && img.closest('[class*="embed"]')) continue;
+        const m = (img.getAttribute('src') || '').match(AVATAR_SRC_RE);
+        if (m) return m[1];
+      }
+    }
+    return '';
   }
 
   function authorNameOf(li) {
@@ -128,7 +158,17 @@
   // Discord's author pill: "bot", "app" or "webhook". Humans have no tag.
   function tagTextOf(li) {
     if (!li.querySelector) return '';
-    const el = li.querySelector(TAG_SELECTOR);
+    // 1) The known tag-pill class.
+    let el = li.querySelector(TAG_SELECTOR);
+    // 2) Fallback: any pill/badge/tag element whose exact text is one of
+    //    Discord's author tags (survives class renames).
+    if (!el && li.querySelectorAll) {
+      const pills = li.querySelectorAll(TAG_PILL_SELECTOR);
+      for (const p of pills) {
+        const t = (p.textContent || '').trim().toLowerCase();
+        if (TAG_WORDS.indexOf(t) !== -1) { el = p; break; }
+      }
+    }
     return el ? (el.textContent || '').trim().toLowerCase() : '';
   }
 
@@ -157,7 +197,7 @@
       stats.noAuthorAttr++;
       if (!warnedNoAuthor) {
         warnedNoAuthor = true;
-        log('No data-author-id found on messages — Discord may have changed its DOM. Using name/tag/keyword matching.', 'warn');
+        log('Could not determine the message author (no id attribute or avatar found) — Discord may have changed its DOM. Falling back to name/tag/keyword matching.', 'warn');
       }
     }
 
@@ -195,7 +235,7 @@
       // stale — otherwise this is a normal exclusion (human or non-webhook bot).
       if (strongHit && tagTextOf(li) === '' && !warnedNoTag) {
         warnedNoTag = true;
-        log('Found a captcha-like message with no author tag (WEBHOOK/BOT). If you expected an alert here, Discord\'s tag markup may have changed — update TAG_SELECTOR in content.js.', 'warn');
+        log('Found a captcha-like message whose author has no WEBHOOK/BOT tag. If you expected an alert here, Discord\'s tag markup may have changed — use the dashboard webhook id (Dashboard → Extension → lock) or run the F12 snippet from the README to dump the message markup.', 'warn');
       }
       return;
     }

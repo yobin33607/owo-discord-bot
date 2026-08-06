@@ -27,6 +27,36 @@ login screen:
 
 Everything else in Discord is left untouched — it's **captcha alerts only**.
 
+## Author detection is resilient
+
+Discord hashes and renames its class names frequently, and has moved the
+message author id attribute around. `content.js` therefore never relies on a
+single selector:
+
+- **Author id** — tries `data-author-id`, then `data-user-id`, then parses the
+  author **avatar image URL** (`cdn.discordapp.com/avatars/<id>/…`, which is
+  served for both users and webhooks).
+- **BOT / APP / WEBHOOK tag** — tries the `botTag` class, then any pill/badge
+  element whose exact text is one of the tag words.
+
+If you ever see the console warning *"Could not determine the message
+author…"* or *"captcha-like message whose author has no WEBHOOK/BOT tag"*, the
+captcha alert message itself is being found but Discord changed its markup in a
+way even the fallbacks can't read. Open F12 → Console on the channel with an
+alert and run:
+
+```js
+const e = [...document.querySelectorAll('[class*="messageListItem"], li[data-list-item-id]')]
+  .filter(e => /captcha|slow-down|autohunt/i.test(e.textContent)).pop();
+e && copy(e.outerHTML.slice(0, 3000));
+```
+
+Paste the output here and the exact selectors will be updated.
+
+Note: if the tag is missing entirely, the **on-screen lock** button needs a
+WEBHOOK-tagged message to work — in that situation paste the webhook id from
+Dashboard → Extension instead (that path never needs the tag).
+
 ## Captcha webhook id — from the server
 
 The extension no longer needs a captcha alert on screen to know which webhook
@@ -122,14 +152,14 @@ First package the extension (this validates the manifest and zips it with
 
 ```bash
 cd limey_discord_theme
-python3 pack.py          # -> limey-captcha-alert-theme-1.4.0.zip
+python3 pack.py          # -> limey-captcha-alert-theme-1.4.1.zip
 ```
 
 ### Chrome Web Store (public)
 
 1. Register at the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole)
    — one-time **$5 fee** (use an email you'll keep; it can't be changed later).
-2. Click **Add new item** → upload `limey-captcha-alert-theme-1.4.0.zip`.
+2. Click **Add new item** → upload `limey-captcha-alert-theme-1.4.1.zip`.
 3. Fill in the listing tabs:
    - **Store listing**: title, description, category, icon, **at least 1
      screenshot (1280×800 or 640×400)**, and the mandatory **small promo
@@ -199,7 +229,7 @@ Notes:
    You can also add the webhook's id to `LIMEY_AUTHOR_IDS` or its display name
    to `LIMEY_AUTHOR_NAMES` in `content.js`.
 6. **A human named "Limey" or another bot is getting flagged?** — that should
-   be impossible in 1.4.0: name matching requires a bot/webhook tag, and the
+   be impossible in 1.4.1: name matching requires a bot/webhook tag, and the
    keyword fallback only applies to messages tagged "WEBHOOK". If you still
    see it, Discord likely changed its tag markup — tell me and we'll update
    `TAG_SELECTOR` in `content.js`.

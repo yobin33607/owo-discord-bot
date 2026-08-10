@@ -562,7 +562,22 @@ def _auth_pending_2fa_username():
 
 def _webauthn_origin():
     """The dashboard's own origin (https://host[:port]) — the browser's
-    clientDataJSON.origin must equal this for WebAuthn verification."""
+    clientDataJSON.origin must equal this for WebAuthn verification.
+
+    The app is served behind a TLS-terminating reverse proxy (Render), so the
+    scheme Flask sees is 'http' even though the browser is on 'https'. Trust the
+    X-Forwarded-Proto / X-Forwarded-Host headers when present so the expected
+    origin matches the origin the browser actually signs.
+    """
+    forwarded_proto = request.headers.get('X-Forwarded-Proto')
+    if forwarded_proto:
+        from urllib.parse import urlsplit, urlunsplit
+        parts = urlsplit(request.url_root)
+        forwarded_host = request.headers.get('X-Forwarded-Host')
+        if forwarded_host:
+            parts = parts._replace(netloc=forwarded_host)
+        parts = parts._replace(scheme=forwarded_proto)
+        return urlunsplit(parts).rstrip('/')
     return request.url_root.rstrip('/')
 
 

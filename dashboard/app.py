@@ -1818,6 +1818,21 @@ def settings():
             for _mod_key in ('mod_log_channel_id', 'muted_role_id', 'quarantine_role_id', 'staff_role_id'):
                 if _mod_key not in mod_cfg:
                     mod_cfg[_mod_key] = ''
+            # Ensure the temp voice settings appear in the config UI.
+            tv_cfg = mb.get('temp_voice')
+            if not isinstance(tv_cfg, dict):
+                tv_cfg = mb['temp_voice'] = {}
+            for _tv_key, _tv_default in (
+                ('enabled', True),
+                ('hub_channel_id', ''),
+                ('category_id', ''),
+                ('naming', "{name}'s Channel"),
+                ('private_default', False),
+                ('user_limit', 0),
+                ('guild_id', ''),
+            ):
+                if _tv_key not in tv_cfg:
+                    tv_cfg[_tv_key] = _tv_default
             if 'discord_oauth' not in data:
                 data['discord_oauth'] = {
                     'client_id': '',

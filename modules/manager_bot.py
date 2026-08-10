@@ -220,6 +220,14 @@ class ManagerBot(commands.Bot):
         except Exception as e:
             _log.warning(f"Failed to load AutoRole cog: {e}")
             print(f"[Manager Bot] ⚠️  AutoRole cog failed to load: {e}")
+        try:
+            from modules.temp_voice import setup as setup_temp_voice
+            await setup_temp_voice(self)
+            _log.info("TempVoice cog loaded")
+            print("[Manager Bot] ✅ TempVoice cog loaded")
+        except Exception as e:
+            _log.warning(f"Failed to load TempVoice cog: {e}")
+            print(f"[Manager Bot] ⚠️  TempVoice cog failed to load: {e}")
 
     async def on_ready(self):
         _log.info(f"Logged in as {self.user} (ID: {self.user.id})")

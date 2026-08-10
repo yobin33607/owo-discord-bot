@@ -12,6 +12,31 @@ function arrayBufToB64url(buf) {
     return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+// The server (py_webauthn) sends binary fields as base64url strings, but the
+// browser's WebAuthn API requires them to be ArrayBuffer/Uint8Array. Convert
+// every binary field before handing the options to the authenticator.
+function b64urlToUint8Array(str) {
+    str = (str || '').replace(/-/g, '+').replace(/_/g, '/');
+    while (str.length % 4) str += '=';
+    const bin = atob(str);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+}
+
+function preparePublicKeyOptions(opts) {
+    if (!opts) return opts;
+    const o = Object.assign({}, opts);
+    if (o.challenge) o.challenge = b64urlToUint8Array(o.challenge);
+    if (o.user && o.user.id) o.user.id = b64urlToUint8Array(o.user.id);
+    ['excludeCredentials', 'allowCredentials'].forEach(key => {
+        if (Array.isArray(o[key])) {
+            o[key] = o[key].map(c => Object.assign({}, c, { id: b64urlToUint8Array(c.id) }));
+        }
+    });
+    return o;
+}
+
 function credentialToJSON(cred) {
     if (cred.toJSON) return cred.toJSON();
     const r = {};
@@ -221,7 +246,7 @@ async function addPasskey() {
             alert(data.error || 'Failed to start passkey registration');
             return;
         }
-        const cred = await navigator.credentials.create({ publicKey: data.options });
+        const cred = await navigator.credentials.create({ publicKey: preparePublicKeyOptions(data.options) });
         const vr = await fetch('/api/auth/passkey/register/verify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

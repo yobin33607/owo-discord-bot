@@ -98,43 +98,88 @@
                 <span class="user-info-role" id="userRole"></span>
             </div>
             <nav class="nav-links">
-                <a class="nav-item active" onclick="nav('accounts', this)"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/users.svg');"></span> Accounts</a>
-                <a class="nav-item" onclick="nav('dash', this)"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/chart-pie.svg');"></span> Dashboard</a>
-                <a class="nav-item" onclick="nav('orb-grinder', this)"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/coins.svg');"></span> Orb Grinder</a>
-                <a class="nav-item" onclick="nav('mass-dismantle', this)"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/gun.svg');"></span> Mass Dismantle</a>
-                <a class="nav-item" onclick="nav('config', this)"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/sliders.svg');"></span> Configuration</a>
-                <a class="nav-item" onclick="nav('proxies', this)"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/layers.svg');"></span> Proxies</a>
-                <a class="nav-item" onclick="nav('extension', this)"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/discord.svg');"></span> Extension</a>
+                <div class="nav-group" id="navGroup-overview">
+                    <button class="nav-group-toggle" type="button" onclick="toggleNavGroup('overview', this)" aria-expanded="false" aria-controls="navGroupItems-overview">
+                        <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/chart-pie.svg');"></span>
+                        <span class="nav-group-label">Overview</span>
+                        <span class="icon-svg nav-group-chevron" style="--icon: url('/static/assets/limey_icons/chevron-down.svg');"></span>
+                    </button>
+                    <div class="nav-group-items" id="navGroupItems-overview">
+                        <a class="nav-item active" onclick="nav('accounts', this)"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/users.svg');"></span> Accounts</a>
+                        <a class="nav-item" onclick="nav('dash', this)"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/chart-pie.svg');"></span> Dashboard</a>
+                        <a class="nav-item" onclick="nav('history', this)"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/clock-rotate-left.svg');"></span> History</a>
+                    </div>
+                </div>
+                <div class="nav-group" id="navGroup-automation">
+                    <button class="nav-group-toggle" type="button" onclick="toggleNavGroup('automation', this)" aria-expanded="false" aria-controls="navGroupItems-automation">
+                        <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/bolt.svg');"></span>
+                        <span class="nav-group-label">Automation</span>
+                        <span class="icon-svg nav-group-chevron" style="--icon: url('/static/assets/limey_icons/chevron-down.svg');"></span>
+                    </button>
+                    <div class="nav-group-items" id="navGroupItems-automation">
+                        <a class="nav-item" onclick="nav('orb-grinder', this)"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/coins.svg');"></span> Orb Grinder</a>
+                        <a class="nav-item" onclick="nav('mass-dismantle', this)"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/gun.svg');"></span> Mass Dismantle</a>
+                        <a class="nav-item" onclick="nav('proxies', this)"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/layers.svg');"></span> Proxies</a>
+                    </div>
+                </div>
+                <div class="nav-group" id="navGroup-tools">
+                    <button class="nav-group-toggle" type="button" onclick="toggleNavGroup('tools', this)" aria-expanded="false" aria-controls="navGroupItems-tools">
+                        <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/sliders.svg');"></span>
+                        <span class="nav-group-label">Tools</span>
+                        <span class="icon-svg nav-group-chevron" style="--icon: url('/static/assets/limey_icons/chevron-down.svg');"></span>
+                    </button>
+                    <div class="nav-group-items" id="navGroupItems-tools">
+                        <a class="nav-item" onclick="nav('config', this)"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/sliders.svg');"></span> Configuration</a>
+                        <a class="nav-item" onclick="nav('extension', this)"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/discord.svg');"></span> Extension</a>
+                        <a class="nav-item" onclick="nav('archives', this)"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/floppy-disk.svg');"></span> Archives</a>
+                        <a class="nav-item" onclick="nav('logs', this)"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/terminal.svg');"></span> Terminal</a>
+                    </div>
+                </div>
                 <a class="nav-item" onclick="nav('security', this)"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/shield-halved.svg');"></span> Security</a>
-                <a class="nav-item" id="apiKeysNav" onclick="nav('api-keys', this)" style="display:none;"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/key.svg');"></span> API Keys</a>
-                <a class="nav-item" id="appealsNav" onclick="nav('appeals', this)" style="display:none;"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/check-to-slot.svg');"></span> Appeals</a>
-                <a class="nav-item" id="moderationNav" onclick="nav('moderation', this)" style="display:none;"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/shield-halved.svg');"></span> Moderation</a>
-                <a class="nav-item" id="ticketsNav" onclick="nav('tickets', this)" style="display:none;"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/ticket.svg');"></span> Tickets</a>
-                <a class="nav-item" onclick="nav('archives', this)"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/floppy-disk.svg');"></span> Archives</a>
-                <a class="nav-item" onclick="nav('history', this)"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/clock-rotate-left.svg');"></span> History</a>
-                <a class="nav-item" onclick="nav('admin-users', this)"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/users.svg');"></span> Login Users</a>
-                <a class="nav-item" onclick="nav('logs', this)"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/terminal.svg');"></span> Terminal</a>
-                <a class="nav-item" onclick="nav('my-account', this)"><span class="icon-svg"
-                        style="--icon: url('/static/assets/limey_icons/users.svg');"></span> My Account</a>
-                <a class="nav-item" onclick="location.href='/logout'" style="color: #ff4444 !important;"><span
-                        class="icon-svg" style="--icon: url('/static/assets/limey_icons/logout.svg');"></span>
-                    Logout</a>
+                <div class="nav-group" id="navGroup-admin">
+                    <button class="nav-group-toggle" type="button" onclick="toggleNavGroup('admin', this)" aria-expanded="false" aria-controls="navGroupItems-admin">
+                        <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/key.svg');"></span>
+                        <span class="nav-group-label">Admin</span>
+                        <span class="icon-svg nav-group-chevron" style="--icon: url('/static/assets/limey_icons/chevron-down.svg');"></span>
+                    </button>
+                    <div class="nav-group-items" id="navGroupItems-admin">
+                        <a class="nav-item" id="adminUsersNav" onclick="nav('admin-users', this)" style="display:none;"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/users.svg');"></span> Login Users</a>
+                        <a class="nav-item" id="apiKeysNav" onclick="nav('api-keys', this)" style="display:none;"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/key.svg');"></span> API Keys</a>
+                        <a class="nav-item" id="appealsNav" onclick="nav('appeals', this)" style="display:none;"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/check-to-slot.svg');"></span> Appeals</a>
+                        <a class="nav-item" id="moderationNav" onclick="nav('moderation', this)" style="display:none;"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/shield-halved.svg');"></span> Moderation</a>
+                        <a class="nav-item" id="ticketsNav" onclick="nav('tickets', this)" style="display:none;"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/ticket.svg');"></span> Tickets</a>
+                    </div>
+                </div>
+                <div class="nav-group" id="navGroup-account">
+                    <button class="nav-group-toggle" type="button" onclick="toggleNavGroup('account', this)" aria-expanded="false" aria-controls="navGroupItems-account">
+                        <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/users.svg');"></span>
+                        <span class="nav-group-label">Account</span>
+                        <span class="icon-svg nav-group-chevron" style="--icon: url('/static/assets/limey_icons/chevron-down.svg');"></span>
+                    </button>
+                    <div class="nav-group-items" id="navGroupItems-account">
+                        <a class="nav-item" onclick="nav('my-account', this)"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/users.svg');"></span> My Account</a>
+                        <a class="nav-item" onclick="location.href='/logout'" style="color: #ff4444 !important;"><span
+                                class="icon-svg" style="--icon: url('/static/assets/limey_icons/logout.svg');"></span>
+                            Logout</a>
+                    </div>
+                </div>
             </nav>
             <div style="margin-top:auto">
                 <div class="status-indicator">
@@ -1170,6 +1215,104 @@
                         <div id="discord-link-result" style="margin-top:12px; font-size:0.85rem;"></div>
                     </div>
                 </div>
+
+                <!-- Login Security (passkeys + 2FA) -->
+                <div class="module-card">
+                    <div class="module-header" style="cursor:default;">
+                        <h3 style="color:var(--primary); margin:0; font-family:var(--font-heading);">
+                            <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/key.svg');"></span>
+                            Login Security
+                        </h3>
+                    </div>
+                    <div style="padding:20px;">
+                        <div id="security2fa-status" style="font-size:0.85rem;">
+                            <div class="no-data">Loading security status...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Extension Login -->
+                <div class="module-card">
+                    <div class="module-header" style="cursor:default;">
+                        <h3 style="color:var(--primary); margin:0; font-family:var(--font-heading);">
+                            <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/discord.svg');"></span>
+                            Extension Login
+                        </h3>
+                    </div>
+                    <div style="padding:20px;">
+                        <p style="color:#aaa; font-size:0.85rem; margin:0 0 14px;">
+                            Link your Limey browser extension to sign in without a password. The extension stores a
+                            private credential that never leaves your browser except to prove your identity here.
+                        </p>
+                        <div id="ext-auth-status">
+                            <div class="no-data">Checking extension...</div>
+                        </div>
+                        <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+                            <button class="btn-control green" onclick="pairExtension()">
+                                <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/link.svg');"></span>
+                                <span class="btn-text">Connect Extension</span>
+                            </button>
+                            <button class="btn-control" onclick="testExtensionConnection()">
+                                <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/bolt.svg');"></span>
+                                <span class="btn-text">Test Connection</span>
+                            </button>
+                        </div>
+                        <div id="ext-auth-result" style="margin-top:12px; font-size:0.85rem;"></div>
+                    </div>
+                </div>
+
+                <!-- 2FA Setup Modal -->
+                <div id="twofa-setup-modal" class="proxy-modal">
+                    <div class="proxy-modal-inner" style="max-width:420px;">
+                        <h3 style="color:var(--primary);">Enable 2FA</h3>
+                        <p style="color:#aaa; font-size:0.85rem; margin:8px 0 14px;">
+                            Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.),
+                            then enter the 6-digit code to confirm.
+                        </p>
+                        <div id="twofa-setup-qr" style="text-align:center; margin:10px 0;"></div>
+                        <div style="font-family:var(--font-mono); font-size:0.75rem; color:#888; word-break:break-all; text-align:center; margin-bottom:14px;" id="twofa-setup-secret"></div>
+                        <label class="form-label">6-Digit Code</label>
+                        <input type="text" id="twofa-setup-code" class="cfg-input" inputmode="numeric" autocomplete="one-time-code"
+                               onkeydown="if(event.key==='Enter')confirmTwofaEnable()">
+                        <div id="twofa-setup-result" style="margin-top:10px; font-size:0.85rem; color:#ff6b6b;"></div>
+                        <div class="proxy-modal-actions">
+                            <button class="btn-control" onclick="closeTwofaSetup()">Cancel</button>
+                            <button class="btn-control green" onclick="confirmTwofaEnable()">Enable 2FA</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Backup Codes Modal -->
+                <div id="twofa-backup-modal" class="proxy-modal">
+                    <div class="proxy-modal-inner" style="max-width:420px;">
+                        <h3 style="color:var(--warning);">⚠️ Save Your Backup Codes</h3>
+                        <p style="color:#aaa; font-size:0.85rem; margin:8px 0 12px;">
+                            Each code works exactly <strong>once</strong> to log in if you lose your authenticator.
+                            Store them somewhere safe — they won't be shown again.
+                        </p>
+                        <div id="twofa-backup-codes" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px;"></div>
+                        <div class="proxy-modal-actions">
+                            <button class="btn-control" onclick="copyBackupCodes()">📋 Copy</button>
+                            <button class="btn-control green" onclick="closeBackupModal()">Done</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Disable 2FA Modal -->
+                <div id="twofa-disable-modal" class="proxy-modal">
+                    <div class="proxy-modal-inner" style="max-width:380px;">
+                        <h3 style="color:var(--danger, #ff6b6b);">Disable 2FA</h3>
+                        <p style="color:#aaa; font-size:0.85rem; margin:8px 0 14px;">Enter a current code from your authenticator app to confirm.</p>
+                        <label class="form-label">6-Digit Code</label>
+                        <input type="text" id="twofa-disable-code" class="cfg-input" inputmode="numeric"
+                               onkeydown="if(event.key==='Enter')confirmTwofaDisable()">
+                        <div id="twofa-disable-result" style="margin-top:10px; font-size:0.85rem; color:#ff6b6b;"></div>
+                        <div class="proxy-modal-actions">
+                            <button class="btn-control" onclick="closeTwofaDisable()">Cancel</button>
+                            <button class="btn-control red" onclick="confirmTwofaDisable()">Disable 2FA</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
@@ -1275,7 +1418,7 @@
                     <div id="arch-archive-list"><div class="no-data">Loading…</div></div>
                 </div>
             </div>
-    <script src="/static/js/navigation.js"></script>
+    <script src="/static/js/navigation.js?v=2.4.3"></script>
     <script src="/static/js/accounts.js?v=2.4.0.2"></script>
     <script src="/static/js/extension.js?v=1.1.0"></script>
     <script src="/static/js/proxies.js"></script>
@@ -1287,6 +1430,9 @@
     <script src="/static/js/history.js"></script>
     <script src="/static/js/moderation.js"></script>
     <script src="/static/js/archive.js"></script>
+    <script src="/static/js/security2fa.js"></script>
+    <script src="/static/js/extension_bridge.js"></script>
+    <script src="/static/js/extension_auth.js"></script>
     <script src="/static/js/init.js"></script>
     <script>
         // ─── API Key Management ────────────────────────────
@@ -1441,6 +1587,7 @@
 
                     // Show admin-only nav items
                     if (currentUserRole === 'admin' || currentUserRole === 'manage') {
+                        document.getElementById('adminUsersNav').style.display = '';
                         document.getElementById('appealsNav').style.display = '';
                         document.getElementById('moderationNav').style.display = '';
                         document.getElementById('ticketsNav').style.display = '';
@@ -1448,6 +1595,8 @@
                     if (currentUserRole === 'admin') {
                         document.getElementById('apiKeysNav').style.display = '';
                     }
+                    // Hide any nav group whose items are all permission-hidden
+                    if (typeof refreshNavGroups === 'function') refreshNavGroups();
                 }
             })
             .catch(() => {
@@ -1958,6 +2107,8 @@
                 if (el) el.classList.add('active');
                 checkDirty();
                 loadDiscordStatus();
+                if (typeof window.loadSecurityStatus === 'function') window.loadSecurityStatus();
+                if (typeof window.loadExtAuthStatus === 'function') window.loadExtAuthStatus();
                 if (window.innerWidth <= 768) {
                     const sidebar = document.querySelector('.sidebar');
                     if (sidebar && sidebar.classList.contains('active')) toggleMobileMenu();

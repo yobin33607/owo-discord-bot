@@ -8,6 +8,13 @@ playsound3==3.3.0
 python-dotenv==1.2.2
 aiohttp-socks==0.10.1
 cryptography==50.0.0
+# ── Dashboard login security (passkeys + 2FA) ──────────
+# webauthn: WebAuthn/passkey server support (PyPI name is `webauthn`)
+# pyotp: TOTP authenticator-app 2FA
+# qrcode: renders the TOTP setup QR code (uses the already-present Pillow)
+webauthn>=3.0.0
+pyotp>=2.9.0
+qrcode>=8.0
 numpy
 Pillow
 onnxruntime

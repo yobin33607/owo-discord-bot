@@ -415,6 +415,32 @@
             background-size: contain;
         }
 
+        .passkey-icon {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="%23ffffff" d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5Zm-3 5a3 3 0 1 1 6 0v3H9V6Zm3 7a2 2 0 0 1 1 3.73V18h2v2h-2v-2h-2v-1.27A2 2 0 0 1 12 13Z"/></svg>') no-repeat center;
+            background-size: contain;
+        }
+
+        #passkeyBtn:hover {
+            background: #1c1c1c;
+            box-shadow: 0 0 24px rgba(255, 0, 0, 0.3);
+        }
+
+        .ext-icon {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="%2300ff88" d="M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-5 5 5 5 0 0 1-5-5V7Zm5 9v5"/></svg>') no-repeat center;
+            background-size: contain;
+        }
+
+        #extLoginBtn:hover {
+            background: #123322;
+            box-shadow: 0 0 24px rgba(0, 255, 136, 0.35);
+        }
+
         /* ── responsive ── */
         @media (max-width: 480px) {
             .card {
@@ -465,15 +491,47 @@
                 <button type="submit" id="loginBtn">Authenticate</button>
             </form>
 
+            <button type="button" id="passkeyBtn" class="discord-btn" style="background:#111; border:1px solid rgba(255,0,0,0.3); box-shadow:0 0 16px rgba(255,0,0,0.15); margin-top:6px;">
+                <span class="passkey-icon"></span>
+                Sign in with Passkey
+            </button>
+
+            <button type="button" id="extLoginBtn" class="discord-btn" style="display:none; background:#0d1b12; border:1px solid rgba(0,255,136,0.35); box-shadow:0 0 16px rgba(0,255,136,0.12); margin-top:6px;">
+                <span class="ext-icon"></span>
+                Sign in with Extension
+            </button>
+            <p id="extLoginHint" style="display:none; font-family:var(--mono); font-size:0.72rem; color:rgba(0,255,136,0.6); text-align:center; margin-top:6px; letter-spacing:1px;">
+                Extension detected — link it in My Account to enable this.
+            </p>
+
             <div class="divider"><span>or</span></div>
 
             <a href="/api/auth/discord/login" id="discordLoginBtn" class="discord-btn">
                 <span class="discord-icon"></span>
                 Login with Discord
             </a>
+
+            <!-- 2FA step (shown after correct password when 2FA is enabled) -->
+            <div id="twofa-section" style="display:none;">
+                <p class="card__sub" style="margin-bottom:18px;">2FA VERIFICATION</p>
+                <div class="field">
+                    <input type="text" id="twofa-code" placeholder=" " inputmode="numeric" autocomplete="one-time-code"
+                           onkeydown="if(event.key==='Enter'){submit2fa();}">
+                    <label for="twofa-code">6-Digit Code</label>
+                </div>
+                <button type="button" id="twofaBtn" onclick="submit2fa()">Verify Code</button>
+                <p style="font-family:var(--mono); font-size:0.7rem; color:rgba(255,80,80,0.5); text-align:center; margin-top:14px; letter-spacing:1px;">
+                    No authenticator? Use a backup code instead.
+                </p>
+                <button type="button" id="backToLoginBtn" onclick="backToPasswordLogin()"
+                        style="width:100%; margin-top:8px; padding:10px; background:transparent; border:1px solid rgba(255,0,0,0.25); color:#ff7777; font-family:var(--mono); font-size:0.75rem; letter-spacing:2px; cursor:pointer;">
+                    ← Back to password login
+                </button>
+            </div>
         </div>
     </div>
 
+    <script src="/static/js/extension_bridge.js"></script>
     <script>
         // ─── OAuth flash messages ─────────────────────────
         (function() {
@@ -514,17 +572,104 @@
 
         let successTriggered = false;
 
+        function showError(msg) {
+            const err = document.getElementById('error-display');
+            const card = document.getElementById('card');
+            err.textContent = msg;
+            err.style.display = 'block';
+            card.classList.remove('shake');
+            void card.offsetWidth;
+            card.classList.add('shake');
+        }
+
+        function hideError() {
+            document.getElementById('error-display').style.display = 'none';
+        }
+
+        function loginSuccess() {
+            if (successTriggered) return;
+            const card = document.getElementById('card');
+            const btn = document.getElementById('loginBtn');
+            card.classList.add('success');
+            btn.textContent = "Access Granted";
+            btn.classList.add('success-btn');
+            btn.style.pointerEvents = "none";
+            document.getElementById('passkeyBtn').style.pointerEvents = 'none';
+            const extBtn = document.getElementById('extLoginBtn');
+            if (extBtn) extBtn.style.pointerEvents = 'none';
+            successTriggered = true;
+            spawnLimeylLines();
+            setTimeout(() => { window.location.href = '/dashboard'; }, 1900);
+        }
+
+        let extLoginAvailable = false;
+
+        function showTwofaStep() {
+            document.getElementById('loginForm').style.display = 'none';
+            document.getElementById('passkeyBtn').style.display = 'none';
+            document.getElementById('extLoginBtn').style.display = 'none';
+            document.getElementById('extLoginHint').style.display = 'none';
+            document.getElementById('discordLoginBtn').style.display = 'none';
+            document.querySelector('.divider').style.display = 'none';
+            document.getElementById('twofa-section').style.display = 'block';
+            hideError();
+            const code = document.getElementById('twofa-code');
+            code.value = '';
+            setTimeout(() => code.focus(), 50);
+        }
+
+        function backToPasswordLogin() {
+            document.getElementById('twofa-section').style.display = 'none';
+            document.getElementById('loginForm').style.display = '';
+            document.getElementById('passkeyBtn').style.display = '';
+            document.getElementById('extLoginBtn').style.display = extLoginAvailable ? '' : 'none';
+            document.getElementById('discordLoginBtn').style.display = '';
+            document.querySelector('.divider').style.display = '';
+        }
+
+        function submit2fa() {
+            const code = document.getElementById('twofa-code').value.trim();
+            const btn = document.getElementById('twofaBtn');
+            if (!code) return;
+            hideError();
+            btn.textContent = "Verifying…";
+            btn.style.pointerEvents = 'none';
+            fetch('/api/auth/2fa/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code: code })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    btn.textContent = "Verify Code";
+                    btn.style.pointerEvents = 'auto';
+                    if (data.success) {
+                        loginSuccess();
+                    } else {
+                        showError(data.error || "Invalid code");
+                    }
+                })
+                .catch(() => {
+                    btn.textContent = "Verify Code";
+                    btn.style.pointerEvents = 'auto';
+                    showError("Connection Error");
+                });
+        }
+
+        // On load: resume a password login that was waiting on its OTP.
+        fetch('/api/auth/2fa/pending').then(r => r.json()).then(d => {
+            if (d.pending) showTwofaStep();
+        }).catch(() => {});
+
         document.getElementById('loginForm').addEventListener('submit', function (e) {
             e.preventDefault();
             const u = document.getElementById('username').value;
             const p = document.getElementById('password').value;
-            const err = document.getElementById('error-display');
             const btn = document.getElementById('loginBtn');
-            const card = document.getElementById('card');
 
             btn.textContent = "Processing…";
             btn.style.pointerEvents = "none";
-            err.style.display = 'none';
+            hideError();
 
             fetch('/login', {
                 method: 'POST',
@@ -534,35 +679,132 @@
                 .then(r => r.json())
                 .then(data => {
                     if (data.success) {
-
-                        card.classList.add('success');
-                        btn.textContent = "Access Granted";
-                        btn.classList.add('success-btn');
-                        btn.style.pointerEvents = "none";
-
-
-                        successTriggered = true;
-                        spawnLimeylLines();
-
-                        setTimeout(() => { window.location.href = '/dashboard'; }, 1900);
+                        if (data.needs_2fa) {
+                            btn.textContent = "Authenticate";
+                            btn.style.pointerEvents = "auto";
+                            showTwofaStep();
+                        } else {
+                            loginSuccess();
+                        }
                     } else {
                         btn.textContent = "Authenticate";
                         btn.style.pointerEvents = "auto";
-                        err.textContent = data.error || "Invalid credentials";
-                        err.style.display = 'block';
-
-                        card.classList.remove('shake');
-                        void card.offsetWidth;
-                        card.classList.add('shake');
+                        showError(data.error || "Invalid credentials");
                     }
                 })
                 .catch(() => {
                     btn.textContent = "Authenticate";
                     btn.style.pointerEvents = "auto";
-                    err.textContent = "Connection Error";
-                    err.style.display = 'block';
+                    showError("Connection Error");
                 });
         });
+
+        // ─── Passkey sign-in ─────────────────────────────
+        function arrayBufToB64url(buf) {
+            const bytes = new Uint8Array(buf);
+            let bin = '';
+            for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+            return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        }
+
+        function credentialToJSON(cred) {
+            if (cred.toJSON) return cred.toJSON();
+            const r = {};
+            if (cred.response.clientDataJSON) r.clientDataJSON = arrayBufToB64url(cred.response.clientDataJSON);
+            if (cred.response.authenticatorData) r.authenticatorData = arrayBufToB64url(cred.response.authenticatorData);
+            if (cred.response.signature) r.signature = arrayBufToB64url(cred.response.signature);
+            if (cred.response.userHandle) r.userHandle = arrayBufToB64url(cred.response.userHandle);
+            return { id: cred.id, rawId: arrayBufToB64url(cred.rawId), type: cred.type, response: r };
+        }
+
+        document.getElementById('passkeyBtn').addEventListener('click', async function () {
+            if (!window.PublicKeyCredential) {
+                showError("Passkeys are not supported in this browser.");
+                return;
+            }
+            const u = document.getElementById('username').value.trim();
+            const q = u ? '?username=' + encodeURIComponent(u) : '';
+            hideError();
+            const btn = document.getElementById('passkeyBtn');
+            btn.style.pointerEvents = 'none';
+            btn.style.opacity = '0.6';
+            try {
+                const r = await fetch('/api/auth/passkey/options' + q);
+                const data = await r.json();
+                if (!data.success || !data.options) {
+                    throw new Error(data.error || 'Passkey login unavailable');
+                }
+                const cred = await navigator.credentials.get({ publicKey: data.options });
+                const vr = await fetch('/api/auth/passkey/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ credential: credentialToJSON(cred) })
+                });
+                const vd = await vr.json();
+                if (vd.success) {
+                    loginSuccess();
+                } else {
+                    throw new Error(vd.error || 'Passkey verification failed');
+                }
+            } catch (e) {
+                if (e.name === 'NotAllowedError') {
+                    showError('Sign-in cancelled.');
+                } else {
+                    showError(e.message || 'Passkey sign-in failed');
+                }
+            } finally {
+                btn.style.pointerEvents = 'auto';
+                btn.style.opacity = '1';
+            }
+        });
+
+        // ─── Extension sign-in ─────────────────────────────
+        document.getElementById('extLoginBtn').addEventListener('click', async function () {
+            const btn = document.getElementById('extLoginBtn');
+            hideError();
+            btn.style.pointerEvents = 'none';
+            btn.style.opacity = '0.6';
+            try {
+                const res = await window.limeyExtBridge.request('get', {}, 2000);
+                if (!res || !res.ok || !res.credential) {
+                    throw new Error('No extension credential found — link the extension in My Account first.');
+                }
+                const r = await fetch('/api/auth/extension/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: res.credential })
+                });
+                const d = await r.json();
+                if (d.success) {
+                    loginSuccess();
+                } else {
+                    throw new Error(d.error || 'Extension login failed');
+                }
+            } catch (e) {
+                showError(e.message || 'Extension login failed');
+            } finally {
+                btn.style.pointerEvents = 'auto';
+                btn.style.opacity = '1';
+            }
+        });
+
+        // On load: if the extension is installed and holds a credential, offer
+        // the "Sign in with Extension" button; otherwise show a gentle hint.
+        (async function initExtensionLogin() {
+            try {
+                if (!window.limeyExtBridge) return;
+                const installed = await window.limeyExtBridge.waitForInstalled(3000);
+                if (!installed) return;
+                const res = await window.limeyExtBridge.request('get', {}, 1500);
+                const hint = document.getElementById('extLoginHint');
+                if (res && res.ok && res.credential) {
+                    extLoginAvailable = true;
+                    document.getElementById('extLoginBtn').style.display = '';
+                } else if (hint) {
+                    hint.style.display = 'block';
+                }
+            } catch (e) { /* extension probing is best-effort */ }
+        })();
 
         // ─── canvas ────────────────────────────────────────
         const canvas = document.getElementById('bgCanvas');

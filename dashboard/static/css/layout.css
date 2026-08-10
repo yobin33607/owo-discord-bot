@@ -164,6 +164,77 @@
     transform: scale(1.1);
 }
 
+/* ── Collapsible nav groups ───────────────────────────── */
+.nav-group {
+    position: relative;
+}
+.nav-group-toggle {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    width: 100%;
+    padding: 10px 20px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 0.82rem;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 0 8px 8px 0;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.nav-group-toggle:hover {
+    color: var(--primary);
+    background: rgba(255, 31, 31, 0.05);
+    transform: translateX(5px);
+}
+.nav-group-toggle:focus-visible {
+    outline: 1px solid var(--primary);
+    outline-offset: -1px;
+}
+.nav-group-chevron {
+    margin-left: auto;
+    opacity: 0.55;
+    transition: transform 0.3s ease;
+}
+.nav-group.open .nav-group-chevron {
+    transform: rotate(180deg);
+    opacity: 1;
+}
+.nav-group-items {
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+    margin: 4px 0 6px;
+    padding-left: 16px;
+    position: relative;
+}
+.nav-group-items::before {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 4px;
+    bottom: 4px;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.08);
+}
+.nav-group.open .nav-group-items {
+    display: flex;
+    animation: navGroupIn 0.25s ease;
+}
+.nav-group-items .nav-item {
+    padding: 10px 18px;
+    font-size: 1rem;
+}
+@keyframes navGroupIn {
+    from { opacity: 0; transform: translateX(-8px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
 .content-area {
     flex: 1;
     padding: 80px 30px 30px 30px;

@@ -519,6 +519,409 @@ def change_password():
     return jsonify({'success': True, 'message': 'Password changed successfully'})
 
 
+# ── Passkey (WebAuthn) + 2FA Login Security ────────────
+
+from utils import security_auth as sec_auth
+from urllib.parse import urlparse as _urlparse
+
+# Password verified, OTP still needed: username -> expiry timestamp
+PENDING_2FA_LOGIN = {}
+# TOTP setup in progress: username -> {'secret', 'expires'}
+PENDING_2FA_SETUP = {}
+PENDING_2FA_TTL = 600  # seconds
+
+
+def _auth_get_user(cfg, username):
+    for u in (cfg or {}).get('users', []):
+        if u.get('username') == username:
+            return u
+    return None
+
+
+def _auth_complete_login(user):
+    """Set the session for a fully authenticated user and clear 2FA state."""
+    session['logged_in'] = True
+    session['username'] = user['username']
+    session['role'] = user.get('role', 'view')
+    session.permanent = True
+    session.pop('2fa_pending_user', None)
+    PENDING_2FA_LOGIN.pop(user['username'], None)
+    PENDING_2FA_SETUP.pop(user['username'], None)
+
+
+def _auth_pending_2fa_username():
+    """Username awaiting the OTP step of a password login, or None."""
+    username = session.get('2fa_pending_user')
+    if not username:
+        return None
+    if PENDING_2FA_LOGIN.get(username, 0) < time.time():
+        session.pop('2fa_pending_user', None)
+        return None
+    return username
+
+
+def _webauthn_origin():
+    """The dashboard's own origin (https://host[:port]) — the browser's
+    clientDataJSON.origin must equal this for WebAuthn verification."""
+    return request.url_root.rstrip('/')
+
+
+def _webauthn_session_challenge():
+    """Pop the challenge/origin stored when the ceremony was started."""
+    challenge_hex = session.pop('webauthn_challenge', None)
+    expected_origin = session.pop('webauthn_origin', None)
+    if not challenge_hex or not expected_origin:
+        return None, None
+    try:
+        return bytes.fromhex(challenge_hex), expected_origin
+    except ValueError:
+        return None, None
+
+
+@app.route('/api/auth/2fa/pending')
+def twofa_pending():
+    """Whether the current browser has a password login waiting on an OTP."""
+    username = _auth_pending_2fa_username()
+    if username:
+        return jsonify({'pending': True, 'username': username})
+    return jsonify({'pending': False})
+
+
+@app.route('/api/auth/2fa/verify', methods=['POST'])
+def twofa_verify():
+    """Complete a password login with a TOTP code or backup code."""
+    ip = request.remote_addr
+    allowed, wait_time = check_rate_limit(ip)
+    if not allowed:
+        return jsonify({'success': False, 'error': f'Too many attempts. Try again in {wait_time}s'}), 429
+
+    username = _auth_pending_2fa_username()
+    if not username:
+        return jsonify({'success': False, 'error': 'Login session expired — enter your password again.'}), 401
+
+    code = (request.json or {}).get('code', '')
+    cfg = load_auth_config()
+    user = _auth_get_user(cfg, username)
+    if not user or not user.get('totp_secret'):
+        session.pop('2fa_pending_user', None)
+        return jsonify({'success': False, 'error': '2FA is not enabled for this user.'}), 400
+
+    backup_used = False
+    ok = sec_auth.totp_verify(user.get('totp_secret'), code)
+    if not ok:
+        ok = sec_auth.verify_backup_code(user, code)
+        backup_used = ok
+    if not ok:
+        fail_login(ip)
+        return jsonify({'success': False, 'error': 'Invalid code.'}), 403
+
+    if backup_used and cfg:
+        ghd.write_json("config/auth.json", cfg, message="Consume backup code")
+    _auth_complete_login(user)
+    if ip in LOGIN_ATTEMPTS:
+        del LOGIN_ATTEMPTS[ip]
+    return jsonify({'success': True, 'role': user.get('role', 'view'), 'username': username})
+
+
+# ── Passkey login (unauthenticated) ────────────────────
+
+@app.route('/api/auth/passkey/options')
+def passkey_options():
+    """Start a passkey login ceremony. Optional ?username= narrows the prompt."""
+    username = request.args.get('username', '').strip()
+    cfg = load_auth_config()
+    user = _auth_get_user(cfg, username) if username else None
+    if username and not user:
+        # Unknown username — still allow discoverable-credential login.
+        user = None
+    options, challenge, expected_origin = sec_auth.authentication_options(_webauthn_origin(), user=user)
+    session['webauthn_challenge'] = challenge.hex()
+    session['webauthn_origin'] = expected_origin
+    return jsonify({'success': True, 'options': options})
+
+
+@app.route('/api/auth/passkey/verify', methods=['POST'])
+def passkey_verify():
+    """Verify a passkey assertion and log the user in (passkeys skip 2FA)."""
+    ip = request.remote_addr
+    allowed, wait_time = check_rate_limit(ip)
+    if not allowed:
+        return jsonify({'success': False, 'error': f'Too many attempts. Try again in {wait_time}s'}), 429
+
+    credential = (request.json or {}).get('credential')
+    challenge, expected_origin = _webauthn_session_challenge()
+    if not credential or not challenge:
+        return jsonify({'success': False, 'error': 'Login session expired — try again.'}), 400
+
+    cfg = load_auth_config()
+    user, passkey = sec_auth.find_user_by_passkey(cfg, credential)
+    if not user or not passkey:
+        fail_login(ip)
+        return jsonify({'success': False, 'error': 'No passkey matches this sign-in.'}), 404
+
+    try:
+        rp_id, _ = sec_auth.build_rp(expected_origin)
+        new_count = sec_auth.verify_authentication(
+            expected_origin, challenge, credential, rp_id, passkey)
+    except Exception:
+        fail_login(ip)
+        return jsonify({'success': False, 'error': 'Passkey verification failed.'}), 403
+
+    passkey['sign_count'] = new_count
+    if cfg:
+        ghd.write_json("config/auth.json", cfg, message="Update passkey sign count")
+    _auth_complete_login(user)
+    if ip in LOGIN_ATTEMPTS:
+        del LOGIN_ATTEMPTS[ip]
+    return jsonify({'success': True, 'role': user.get('role', 'view'), 'username': user['username']})
+
+
+# ── Passkey management (authenticated) ─────────────────
+
+@app.route('/api/auth/passkey/register/options')
+@login_required
+def passkey_register_options():
+    """Start registering a new passkey for the current user."""
+    cfg = load_auth_config()
+    user = _auth_get_user(cfg, session.get('username'))
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    exclude = [p['id'] for p in (user.get('passkeys') or [])]
+    options, challenge, expected_origin = sec_auth.registration_options(
+        _webauthn_origin(), user['username'], exclude)
+    session['webauthn_challenge'] = challenge.hex()
+    session['webauthn_origin'] = expected_origin
+    return jsonify({'success': True, 'options': options})
+
+
+@app.route('/api/auth/passkey/register/verify', methods=['POST'])
+@login_required
+def passkey_register_verify():
+    """Verify and store a newly created passkey."""
+    body = request.json or {}
+    credential = body.get('credential')
+    device = (body.get('device') or 'Browser').strip()[:40]
+    challenge, expected_origin = _webauthn_session_challenge()
+    if not credential or not challenge:
+        return jsonify({'success': False, 'error': 'Registration session expired — try again.'}), 400
+
+    cfg = load_auth_config()
+    user = _auth_get_user(cfg, session.get('username'))
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+
+    try:
+        rp_id, _ = sec_auth.build_rp(expected_origin)
+        pk = sec_auth.verify_registration(expected_origin, challenge, credential, rp_id)
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Passkey verification failed: {e}'}), 403
+
+    pk['device'] = device
+    pk['created_at'] = time.time()
+    user.setdefault('passkeys', []).append(pk)
+    if cfg:
+        ghd.write_json("config/auth.json", cfg, message="Register passkey")
+    return jsonify({'success': True, 'passkey': {
+        'id': pk['id'], 'device': pk['device'], 'created_at': pk['created_at']
+    }})
+
+
+@app.route('/api/auth/passkey/remove', methods=['POST'])
+@login_required
+def passkey_remove():
+    """Remove a passkey from the current user."""
+    pk_id = (request.json or {}).get('id', '')
+    cfg = load_auth_config()
+    user = _auth_get_user(cfg, session.get('username'))
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    before = len(user.get('passkeys') or [])
+    user['passkeys'] = [p for p in (user.get('passkeys') or []) if p.get('id') != pk_id]
+    if len(user['passkeys']) == before:
+        return jsonify({'success': False, 'error': 'Passkey not found'}), 404
+    if cfg:
+        ghd.write_json("config/auth.json", cfg, message="Remove passkey")
+    return jsonify({'success': True})
+
+
+# ── 2FA management (authenticated) ─────────────────────
+
+@app.route('/api/auth/2fa/setup', methods=['POST'])
+@login_required
+def twofa_setup():
+    """Begin enabling 2FA: returns the TOTP secret + QR code."""
+    cfg = load_auth_config()
+    user = _auth_get_user(cfg, session.get('username'))
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    if user.get('totp_secret'):
+        return jsonify({'success': False, 'error': '2FA is already enabled.'}), 400
+
+    secret = sec_auth.generate_totp_secret()
+    uri = sec_auth.totp_uri(secret, user['username'])
+    PENDING_2FA_SETUP[user['username']] = {'secret': secret, 'expires': time.time() + PENDING_2FA_TTL}
+    return jsonify({
+        'success': True,
+        'secret': secret,
+        'otpauth': uri,
+        'qr': sec_auth.totp_qr_data_url(uri),
+    })
+
+
+@app.route('/api/auth/2fa/enable', methods=['POST'])
+@login_required
+def twofa_enable():
+    """Confirm the TOTP code and turn 2FA on; returns backup codes once."""
+    code = (request.json or {}).get('code', '')
+    username = session.get('username')
+    pending = PENDING_2FA_SETUP.pop(username, None)
+    if not pending or pending.get('expires', 0) < time.time():
+        return jsonify({'success': False, 'error': 'Setup session expired — start over.'}), 400
+    if not sec_auth.totp_verify(pending['secret'], code):
+        return jsonify({'success': False, 'error': 'Invalid code — check your authenticator app.'}), 403
+
+    cfg = load_auth_config()
+    user = _auth_get_user(cfg, username)
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+
+    codes = sec_auth.generate_backup_codes()
+    user['totp_secret'] = pending['secret']
+    user['backup_codes'] = [sec_auth.hash_backup_code(c) for c in codes]
+    if cfg:
+        ghd.write_json("config/auth.json", cfg, message="Enable 2FA")
+    return jsonify({'success': True, 'backup_codes': codes})
+
+
+@app.route('/api/auth/2fa/disable', methods=['POST'])
+@login_required
+def twofa_disable():
+    """Disable 2FA after confirming the current TOTP code."""
+    code = (request.json or {}).get('code', '')
+    cfg = load_auth_config()
+    user = _auth_get_user(cfg, session.get('username'))
+    if not user or not user.get('totp_secret'):
+        return jsonify({'success': False, 'error': '2FA is not enabled.'}), 400
+    if not sec_auth.totp_verify(user['totp_secret'], code):
+        return jsonify({'success': False, 'error': 'Invalid code.'}), 403
+
+    user.pop('totp_secret', None)
+    user.pop('backup_codes', None)
+    if cfg:
+        ghd.write_json("config/auth.json", cfg, message="Disable 2FA")
+    return jsonify({'success': True})
+
+
+@app.route('/api/auth/security')
+@login_required
+def auth_security():
+    """Aggregate 2FA + passkey status for the current user."""
+    cfg = load_auth_config()
+    user = _auth_get_user(cfg, session.get('username'))
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    return jsonify({
+        'success': True,
+        'totp_enabled': bool(user.get('totp_secret')),
+        'backup_codes_remaining': len(user.get('backup_codes') or []),
+        'passkeys': [
+            {'id': p.get('id'), 'device': p.get('device', 'Unknown'), 'created_at': p.get('created_at')}
+            for p in (user.get('passkeys') or [])
+        ],
+    })
+
+
+# ── Extension Login (browser-extension credential) ─────
+# The Limey browser extension can act as a sign-in device: pairing (My
+# Account) hands the extension a high-entropy token (stored only as a SHA-256
+# hash server-side), and the login page lets the extension present it back.
+# Like passkeys, possession of the credential is the factor — no 2FA step.
+
+EXT_CREDENTIALS_MAX = 5
+
+
+@app.route('/api/auth/extension/pair', methods=['POST'])
+@login_required
+def ext_pair():
+    """Issue a one-time credential for the extension to store."""
+    data = request.json or {}
+    label = (data.get('label') or 'Browser extension').strip()[:40]
+    cfg = load_auth_config()
+    user = _auth_get_user(cfg, session.get('username'))
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    creds = user.setdefault('ext_credentials', [])
+    if len(creds) >= EXT_CREDENTIALS_MAX:
+        return jsonify({'success': False, 'error': f'Maximum of {EXT_CREDENTIALS_MAX} linked extensions — remove one first.'}), 400
+    raw = sec_auth.generate_ext_token()
+    cred_id = secrets.token_urlsafe(8)
+    creds.append({
+        'id': cred_id,
+        'hash': sec_auth.hash_ext_token(raw),
+        'label': label,
+        'created_at': time.time(),
+    })
+    if cfg:
+        ghd.write_json("config/auth.json", cfg, message="Pair extension")
+    # id is returned so the page can auto-revoke if the extension never
+    # confirms storing the token (keeps the 5-credential cap honest).
+    return jsonify({'success': True, 'token': raw, 'label': label, 'id': cred_id})
+
+
+@app.route('/api/auth/extension')
+@login_required
+def ext_list():
+    """List the current user's linked extension credentials (no tokens)."""
+    cfg = load_auth_config()
+    user = _auth_get_user(cfg, session.get('username'))
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    return jsonify({'success': True, 'credentials': [
+        {'id': c.get('id'), 'label': c.get('label', 'Extension'), 'created_at': c.get('created_at')}
+        for c in (user.get('ext_credentials') or [])
+    ]})
+
+
+@app.route('/api/auth/extension/revoke', methods=['POST'])
+@login_required
+def ext_revoke():
+    """Revoke a linked extension credential."""
+    cid = (request.json or {}).get('id', '')
+    cfg = load_auth_config()
+    user = _auth_get_user(cfg, session.get('username'))
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    creds = user.get('ext_credentials') or []
+    before = len(creds)
+    user['ext_credentials'] = [c for c in creds if c.get('id') != cid]
+    if len(user['ext_credentials']) == before:
+        return jsonify({'success': False, 'error': 'Credential not found'}), 404
+    if cfg:
+        ghd.write_json("config/auth.json", cfg, message="Revoke extension credential")
+    return jsonify({'success': True})
+
+
+@app.route('/api/auth/extension/login', methods=['POST'])
+def ext_login():
+    """Log in with the credential the extension presents."""
+    ip = request.remote_addr
+    allowed, wait_time = check_rate_limit(ip)
+    if not allowed:
+        return jsonify({'success': False, 'error': f'Too many attempts. Try again in {wait_time}s'}), 429
+    raw = (request.json or {}).get('token', '')
+    if not raw:
+        return jsonify({'success': False, 'error': 'Missing credential'}), 400
+    cfg = load_auth_config()
+    user = sec_auth.find_user_by_ext_token(cfg, raw)
+    if not user:
+        fail_login(ip)
+        return jsonify({'success': False, 'error': 'Invalid extension credential'}), 403
+    _auth_complete_login(user)
+    if ip in LOGIN_ATTEMPTS:
+        del LOGIN_ATTEMPTS[ip]
+    return jsonify({'success': True, 'role': user.get('role', 'view'), 'username': user['username']})
+
+
 # ── API Key Management ──────────────────────────────────
 
 @app.route('/api/api-keys', methods=['GET', 'POST'])
@@ -911,10 +1314,12 @@ def login():
         
         for user in cfg.get('users', []):
             if user.get('username') == username and user.get('password') == password:
-                session['logged_in'] = True
-                session['username'] = username
-                session['role'] = user.get('role', 'view')
-                session.permanent = True
+                # 2FA step: password is correct, but an OTP is still required.
+                if user.get('totp_secret'):
+                    PENDING_2FA_LOGIN[username] = time.time() + PENDING_2FA_TTL
+                    session['2fa_pending_user'] = username
+                    return jsonify({'success': True, 'needs_2fa': True, 'username': username})
+                _auth_complete_login(user)
                 if ip in LOGIN_ATTEMPTS: del LOGIN_ATTEMPTS[ip]
                 return jsonify({'success': True, 'role': user.get('role', 'view'), 'username': username})
         
@@ -928,6 +1333,9 @@ def logout():
     session.pop('logged_in', None)
     session.pop('username', None)
     session.pop('role', None)
+    session.pop('2fa_pending_user', None)
+    session.pop('webauthn_challenge', None)
+    session.pop('webauthn_origin', None)
     return redirect(url_for('home'))
 
 @app.route('/api/auth/me')

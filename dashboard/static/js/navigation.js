@@ -83,6 +83,9 @@ window.nav = function(id, el) {
     if (id === 'archives' && typeof window.loadArchivePage === 'function') {
         window.loadArchivePage();
     }
+    if (id === 'my-account' && typeof window.loadSecurityStatus === 'function') {
+        window.loadSecurityStatus();
+    }
 };
 
 window.toggleMobileMenu = function() {
@@ -91,3 +94,71 @@ window.toggleMobileMenu = function() {
     s.classList.toggle('active'); o.classList.toggle('active'); t.classList.toggle('active');
     document.body.style.overflow = s.classList.contains('active') ? 'hidden' : '';
 };
+
+// ── Collapsible nav groups ─────────────────────────────
+
+window.toggleNavGroup = function(name, btn) {
+    const group = btn ? btn.closest('.nav-group') : document.getElementById('navGroup-' + name);
+    if (!group) return;
+    const open = group.classList.toggle('open');
+    const toggle = group.querySelector('.nav-group-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    try {
+        const saved = JSON.parse(localStorage.getItem('limeyNavGroups') || '{}');
+        saved[name] = open;
+        localStorage.setItem('limeyNavGroups', JSON.stringify(saved));
+    } catch (e) { /* private mode / disabled storage — collapse still works */ }
+};
+
+function refreshNavGroups() {
+    document.querySelectorAll('.nav-group').forEach(group => {
+        let visible = 0;
+        group.querySelectorAll('.nav-item').forEach(item => {
+            if (item.style.display !== 'none') visible++;
+        });
+        group.style.display = visible ? '' : 'none';
+    });
+}
+window.refreshNavGroups = refreshNavGroups;
+
+function initNavGroups() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem('limeyNavGroups') || '{}'); } catch (e) {}
+    document.querySelectorAll('.nav-group').forEach(group => {
+        const name = (group.id || '').replace(/^navGroup-/, '');
+        let open = false;
+        if (group.querySelector('.nav-item.active')) {
+            // The group holding the current page is always shown expanded
+            open = true;
+        } else if (typeof saved[name] === 'boolean') {
+            open = saved[name];
+        }
+        group.classList.toggle('open', open);
+        const toggle = group.querySelector('.nav-group-toggle');
+        if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    refreshNavGroups();
+    // Auto-expand (and remember) the group of whichever nav item becomes active
+    document.addEventListener('click', e => {
+        const item = e.target.closest('.nav-item');
+        const group = item ? item.closest('.nav-group') : null;
+        if (!group) return;
+        group.classList.add('open');
+        const toggle = group.querySelector('.nav-group-toggle');
+        if (toggle) toggle.setAttribute('aria-expanded', 'true');
+        const name = (group.id || '').replace(/^navGroup-/, '');
+        if (!name) return;
+        try {
+            const saved = JSON.parse(localStorage.getItem('limeyNavGroups') || '{}');
+            if (!saved[name]) {
+                saved[name] = true;
+                localStorage.setItem('limeyNavGroups', JSON.stringify(saved));
+            }
+        } catch (e) { /* private mode / disabled storage */ }
+    });
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initNavGroups);
+} else {
+    initNavGroups();
+}

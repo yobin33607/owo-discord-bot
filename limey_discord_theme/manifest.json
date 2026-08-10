@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Limey Captcha Alert Theme",
-  "version": "1.5.3",
-  "description": "Styles captcha-alert messages as dark red auth-screen alert boxes in Discord. Author detection is resilient to Discord DOM changes (id attributes, avatar URLs, tag pills). Only the Limey bot and WEBHOOK-tagged authors that post captcha alerts are flagged (never humans or other bots); can be locked to a single webhook. Targeting config and styles auto-update from the owner's server. Pure client-side CSS — nothing is read from or sent to Discord.",
+  "version": "1.6.0",
+  "description": "Styles captcha-alert messages as dark red auth-screen alert boxes in Discord and doubles as a sign-in device for the Limey dashboard (Login with Extension). Author detection is resilient to Discord DOM changes (id attributes, avatar URLs, tag pills). Only the Limey bot and WEBHOOK-tagged authors that post captcha alerts are flagged (never humans or other bots); can be locked to a single webhook. Targeting config and styles auto-update from the owner's server. Pure client-side CSS — nothing is read from or sent to Discord.",
   "permissions": ["storage"],
   "host_permissions": [
     "https://limeyself.onrender.com/*"
@@ -10,6 +10,15 @@
   "content_scripts": [
     {
       "matches": ["https://discord.com/*", "https://*.discord.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://limeyself.onrender.com/*",
+        "http://localhost:8000/*",
+        "http://127.0.0.1:8000/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

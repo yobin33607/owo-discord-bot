@@ -26,6 +26,62 @@
 (() => {
   'use strict';
 
+  // ── Dashboard credential bridge (Login with Extension) ─────────────────────
+  // On the dashboard domain the extension acts as a sign-in device: it stores
+  // the credential the site issued during pairing (My Account → Extension
+  // Login) and hands it back when the login page asks for it. Messages travel
+  // through DOM CustomEvents because the content script and the page live in
+  // separate JS worlds but share the same DOM. Presence is signalled with
+  // <html data-limey-ext="1">. The Discord theming below is skipped here.
+  const DASHBOARD_HOSTS = ['limeyself.onrender.com', 'localhost', '127.0.0.1'];
+  const IS_DASHBOARD = (() => {
+    const h = location.hostname;
+    return DASHBOARD_HOSTS.indexOf(h) !== -1 || h.endsWith('.onrender.com');
+  })();
+
+  if (IS_DASHBOARD) {
+    const REQ_EVENT = 'limeyExtRequest';
+    const RESP_EVENT = 'limeyExtResponse';
+    const CRED_KEY = 'limey_credential';
+
+    document.documentElement.setAttribute('data-limey-ext', '1');
+
+    document.addEventListener(REQ_EVENT, async (e) => {
+      const detail = (e && e.detail) || {};
+      const requestId = detail.requestId;
+      const type = detail.type;
+      if (!type || typeof requestId !== 'string') return;
+      const result = { requestId: requestId, ok: false };
+      try {
+        if (type === 'hello') {
+          result.ok = true;
+          result.name = 'limey-extension';
+          result.version = (chrome.runtime.getManifest() || {}).version || '0';
+        } else if (type === 'get') {
+          const data = await chrome.storage.local.get(CRED_KEY);
+          result.ok = true;
+          result.credential = data[CRED_KEY] || null;
+        } else if (type === 'store') {
+          if (typeof detail.credential === 'string' && detail.credential.length >= 16) {
+            await chrome.storage.local.set({ [CRED_KEY]: detail.credential });
+            result.ok = true;
+          } else {
+            result.error = 'missing credential';
+          }
+        } else if (type === 'clear') {
+          await chrome.storage.local.remove(CRED_KEY);
+          result.ok = true;
+        } else {
+          result.error = 'unknown request type: ' + type;
+        }
+      } catch (err) {
+        result.error = String((err && err.message) || err);
+      }
+      document.dispatchEvent(new CustomEvent(RESP_EVENT, { detail: result }));
+    });
+    return; // dashboard bridge only — the Discord theming below is skipped
+  }
+
   const STYLE_ID = 'limey-theme-style';
   const DEBUG = true; // set false to silence per-message logs
 

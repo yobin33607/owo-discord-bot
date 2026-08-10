@@ -1401,6 +1401,15 @@ def settings():
                     'auto_post': False,
                     'post_time': '09:00'
                 }
+            # Ensure the moderation role/channel settings appear in the config UI.
+            # The editor only renders keys that exist, so missing keys like
+            # quarantine_role_id (used by !quarantine) were invisible until saved.
+            mod_cfg = mb.get('moderation')
+            if not isinstance(mod_cfg, dict):
+                mod_cfg = mb['moderation'] = {}
+            for _mod_key in ('mod_log_channel_id', 'muted_role_id', 'quarantine_role_id', 'staff_role_id'):
+                if _mod_key not in mod_cfg:
+                    mod_cfg[_mod_key] = ''
             if 'discord_oauth' not in data:
                 data['discord_oauth'] = {
                     'client_id': '',
@@ -2626,6 +2635,8 @@ def api_moderation_summary():
     auto_mod_enabled = cfg.get('auto_mod', {}).get('discord_automod_warn', True)
     muted_role_id = cfg.get('muted_role_id', None)
     mod_log_channel = cfg.get('mod_log_channel_id', '')
+    quarantine_role_id = cfg.get('quarantine_role_id', None)
+    staff_role_id = cfg.get('staff_role_id', None)
     
     return jsonify({
         'success': True,
@@ -2640,6 +2651,8 @@ def api_moderation_summary():
                 'auto_mod_enabled': auto_mod_enabled,
                 'muted_role_id': muted_role_id,
                 'mod_log_channel': mod_log_channel,
+                'quarantine_role_id': quarantine_role_id,
+                'staff_role_id': staff_role_id,
             }
         }
     })

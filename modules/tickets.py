@@ -33,6 +33,10 @@ _log = logging.getLogger("ticket_bot")
 
 from utils.github_data_store import ghd
 
+# ── Staff gate for admin commands ─────────────────────
+
+from modules.staff_gate import staff_required, slash_staff_required
+
 
 # ── Ticket Data Helpers ───────────────────────────────
 
@@ -936,7 +940,7 @@ class Tickets(commands.Cog):
     # ── Setup Command ─────────────────────────────────
 
     @commands.command(name="ticketsetup")
-    @commands.has_permissions(administrator=True)
+    @commands.check(staff_required)
     async def cmd_ticketsetup(self, ctx):
         """Set up the ticket system interactively. Usage: !ticketsetup"""
         embed = discord.Embed(
@@ -962,7 +966,7 @@ class Tickets(commands.Cog):
         await ctx.send(embed=embed, view=view)
 
     @app_commands.command(name="ticket-setup", description="Set up the ticket system interactively")
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.check(slash_staff_required)
     async def slash_ticketsetup(self, interaction: discord.Interaction):
         """Set up the ticket system interactively."""
         embed = discord.Embed(
@@ -985,7 +989,7 @@ class Tickets(commands.Cog):
     # ── Panel Command ─────────────────────────────────
 
     @commands.command(name="ticketpanel")
-    @commands.has_permissions(administrator=True)
+    @commands.check(staff_required)
     async def cmd_ticketpanel(self, ctx):
         """Post the ticket creation panel in this channel. Usage: !ticketpanel"""
         embed = discord.Embed(
@@ -1004,7 +1008,7 @@ class Tickets(commands.Cog):
         await ctx.send(embed=embed, view=view)
 
     @app_commands.command(name="ticket-panel", description="Post the ticket creation panel in this channel")
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.check(slash_staff_required)
     async def slash_ticketpanel(self, interaction: discord.Interaction):
         """Post the ticket creation panel in this channel."""
         embed = discord.Embed(
@@ -1025,7 +1029,7 @@ class Tickets(commands.Cog):
     # ── Ticket Config Command ─────────────────────────
 
     @commands.command(name="ticketconfig")
-    @commands.has_permissions(administrator=True)
+    @commands.check(staff_required)
     async def cmd_ticketconfig(self, ctx):
         """Show the current ticket system configuration. Usage: !ticketconfig"""
         data = _load_ticket_data()
@@ -1072,7 +1076,7 @@ class Tickets(commands.Cog):
         await ctx.send(embed=embed)
 
     @app_commands.command(name="ticket-config", description="Show current ticket system configuration")
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.check(slash_staff_required)
     async def slash_ticketconfig(self, interaction: discord.Interaction):
         """Show current ticket system configuration."""
         data = _load_ticket_data()

@@ -39,6 +39,10 @@ _log = logging.getLogger("verification_bot")
 
 from utils.github_data_store import ghd
 
+# ── Staff gate for admin commands ─────────────────────
+
+from modules.staff_gate import staff_required, slash_staff_required
+
 
 def _load_verification_config():
     """Load verification config from manager_bot settings."""
@@ -644,7 +648,7 @@ class Verification(commands.Cog):
     # ── Prefix Commands ───────────────────────────────
 
     @commands.command(name="verifypanel")
-    @commands.has_permissions(administrator=True)
+    @commands.check(staff_required)
     async def cmd_verifypanel(self, ctx):
         """Post the verification panel with the Verify button."""
         config = _load_verification_config()
@@ -684,7 +688,7 @@ class Verification(commands.Cog):
         await ctx.message.delete()
 
     @commands.command(name="verifyconfig")
-    @commands.has_permissions(administrator=True)
+    @commands.check(staff_required)
     async def cmd_verifyconfig(self, ctx, setting: str = "", *, value: str = ""):
         """View or set verification configuration.
         
@@ -748,7 +752,7 @@ class Verification(commands.Cog):
     # ── Slash Commands ────────────────────────────────
 
     @app_commands.command(name="verifypanel", description="Post the verification panel with the Verify button")
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.check(slash_staff_required)
     async def slash_verifypanel(self, interaction: discord.Interaction):
         """Post the verification panel."""
         config = _load_verification_config()
@@ -813,7 +817,7 @@ class Verification(commands.Cog):
         app_commands.Choice(name="Medium", value="medium"),
         app_commands.Choice(name="Hard", value="hard"),
     ])
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.check(slash_staff_required)
     async def slash_verifyconfig(self, interaction: discord.Interaction, setting: str = "view", role: discord.Role = None, channel: discord.TextChannel = None, enabled: str = None, difficulty: str = None, days: int = None, message: str = None):
         """View or update verification config — pick settings from dropdowns, no typing needed.
 

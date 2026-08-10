@@ -506,6 +506,18 @@ function renderModConfig(summary) {
                 '</span>' +
             '</div>' +
             '<div class="mod-config-item">' +
+                '<span class="mod-config-label">Quarantine Role ID</span>' +
+                '<span class="mod-config-value">' + 
+                    (cfg.quarantine_role_id ? escapeHtml(cfg.quarantine_role_id) : 'Not configured') + 
+                '</span>' +
+            '</div>' +
+            '<div class="mod-config-item">' +
+                '<span class="mod-config-label">Staff Role ID</span>' +
+                '<span class="mod-config-value">' + 
+                    (cfg.staff_role_id ? escapeHtml(cfg.staff_role_id) : 'Not configured') + 
+                '</span>' +
+            '</div>' +
+            '<div class="mod-config-item">' +
                 '<span class="mod-config-label">Mod Log Channel</span>' +
                 '<span class="mod-config-value">' + 
                     (cfg.mod_log_channel ? escapeHtml(cfg.mod_log_channel) : 'Not configured') + 
@@ -560,7 +572,7 @@ function renderModConfig(summary) {
     // Note that config is managed from Configuration page
     html += '<div style="margin-top:16px;padding:12px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid rgba(255,255,255,0.06);">' +
         '<p style="color:#888;font-size:0.8rem;margin:0;">' +
-        '💡 Moderation settings (warn thresholds, muted role, mod log channel) can be managed via the <strong>Configuration</strong> tab under <code>manager_bot → moderation</code>.</p>' +
+        '💡 Moderation settings (warn thresholds, roles, mod log channel) can be managed via the <strong>Configuration</strong> tab under <code>manager_bot → moderation</code>.</p>' +
     '</div>';
     
     content.innerHTML = html;

@@ -45,6 +45,9 @@ _log = logging.getLogger("manager_bot")
 
 from utils.github_data_store import ghd
 
+# Staff gate for admin commands
+from modules.staff_gate import StaffRoleRequired
+
 DASHBOARD_URL = "http://localhost:8000"
 INTERNAL_KEY = os.environ.get("LIMEY_INTERNAL_KEY", "")
 
@@ -175,6 +178,9 @@ class ManagerBot(commands.Bot):
         super().__init__(command_prefix=prefix, intents=intents, help_command=None)
 
     async def setup_hook(self):
+        # Route unhandled slash errors (tickets/verification/manager commands)
+        # through a friendly handler for staff-gated commands.
+        self.tree.on_error = self._on_tree_error
         await self.add_cog(ManagerCommands(self))
         try:
             from modules.moderation import setup as setup_mod
@@ -354,9 +360,46 @@ class ManagerBot(commands.Bot):
             pass
         elif isinstance(error, commands.CommandOnCooldown):
             await ctx.send(f"⏳ Command on cooldown. Try again in {error.retry_after:.0f}s")
+        elif isinstance(error, StaffRoleRequired):
+            await ctx.send(str(error) or "❌ You must have the Staff role to use this command.")
         else:
             _log.warning(f"Command error: {error}")
             await ctx.send(f"❌ An error occurred: {error}")
+
+    async def _on_tree_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        """Tree-level slash error handler for staff-gated admin commands.
+
+        Moderation's cog-level handler deals with its own commands; this catches
+        staff-gate denials from the other cogs (tickets, verification) so users
+        get a clear message instead of a silent failure.
+        """
+        if isinstance(error, app_commands.CommandInvokeError):
+            error = error.original
+
+        if isinstance(error, StaffRoleRequired):
+            text = str(error) or "❌ You must have the Staff role to use this command."
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(text, ephemeral=True)
+                else:
+                    await interaction.followup.send(text, ephemeral=True)
+            except Exception:
+                pass
+            return
+
+        if isinstance(error, app_commands.MissingPermissions):
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ You don't have permission to use this command.", ephemeral=True)
+                else:
+                    await interaction.followup.send(
+                        "❌ You don't have permission to use this command.", ephemeral=True)
+            except Exception:
+                pass
+            return
+
+        _log.error("Ignoring exception in slash command", exc_info=error)
 
 
 # ── Commands & Slash Commands ─────────────────────────

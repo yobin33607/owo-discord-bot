@@ -23,6 +23,10 @@ _log = logging.getLogger("moderation_bot")
 
 from utils.github_data_store import ghd
 
+# ── Staff gate for admin commands ─────────────────────
+
+from modules.staff_gate import staff_required, slash_staff_required, StaffRoleRequired
+
 
 # ── Data Helpers ───────────────────────────────────────
 
@@ -452,7 +456,7 @@ class Moderation(commands.Cog):
     # ── Mod Log Viewing ───────────────────────────────
 
     @commands.command(name="modlog")
-    @commands.has_permissions(administrator=True)
+    @commands.check(staff_required)
     async def cmd_modlog(self, ctx, count: int = 10):
         """View recent moderation actions. Usage: !modlog [count]"""
         data = _load_mod_data()
@@ -482,7 +486,7 @@ class Moderation(commands.Cog):
 
     @app_commands.command(name="modlog", description="View recent moderation actions")
     @app_commands.describe(count="Number of entries to show (max 30)")
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.check(slash_staff_required)
     async def slash_modlog(self, interaction: discord.Interaction, count: int = 10):
         """View recent moderation actions."""
         data = _load_mod_data()
@@ -543,7 +547,7 @@ class Moderation(commands.Cog):
     # ── Mod Settings ────────────────────────────────
 
     @commands.command(name="modsettings")
-    @commands.has_permissions(administrator=True)
+    @commands.check(staff_required)
     async def cmd_modsettings(self, ctx, setting: str = "", *, value: str = ""):
         """Toggle Discord AutoMod DM warnings.
 
@@ -592,7 +596,7 @@ class Moderation(commands.Cog):
         setting="Setting: discordwarn",
         value="Value: on or off",
     )
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.check(slash_staff_required)
     async def slash_modsettings(self, interaction: discord.Interaction, setting: str = "", value: str = ""):
         """Toggle Discord AutoMod DM warnings."""
         if not setting:
@@ -857,7 +861,7 @@ class Moderation(commands.Cog):
     # ── Clear Violations Command ─────────────────────
 
     @commands.command(name="clearviolations")
-    @commands.has_permissions(administrator=True)
+    @commands.check(staff_required)
     async def cmd_clearviolations(self, ctx, member: discord.Member, violation_id: str = "all"):
         """Clear violations for a member. Usage: !clearviolations <member> [violation_id|all]"""
         data = _load_mod_data()
@@ -901,7 +905,7 @@ class Moderation(commands.Cog):
         member="The member to clear violations for",
         violation_id="Violation ID to remove, or 'all' for all violations",
     )
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.check(slash_staff_required)
     async def slash_clearviolations(self, interaction: discord.Interaction, member: discord.Member, violation_id: str = "all"):
         """Clear violations for a member."""
         data = _load_mod_data()
@@ -940,7 +944,7 @@ class Moderation(commands.Cog):
                 await interaction.response.send_message(f"❌ Violation #{vid} not found for {member.mention}.", ephemeral=True)
 
     @commands.command(name="clearwarns")
-    @commands.has_permissions(administrator=True)
+    @commands.check(staff_required)
     async def cmd_clearwarns(self, ctx, member: discord.Member, warn_id: str = "all"):
         """Clear warnings for a member. Usage: !clearwarns <member> [warn_id|all]"""
         data = _load_mod_data()
@@ -983,7 +987,7 @@ class Moderation(commands.Cog):
         member="The member to clear warnings for",
         warn_id="Warning ID to remove, or 'all' for all warnings",
     )
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.check(slash_staff_required)
     async def slash_clearwarns(self, interaction: discord.Interaction, member: discord.Member, warn_id: str = "all"):
         """Clear warnings for a member."""
         data = _load_mod_data()
@@ -2464,6 +2468,11 @@ class Moderation(commands.Cog):
                 await interaction.followup.send(
                     f"⏳ Command on cooldown. Try again in {error.retry_after:.0f}s", ephemeral=True
                 )
+        elif isinstance(error, StaffRoleRequired):
+            try:
+                await interaction.response.send_message(str(error), ephemeral=True)
+            except InteractionResponded:
+                await interaction.followup.send(str(error), ephemeral=True)
         elif isinstance(error, app_commands.CommandNotFound):
             pass
         elif isinstance(error, app_commands.MissingPermissions):

@@ -2545,24 +2545,6 @@ def api_moderation_violations(user_id):
     return jsonify({'success': True, 'violations': results, 'total': len(results)})
 
 
-@app.route('/api/moderation/warnings/<user_id>')
-@require_permission('manage')
-def api_moderation_warnings(user_id):
-    """Get all warnings for a user across all guilds."""
-    data = _load_mod_data()
-    warnings = data.get('warnings', {})
-    
-    results = []
-    for guild_key, guild_warnings in warnings.items():
-        if str(user_id) in guild_warnings:
-            for w in guild_warnings[str(user_id)]:
-                w['guild_id'] = guild_key
-                results.append(w)
-    
-    results.sort(key=lambda w: w.get('timestamp', 0), reverse=True)
-    return jsonify({'success': True, 'warnings': results, 'total': len(results)})
-
-
 @app.route('/api/moderation/modlog')
 @require_permission('manage')
 def api_moderation_modlog():
@@ -2720,7 +2702,7 @@ def api_moderation_action():
     except ValueError:
         return jsonify({'success': False, 'error': 'Invalid user ID format'}), 400
 
-    valid_actions = ['warn', 'kick', 'ban', 'unban', 'timeout', 'mute', 'unmute', 'clearviolations', 'clearwarns']
+    valid_actions = ['warn', 'kick', 'ban', 'unban', 'timeout', 'mute', 'unmute', 'clearviolations']
     if action not in valid_actions:
         return jsonify({'success': False, 'error': f'Invalid action. Must be one of: {", ".join(valid_actions)}'}), 400
 
@@ -2752,8 +2734,8 @@ def api_moderation_action():
         moderator_name = getattr(g, 'api_key_user', 'API')
     moderator_str = f"{moderator_name} (Dashboard)"
 
-    # For local-only actions (warn, clearviolations, clearwarns), skip Discord API call
-    if action in ('warn', 'clearviolations', 'clearwarns'):
+    # For local-only actions (warn, clearviolations), skip Discord API call
+    if action in ('warn', 'clearviolations'):
         if action == 'warn':
             _store_violation_data(user_id, guild_id, 'warn', reason, moderator_str)
             _store_mod_action_data(guild_id, 'warn', user_id, moderator_str, reason)
@@ -2766,17 +2748,10 @@ def api_moderation_action():
             if gk in data.get('violations', {}) and uk in data['violations'][gk]:
                 data['violations'][gk][uk] = []
                 _save_mod_data(data)
-            _store_mod_action_data(guild_id, 'clearviolations', user_id, moderator_str, f'Cleared all {count} violations')
-            dur_text = f' ({count} cleared)'
-        elif action == 'clearwarns':
-            data = _load_mod_data()
-            gk = str(guild_id)
-            uk = str(user_id)
-            count = len(data.get('warnings', {}).get(gk, {}).get(uk, []))
+            # Warnings are the same thing as violations — clear both.
             if gk in data.get('warnings', {}) and uk in data['warnings'][gk]:
                 data['warnings'][gk][uk] = []
-                _save_mod_data(data)
-            _store_mod_action_data(guild_id, 'clearwarns', user_id, moderator_str, f'Cleared all {count} warnings')
+            _store_mod_action_data(guild_id, 'clearviolations', user_id, moderator_str, f'Cleared all {count} violations')
             dur_text = f' ({count} cleared)'
 
         state.log_command("MOD", f"Dashboard {action} on user {user_id} in guild {guild_id}: {reason}", "warning")
@@ -2845,3 +2820,107 @@ def clear_captcha_challenge(account_id):
     if account_id in _pending_captchas:
         _pending_captchas.pop(account_id, None)
         state.log_command("SEC", f"Captcha challenge cleared for account {account_id}", "info")
+
+
+# ── Chat Archive ───────────────────────────────────────
+
+from modules import archive_scanner as archive_mod
+
+
+@app.route('/api/archive/accounts')
+@login_required
+def archive_accounts():
+    """Accounts that can be archived (online self-bots)."""
+    accounts = []
+    for bot in state.bot_instances:
+        if bot.user and bot.is_ready:
+            accounts.append({'id': str(bot.user.id), 'username': bot.username})
+    return jsonify({'success': True, 'accounts': accounts})
+
+
+@app.route('/api/archive/list')
+@login_required
+def archive_list():
+    """List previously created archives."""
+    return jsonify({'success': True, 'archives': archive_mod.list_archives()})
+
+
+@app.route('/api/archive/status')
+@login_required
+def archive_status():
+    """Progress of the current scan for an account."""
+    user_id = request.args.get('user_id', '')
+    return jsonify({'success': True, 'scan': archive_mod.get_scan_status(user_id)})
+
+
+@app.route('/api/archive/scan', methods=['POST'])
+@require_permission('manage')
+def archive_scan():
+    """Start scanning an account's servers + DMs (results kept in memory)."""
+    payload = request.json or {}
+    user_id = str(payload.get('user_id', ''))
+
+    bot = None
+    for b in state.bot_instances:
+        if b.user and str(b.user.id) == str(user_id) and b.is_ready:
+            bot = b
+            break
+    if not bot:
+        return jsonify({'success': False, 'error': 'Account not found or not online.'}), 400
+
+    message_limit = payload.get('message_limit', 200)
+    if message_limit != 'all':
+        try:
+            message_limit = max(1, int(message_limit))
+        except (TypeError, ValueError):
+            message_limit = 200
+    else:
+        message_limit = None
+
+    include_guilds = bool(payload.get('include_guilds', True))
+    include_dms = bool(payload.get('include_dms', True))
+
+    current = archive_mod.get_scan_status(user_id)
+    if current and current.get('status') == 'scanning':
+        return jsonify({'success': False, 'error': 'A scan is already running for this account.'}), 409
+
+    err = _run_on_bot_loop(
+        bot,
+        archive_mod.run_scan(bot, user_id, message_limit, include_guilds, include_dms),
+    )
+    if err:
+        return jsonify({'success': False, 'error': err}), 503
+    return jsonify({'success': True})
+
+
+@app.route('/api/archive/create', methods=['POST'])
+@require_permission('manage')
+def archive_create():
+    """Owner confirmed — write the completed scan to disk (JSON + HTML + zip)."""
+    payload = request.json or {}
+    user_id = str(payload.get('user_id', ''))
+    info, err = archive_mod.create_archive(user_id)
+    if err:
+        return jsonify({'success': False, 'error': err}), 400
+    return jsonify({'success': True, 'archive': info})
+
+
+@app.route('/api/archive/download/<name>')
+@login_required
+def archive_download(name):
+    """Download an archive zip."""
+    zip_path = archive_mod.archive_zip_path(name)
+    if not zip_path:
+        return jsonify({'success': False, 'error': 'Archive not found'}), 404
+    return send_file(zip_path, as_attachment=True, download_name=os.path.basename(zip_path))
+
+
+@app.route('/api/archive/delete', methods=['POST'])
+@require_permission('manage')
+def archive_delete():
+    """Delete an archive (folder + zip)."""
+    payload = request.json or {}
+    name = str(payload.get('name', ''))
+    if archive_mod.delete_archive(name):
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Archive not found'}), 404

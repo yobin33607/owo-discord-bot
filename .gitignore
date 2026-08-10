@@ -12,6 +12,7 @@ __pycache__/
 # Runtime-generated data files
 # ===============================
 data/*.json
+data/archives/
 
 # ===============================
 # All config/data JSON files (stored in GitHub repo yobin33607/data)

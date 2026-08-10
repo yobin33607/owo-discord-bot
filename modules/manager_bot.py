@@ -992,8 +992,6 @@ class ManagerCommands(commands.Cog):
             name="Prefix Commands — Moderation",
             value=(
                 "`!warn <user> [reason]` — Warn a member\n"
-                "`!warnings <user>` — View member warnings\n"
-                "`!clearwarns <user> [id]` — Clear warnings\n"
                 "`!kick <user> [reason]` — Kick a member\n"
                 "`!ban <user> [days] [reason]` — Ban a user\n"
                 "`!timeout <user> <dur> [reason]` — Timeout a member\n"
@@ -1046,8 +1044,6 @@ class ManagerCommands(commands.Cog):
             name="Slash Commands — Moderation",
             value=(
                 "`/warn <user> [reason]` — Warn a member\n"
-                "`/warnings <user>` — View member warnings\n"
-                "`/clearwarns <user> [id]` — Clear warnings\n"
                 "`/kick <user> [reason]` — Kick a member\n"
                 "`/ban <user> [days] [reason]` — Ban a user\n"
                 "`/timeout <user> <dur> [reason]` — Timeout a member\n"
@@ -1304,8 +1300,6 @@ class ManagerCommands(commands.Cog):
             name="Prefix Commands — Moderation",
             value=(
                 "`!warn <user> [reason]` — Warn a member\n"
-                "`!warnings <user>` — View member warnings\n"
-                "`!clearwarns <user> [id]` — Clear warnings\n"
                 "`!kick <user> [reason]` — Kick a member\n"
                 "`!ban <user> [days] [reason]` — Ban a user\n"
                 "`!timeout <user> <dur> [reason]` — Timeout a member\n"
@@ -1358,8 +1352,6 @@ class ManagerCommands(commands.Cog):
             name="Slash Commands — Moderation",
             value=(
                 "`/warn <user> [reason]` — Warn a member\n"
-                "`/warnings <user>` — View member warnings\n"
-                "`/clearwarns <user> [id]` — Clear warnings\n"
                 "`/kick <user> [reason]` — Kick a member\n"
                 "`/ban <user> [days] [reason]` — Ban a user\n"
                 "`/timeout <user> <dur> [reason]` — Timeout a member\n"

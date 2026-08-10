@@ -80,6 +80,9 @@ window.nav = function(id, el) {
     if (id === 'mass-dismantle' && typeof window.loadWeapons === 'function') {
         window.loadWeapons();
     }
+    if (id === 'archives' && typeof window.loadArchivePage === 'function') {
+        window.loadArchivePage();
+    }
 };
 
 window.toggleMobileMenu = function() {

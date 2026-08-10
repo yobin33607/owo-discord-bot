@@ -236,7 +236,6 @@ async def _send_mod_log(guild, action_type, target, moderator, reason, duration=
         "timeout": 0xFF8800,
         "untimeout": 0x44FF88,
         "warn": 0xFFAA44,
-        "clearwarns": 0x44AAFF,
         "clearviolations": 0x44AAFF,
         "mute": 0xFF8800,
         "unmute": 0x44FF88,
@@ -256,7 +255,6 @@ async def _send_mod_log(guild, action_type, target, moderator, reason, duration=
         "timeout": "🔇",
         "untimeout": "🔊",
         "warn": "⚠️",
-        "clearwarns": "🧹",
         "clearviolations": "🧹",
         "mute": "🔇",
         "unmute": "🔊",
@@ -742,63 +740,6 @@ class Moderation(commands.Cog):
         except Exception:
             pass
 
-    @commands.command(name="warnings")
-    @commands.has_permissions(moderate_members=True)
-    async def cmd_warnings(self, ctx, member: discord.Member):
-        """View warnings for a member. Usage: !warnings <member>"""
-        data = _load_mod_data()
-        guild_key = str(ctx.guild.id)
-        user_key = str(member.id)
-
-        warns = data.get("warnings", {}).get(guild_key, {}).get(user_key, [])
-
-        if not warns:
-            await ctx.send(f"✅ {member.mention} has **no warnings**.")
-            return
-
-        lines = [f"⚠️  WARNINGS — {member} ({member.id})"]
-        lines.append("─" * 50)
-        for w in warns:
-            ts = time.strftime("%m/%d %H:%M", time.localtime(w.get("timestamp", 0)))
-            mod = w.get("moderator", "?")[:25]
-            reason = (w.get("reason") or "")[:40]
-            lines.append(f"  #{w.get('id', '?')} [{ts}]")
-            lines.append(f"     Mod: {mod}")
-            lines.append(f"     Reason: {reason}")
-        lines.append("─" * 50)
-        lines.append(f"  Total: {len(warns)} warning(s)")
-
-        await ctx.send(f"```{chr(10).join(lines)}```")
-
-    @app_commands.command(name="warnings", description="View warnings for a member")
-    @app_commands.describe(member="The member to check warnings for")
-    @app_commands.checks.has_permissions(moderate_members=True)
-    async def slash_warnings(self, interaction: discord.Interaction, member: discord.Member):
-        """View warnings for a member."""
-        data = _load_mod_data()
-        guild_key = str(interaction.guild_id)
-        user_key = str(member.id)
-
-        warns = data.get("warnings", {}).get(guild_key, {}).get(user_key, [])
-
-        if not warns:
-            await interaction.response.send_message(f"✅ {member.mention} has **no warnings**.", ephemeral=True)
-            return
-
-        lines = [f"⚠️  WARNINGS — {member} ({member.id})"]
-        lines.append("─" * 50)
-        for w in warns:
-            ts = time.strftime("%m/%d %H:%M", time.localtime(w.get("timestamp", 0)))
-            mod = w.get("moderator", "?")[:25]
-            reason = (w.get("reason") or "")[:40]
-            lines.append(f"  #{w.get('id', '?')} [{ts}]")
-            lines.append(f"     Mod: {mod}")
-            lines.append(f"     Reason: {reason}")
-        lines.append("─" * 50)
-        lines.append(f"  Total: {len(warns)} warning(s)")
-
-        await interaction.response.send_message(f"```{chr(10).join(lines)}```", ephemeral=True)
-
     # ── Violations Command ───────────────────────────
 
     @commands.command(name="violations")
@@ -877,6 +818,10 @@ class Moderation(commands.Cog):
         if violation_id == "all":
             count = len(violations)
             data["violations"][guild_key][user_key] = []
+            # Warnings are the same thing as violations — clear both so warn
+            # thresholds and counts reset too.
+            if data.get("warnings", {}).get(guild_key, {}).get(user_key):
+                data["warnings"][guild_key][user_key] = []
             _save_mod_data(data)
             await ctx.send(f"🧹 Cleared all {count} violation(s) for {member.mention}.")
             await _send_mod_log(ctx.guild, "clearviolations", member, ctx.author, f"Cleared all {count} violations")
@@ -921,6 +866,10 @@ class Moderation(commands.Cog):
         if violation_id == "all":
             count = len(violations)
             data["violations"][guild_key][user_key] = []
+            # Warnings are the same thing as violations — clear both so warn
+            # thresholds and counts reset too.
+            if data.get("warnings", {}).get(guild_key, {}).get(user_key):
+                data["warnings"][guild_key][user_key] = []
             _save_mod_data(data)
             await interaction.response.send_message(f"🧹 Cleared all {count} violation(s) for {member.mention}.")
             await _send_mod_log(interaction.guild, "clearviolations", member, interaction.user, f"Cleared all {count} violations")
@@ -943,90 +892,6 @@ class Moderation(commands.Cog):
             else:
                 await interaction.response.send_message(f"❌ Violation #{vid} not found for {member.mention}.", ephemeral=True)
 
-    @commands.command(name="clearwarns")
-    @commands.check(staff_required)
-    async def cmd_clearwarns(self, ctx, member: discord.Member, warn_id: str = "all"):
-        """Clear warnings for a member. Usage: !clearwarns <member> [warn_id|all]"""
-        data = _load_mod_data()
-        guild_key = str(ctx.guild.id)
-        user_key = str(member.id)
-
-        warns = data.get("warnings", {}).get(guild_key, {}).get(user_key, [])
-
-        if not warns:
-            await ctx.send(f"✅ {member.mention} has no warnings to clear.")
-            return
-
-        if warn_id == "all":
-            data["warnings"][guild_key][user_key] = []
-            _save_mod_data(data)
-            await ctx.send(f"🧹 Cleared all {len(warns)} warning(s) for {member.mention}.")
-            await _send_mod_log(ctx.guild, "clearwarns", member, ctx.author, f"Cleared all {len(warns)} warnings")
-            await self._store_mod_action(ctx.guild.id, "clearwarns", member, ctx.author, f"Cleared all {len(warns)} warnings")
-        else:
-            try:
-                wid = int(warn_id)
-            except ValueError:
-                await ctx.send("❌ Invalid warn ID. Use a number or 'all'.")
-                return
-
-            before = len(warns)
-            data["warnings"][guild_key][user_key] = [w for w in warns if w.get("id") != wid]
-            removed = before - len(data["warnings"][guild_key][user_key])
-            _save_mod_data(data)
-
-            if removed:
-                await ctx.send(f"🧹 Removed warning #{wid} from {member.mention}.")
-                await _send_mod_log(ctx.guild, "clearwarns", member, ctx.author, f"Removed warning #{wid}")
-                await self._store_mod_action(ctx.guild.id, "clearwarns", member, ctx.author, f"Removed warning #{wid}")
-            else:
-                await ctx.send(f"❌ Warning #{wid} not found for {member.mention}.")
-
-    @app_commands.command(name="clearwarns", description="Clear warnings for a member")
-    @app_commands.describe(
-        member="The member to clear warnings for",
-        warn_id="Warning ID to remove, or 'all' for all warnings",
-    )
-    @app_commands.check(slash_staff_required)
-    async def slash_clearwarns(self, interaction: discord.Interaction, member: discord.Member, warn_id: str = "all"):
-        """Clear warnings for a member."""
-        data = _load_mod_data()
-        guild_key = str(interaction.guild_id)
-        user_key = str(member.id)
-
-        warns = data.get("warnings", {}).get(guild_key, {}).get(user_key, [])
-
-        if not warns:
-            await interaction.response.send_message(f"✅ {member.mention} has no warnings to clear.", ephemeral=True)
-            return
-
-        if warn_id == "all":
-            data["warnings"][guild_key][user_key] = []
-            _save_mod_data(data)
-            await interaction.response.send_message(f"🧹 Cleared all {len(warns)} warning(s) for {member.mention}.")
-            await _send_mod_log(interaction.guild, "clearwarns", member, interaction.user,
-                                 f"Cleared all {len(warns)} warnings")
-            await self._store_mod_action(interaction.guild_id, "clearwarns", member, interaction.user,
-                                          f"Cleared all {len(warns)} warnings")
-        else:
-            wid = warn_id if warn_id.isdigit() else None
-            if not wid:
-                await interaction.response.send_message("❌ Invalid warn ID. Use a number or 'all'.", ephemeral=True)
-                return
-            wid = int(wid)
-            before = len(warns)
-            data["warnings"][guild_key][user_key] = [w for w in warns if w.get("id") != wid]
-            removed = before - len(data["warnings"][guild_key][user_key])
-            _save_mod_data(data)
-
-            if removed:
-                await interaction.response.send_message(f"🧹 Removed warning #{wid} from {member.mention}.")
-                await _send_mod_log(interaction.guild, "clearwarns", member, interaction.user,
-                                     f"Removed warning #{wid}")
-                await self._store_mod_action(interaction.guild_id, "clearwarns", member, interaction.user,
-                                              f"Removed warning #{wid}")
-            else:
-                await interaction.response.send_message(f"❌ Warning #{wid} not found for {member.mention}.", ephemeral=True)
 
     # ── Kick / Ban / Timeout ──────────────────────────
 

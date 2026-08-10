@@ -1,6 +1,6 @@
 /* 
  * Moderation Panel - Dashboard
- * Displays violations, warnings, mod log, and config for the moderation system.
+ * Displays violations, mod log, and config for the moderation system.
  */
 
 let _modUsersData = [];
@@ -149,17 +149,13 @@ function openModUserDetail(userId) {
     content.innerHTML = '<div class="no-data">Loading user details...</div>';
     modal.style.display = 'flex';
     
-    // Fetch violations and warnings in parallel
-    Promise.all([
-        fetch('/api/moderation/violations/' + userId).then(r => r.json()),
-        fetch('/api/moderation/warnings/' + userId).then(r => r.json())
-    ])
-    .then(([violationsData, warningsData]) => {
+    // Fetch violations
+    fetch('/api/moderation/violations/' + userId)
+        .then(r => r.json())
+        .then((violationsData) => {
         const violations = violationsData.success ? violationsData.violations : [];
-        const warnings = warningsData.success ? warningsData.warnings : [];
         
         const totalV = violations.length;
-        const totalW = warnings.length;
         
         // Find user summary data
         const userSum = _modUsersData.find(u => u.user_id === userId) || {};
@@ -179,16 +175,9 @@ function openModUserDetail(userId) {
         // Stats
         html += '<div class="mod-stats-bar" style="margin-bottom:12px;">' +
             '<div class="proxy-stat-card"><span>' + totalV + '</span><label>Violations</label></div>' +
-            '<div class="proxy-stat-card"><span>' + totalW + '</span><label>Warnings</label></div>' +
         '</div>';
         
-        // Tabs
-        html += '<div class="mod-detail-tabs">' +
-            '<button class="mod-detail-tab active" data-dtab="violations" onclick="switchModDetailTab(this, \'violations\', \'' + escapeHtml(userId) + '\')">🔴 Violations (' + totalV + ')</button>' +
-            '<button class="mod-detail-tab" data-dtab="warnings" onclick="switchModDetailTab(this, \'warnings\', \'' + escapeHtml(userId) + '\')">⚠️ Warnings (' + totalW + ')</button>' +
-        '</div>';
-        
-        // Violations content (default visible)
+        // Violations content
         html += '<div id="mod-detail-violations" class="mod-detail-section">';
         if (violations.length === 0) {
             html += '<div class="mod-empty">No violations on record.</div>';
@@ -220,30 +209,6 @@ function openModUserDetail(userId) {
         }
         html += '</div>';
         
-        // Warnings content (hidden by default)
-        html += '<div id="mod-detail-warnings" class="mod-detail-section" style="display:none;">';
-        if (warnings.length === 0) {
-            html += '<div class="mod-empty">No warnings on record.</div>';
-        } else {
-            warnings.forEach(w => {
-                const ts = w.timestamp ? new Date(w.timestamp * 1000).toLocaleString() : 'Unknown';
-                const reason = w.reason || 'No reason provided';
-                const mod = w.moderator || 'Unknown';
-                const wid = w.id || '?';
-                const guildId = w.guild_id || '?';
-                
-                html += '<div class="mod-violation-item">' +
-                    '<span class="mod-violation-icon">⚠️</span>' +
-                    '<div class="mod-violation-body">' +
-                        '<div class="mod-violation-type">#' + wid + ' WARNING</div>' +
-                        '<div class="mod-violation-reason">' + escapeHtml(reason) + '</div>' +
-                        '<div class="mod-violation-meta">' + ts + ' · Mod: ' + escapeHtml(mod) + ' · Guild: ' + escapeHtml(guildId) + '</div>' +
-                    '</div>' +
-                '</div>';
-            });
-        }
-        html += '</div>';
-        
         // Clear all button
         html += '<div class="mod-bulk-clear">' +
             '<button class="btn-control red" onclick="clearAllViolations(\'' + escapeHtml(userId) + '\')">🗑️ Clear All Violations</button>' +
@@ -261,7 +226,6 @@ function openModUserDetail(userId) {
                 '<button class="btn-control" style="background:#ff8800;border-color:#ff8800;color:#fff;" onclick="showModActionForm(\'' + escapeHtml(userId) + '\', \'mute\')">🔇 Mute</button>' +
                 '<button class="btn-control green" onclick="showModActionForm(\'' + escapeHtml(userId) + '\', \'unmute\')">🔊 Unmute</button>' +
                 '<button class="btn-control green" onclick="showModActionForm(\'' + escapeHtml(userId) + '\', \'unban\')">🔓 Unban</button>' +
-                '<button class="btn-control" style="background:#44aaff;border-color:#44aaff;color:#fff;" onclick="showModActionForm(\'' + escapeHtml(userId) + '\', \'clearwarns\')">🧹 Clear Warns</button>' +
             '</div>' +
         '</div>';
         
@@ -319,16 +283,6 @@ document.addEventListener('click', function(e) {
         closeModUserDetail();
     }
 });
-
-// ─── Detail Tab Switching ──────────────────────────────
-
-function switchModDetailTab(el, tab, userId) {
-    document.querySelectorAll('.mod-detail-tab').forEach(b => b.classList.remove('active'));
-    el.classList.add('active');
-    
-    document.getElementById('mod-detail-violations').style.display = tab === 'violations' ? '' : 'none';
-    document.getElementById('mod-detail-warnings').style.display = tab === 'warnings' ? '' : 'none';
-}
 
 // ─── Clear Violations ──────────────────────────────────
 
@@ -414,7 +368,7 @@ function renderModLog(entries) {
         'mute': '🔇', 'unmute': '🔊',
         'purge': '🗑️', 'slowmode': '🐢',
         'lock': '🔒', 'unlock': '🔓',
-        'clearwarns': '🧹', 'clearviolations': '🧹',
+        'clearviolations': '🧹',
         'automod': '🤖', 'modsettings': '⚙️'
     };
     
@@ -424,7 +378,7 @@ function renderModLog(entries) {
         'mute': '#ff8800', 'unmute': '#00ff88',
         'purge': '#4488ff', 'slowmode': '#aa88ff',
         'lock': '#ff4444', 'unlock': '#00ff88',
-        'clearwarns': '#44aaff', 'clearviolations': '#44aaff',
+        'clearviolations': '#44aaff',
         'automod': '#ff44aa', 'modsettings': '#aa88ff'
     };
     
@@ -624,8 +578,7 @@ function showModActionForm(userId, action) {
         'unban': '🔓 Unban User',
         'timeout': '🔇 Timeout Member',
         'mute': '🔇 Mute Member',
-        'unmute': '🔊 Unmute Member',
-        'clearwarns': '🧹 Clear All Warnings'
+        'unmute': '🔊 Unmute Member'
     };
     
     title.textContent = actionNames[action] || 'Action: ' + action;
@@ -654,8 +607,7 @@ function showModActionForm(userId, action) {
         'timeout': '#ff8800',
         'mute': '#ff8800',
         'unmute': 'green',
-        'unban': 'green',
-        'clearwarns': '#44aaff'
+        'unban': 'green'
     };
     const color = actionColors[action] || 'green';
     submitBtn.style.cssText = color.startsWith('#') ? 
@@ -671,8 +623,7 @@ function showModActionForm(userId, action) {
         'timeout': 'Reason for timeout...',
         'mute': 'Reason for mute...',
         'unmute': 'Reason for unmute...',
-        'unban': 'Reason for unban...',
-        'clearwarns': 'Optional note...'
+        'unban': 'Reason for unban...'
     };
     reasonInput.placeholder = reasonPhrases[action] || 'Reason...';
     

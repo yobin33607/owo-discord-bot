@@ -122,6 +122,8 @@
                         style="--icon: url('/static/assets/limey_icons/shield-halved.svg');"></span> Moderation</a>
                 <a class="nav-item" id="ticketsNav" onclick="nav('tickets', this)" style="display:none;"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/ticket.svg');"></span> Tickets</a>
+                <a class="nav-item" onclick="nav('archives', this)"><span class="icon-svg"
+                        style="--icon: url('/static/assets/limey_icons/floppy-disk.svg');"></span> Archives</a>
                 <a class="nav-item" onclick="nav('history', this)"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/clock-rotate-left.svg');"></span> History</a>
                 <a class="nav-item" onclick="nav('admin-users', this)"><span class="icon-svg"
@@ -717,7 +719,7 @@
                 <div class="mod-header">
                     <h2 style="font-size:1.2rem; color:var(--primary); margin:0;"><span class="icon-svg"
                             style="--icon: url('/static/assets/limey_icons/shield-halved.svg');"></span> Moderation Panel</h2>
-                    <p class="accounts-page-hint">View violations, warnings, and mod logs across all guilds. Manage moderation actions from the dashboard.</p>
+                    <p class="accounts-page-hint">View violations and mod logs across all guilds. Manage moderation actions from the dashboard.</p>
                 </div>
 
                 <!-- Summary Stats -->
@@ -764,7 +766,6 @@
                             <option value="slowmode">🐢 Slowmode</option>
                             <option value="lock">🔒 Lock</option>
                             <option value="unlock">🔓 Unlock</option>
-                            <option value="clearwarns">🧹 Clear Warns</option>
                             <option value="clearviolations">🧹 Clear Violations</option>
                             <option value="automod">🤖 AutoMod</option>
                         </select>
@@ -1184,6 +1185,72 @@
     </div>
 
     <script src="/static/js/core.js"></script>
+            <div id="archives" class="view">
+                <style>
+                    .arch-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:18px;margin-bottom:16px;}
+                    .arch-card-title{font-size:0.95rem;font-weight:700;color:var(--primary,#8b8cff);margin-bottom:12px;}
+                    .arch-progress-track{background:#23243a;border-radius:8px;height:14px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);}
+                    .arch-progress-fill{height:100%;background:linear-gradient(90deg,#8b8cff,#00d9ff);border-radius:8px;transition:width .5s ease;}
+                    .arch-item{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:12px 14px;margin-bottom:10px;}
+                    .arch-item-name{font-weight:600;}
+                    .arch-item-meta{color:#888;font-size:0.8rem;}
+                </style>
+                <div class="mod-header">
+                    <h2 style="font-size:1.2rem; color:var(--primary); margin:0;"><span class="icon-svg"
+                            style="--icon: url('/static/assets/limey_icons/floppy-disk.svg');"></span> Chat Archives</h2>
+                    <p class="accounts-page-hint">Scan a selfbot account's servers and DMs, review what was found, then create an archive (JSON + readable HTML).</p>
+                </div>
+
+                <!-- Scan setup -->
+                <div class="arch-card">
+                    <div class="arch-card-title">🔎 Scan</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;">
+                        <div>
+                            <label class="form-label">Account</label>
+                            <select id="arch-account" class="cfg-input" style="min-width:220px;"></select>
+                        </div>
+                        <div>
+                            <label class="form-label">Messages per channel</label>
+                            <select id="arch-limit" class="cfg-input">
+                                <option value="50">Last 50</option>
+                                <option value="200" selected>Last 200</option>
+                                <option value="1000">Last 1000</option>
+                                <option value="all">All (slow)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label" style="display:block;">Include</label>
+                            <label style="margin-right:10px;cursor:pointer;"><input type="checkbox" id="arch-guilds" checked> Servers</label>
+                            <label style="cursor:pointer;"><input type="checkbox" id="arch-dms" checked> DMs</label>
+                        </div>
+                        <button class="btn-control gold" id="arch-scan-btn" onclick="startArchiveScan()">▶ Start Scan</button>
+                    </div>
+                    <p class="accounts-page-hint" style="margin-top:10px;margin-bottom:0;">Scans only read message history — nothing is written or sent. Results stay in memory until you create the archive.</p>
+                </div>
+
+                <!-- Progress -->
+                <div class="arch-card" id="arch-progress-panel" style="display:none;">
+                    <div class="arch-card-title">⏳ Scanning…</div>
+                    <div class="arch-progress-track"><div class="arch-progress-fill" id="arch-progress-fill" style="width:0%"></div></div>
+                    <div id="arch-progress-text" style="color:#aaa;font-size:0.85rem;margin-top:8px;">Starting…</div>
+                </div>
+
+                <!-- Result / confirm -->
+                <div class="arch-card" id="arch-result-panel" style="display:none;">
+                    <div class="arch-card-title">✅ Scan Complete</div>
+                    <div id="arch-result-stats" class="mod-stats-bar" style="margin:12px 0;"></div>
+                    <div id="arch-result-error" style="color:#ff6b6b;display:none;margin-bottom:10px;"></div>
+                    <p class="accounts-page-hint">Review the summary above. Creating the archive writes everything to a local zip (JSON + HTML) you can download.</p>
+                    <button class="btn-control green" onclick="createArchiveNow()">🗄️ Create Archive</button>
+                    <button class="btn-control" onclick="resetArchiveScan()" style="margin-left:8px;">Cancel</button>
+                </div>
+
+                <!-- Existing archives -->
+                <div class="arch-card">
+                    <div class="arch-card-title">📦 Existing Archives</div>
+                    <div id="arch-archive-list"><div class="no-data">Loading…</div></div>
+                </div>
+            </div>
     <script src="/static/js/navigation.js"></script>
     <script src="/static/js/accounts.js?v=2.4.0.2"></script>
     <script src="/static/js/extension.js?v=1.1.0"></script>
@@ -1195,6 +1262,7 @@
     <script src="/static/js/weapons.js"></script>
     <script src="/static/js/history.js"></script>
     <script src="/static/js/moderation.js"></script>
+    <script src="/static/js/archive.js"></script>
     <script src="/static/js/init.js"></script>
     <script>
         // ─── API Key Management ────────────────────────────

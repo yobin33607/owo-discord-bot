@@ -18,7 +18,7 @@ Limey - https://github.com/cubiced0/owo-discord-bot
 
 
 
-from flask import Flask, render_template, jsonify, request, session, redirect, url_for, g, send_file
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for, g, send_file, Response
 from werkzeug.exceptions import HTTPException
 from functools import wraps
 import threading
@@ -2853,6 +2853,35 @@ def archive_status():
     return jsonify({'success': True, 'scan': archive_mod.get_scan_status(user_id)})
 
 
+@app.route('/api/archive/search')
+@require_permission('manage')
+def archive_search():
+    """Search message content across a completed in-memory scan.
+
+    Exposes scanned message content, so it requires the manage permission.
+    """
+    user_id = request.args.get('user_id', '')
+    query = request.args.get('q', '').strip()
+    try:
+        limit = max(1, min(int(request.args.get('limit', 200)), 500))
+    except (TypeError, ValueError):
+        limit = 200
+
+    if not query:
+        return jsonify({'success': True, 'total': 0, 'results': [], 'truncated': False})
+
+    results, total = archive_mod.search_scan(user_id, query, limit)
+    if results is None:
+        return jsonify({'success': False, 'error': 'No completed scan for this account — run a scan first.'}), 400
+    return jsonify({
+        'success': True,
+        'query': query,
+        'total': total,
+        'results': results,
+        'truncated': total > len(results),
+    })
+
+
 @app.route('/api/archive/scan', methods=['POST'])
 @require_permission('manage')
 def archive_scan():
@@ -2908,11 +2937,23 @@ def archive_create():
 @app.route('/api/archive/download/<name>')
 @login_required
 def archive_download(name):
-    """Download an archive zip."""
+    """Download an archive zip.
+
+    Serves the local file when present; otherwise streams the zip from the
+    GitHub data repo through the dashboard (authenticated, so private repos
+    work too).
+    """
     zip_path = archive_mod.archive_zip_path(name)
-    if not zip_path:
+    if zip_path:
+        return send_file(zip_path, as_attachment=True, download_name=os.path.basename(zip_path))
+    if not archive_mod.archive_download_github(name):
         return jsonify({'success': False, 'error': 'Archive not found'}), 404
-    return send_file(zip_path, as_attachment=True, download_name=os.path.basename(zip_path))
+    content, err = archive_mod.fetch_github_file(archive_mod._repo_zip_path(name))
+    if err or content is None:
+        return jsonify({'success': False, 'error': f'Failed to fetch archive from GitHub: {err}'}), 502
+    return Response(content, mimetype='application/zip', headers={
+        'Content-Disposition': f'attachment; filename="{name}.zip"'
+    })
 
 
 @app.route('/api/archive/delete', methods=['POST'])

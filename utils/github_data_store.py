@@ -222,13 +222,21 @@ def _read_raw(path: str) -> tuple[dict | None, str | None, bool]:
         return None, None, False
 
 
-def _write_raw(path: str, data: dict | list, message: str = "") -> bool:
-    """Write a JSON-serializable object to a file in GitHub.
+def _write_raw(path: str, data: dict | list | None = None, message: str = "", content_bytes: bytes | None = None) -> bool:
+    """Write a JSON-serializable object (or raw bytes) to a file in GitHub.
 
     Uses a per-path lock to serialize concurrent writes and retries
     up to 5 times with exponential backoff on 409 conflicts.
+
+    Args:
+        path: File path in the repo
+        data: JSON-serializable object (used when content_bytes is None)
+        message: Optional commit message
+        content_bytes: Raw file content; when provided, `data` is ignored
+            (enables pushing arbitrary text/binary files like HTML or zips)
     """
-    content_bytes = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+    if content_bytes is None:
+        content_bytes = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
     content_b64 = base64.b64encode(content_bytes).decode("utf-8")
 
     def _do_write(sha: str | None) -> tuple[bool, int, str | None]:
@@ -348,6 +356,21 @@ class GitHubDataStore:
         """
         return _write_raw(path, data, message=message)
 
+    def write_file(self, path: str, content: str | bytes, message: str = "") -> bool:
+        """Write raw text or binary content (e.g. HTML, zip) to the data repo.
+
+        Args:
+            path: File path within the repo (e.g. 'archives/my.zip')
+            content: File content as str or bytes (bytes are base64-encoded)
+            message: Optional commit message
+
+        Returns:
+            True if the write succeeded
+        """
+        if isinstance(content, str):
+            content = content.encode("utf-8")
+        return _write_raw(path, message=message, content_bytes=content)
+
     def delete_file(self, path: str, message: str = "") -> bool:
         """Delete a file from the data repo.
 
@@ -359,7 +382,7 @@ class GitHubDataStore:
             True if the deletion succeeded
         """
         try:
-            sha = _get_sha(path)
+            sha = _get_sha(path, force=True)
             if not sha:
                 return False
 

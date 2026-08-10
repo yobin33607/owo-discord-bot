@@ -1,19 +1,21 @@
 """
 Limey Chat Archive
 ==================
-Scans a selfbot account's servers and DMs, then builds a downloadable archive
-(JSON + readable HTML) — but only after the owner explicitly confirms on the
+Scans a selfbot account's servers and DMs, then builds a downloadable
+archive (JSON + readable HTML) — but only after the owner explicitly confirms on the
 dashboard Archives page.
 
 Flow:
   1. POST /api/archive/scan      -> starts an async scan on the bot's event loop
   2. GET  /api/archive/status    -> progress (polled by the page)
-  3. POST /api/archive/create    -> owner confirms; JSON + HTML written to disk
-  4. GET  /api/archive/download  -> serve the zip
-  5. POST /api/archive/delete    -> remove an archive
+  3. POST /api/archive/create    -> owner confirms; archive built locally, then
+                                    pushed to the GitHub data repo (zip + index.json)
+  4. GET  /api/archive/download  -> serve the zip (from GitHub, local as fallback)
+  5. POST /api/archive/delete    -> remove an archive (GitHub + local)
 
-Everything is stored locally under data/archives/ (gitignored) — nothing is
-pushed to the GitHub data repo.
+Finished archives are stored in the GitHub data repo under ``archives/``
+(yobin33607/data). The local data/archives/ folder is used only as a build
+space and as a fallback when a push fails or the repo is unreachable.
 """
 
 import asyncio
@@ -172,6 +174,66 @@ async def run_scan(bot, user_id, message_limit=200, include_guilds=True, include
         state["finished_at"] = time.time()
 
 
+# ── Scan search ───────────────────────────────────────
+
+def search_scan(user_id, query, limit=200):
+    """Search message content across a completed in-memory scan.
+
+    Searches both servers (all text channels) and DMs for a case-insensitive
+    substring match in message content and attachment URLs. Intended for
+    use before an archive is created, so nothing is written anywhere.
+
+    Returns (results_list, total_matches) — total_matches is the full count
+    while results_list is capped at `limit`. Returns (None, None) when there
+    is no completed scan for the account.
+    """
+    query = (query or "").strip()
+    if not query:
+        return [], 0
+
+    state = scans.get(user_id)
+    if not state or state.get("status") != "ready":
+        return None, None
+
+    q = query.lower()
+    results = []
+    total = 0
+
+    def _matches(msg):
+        content = (msg.get("content") or "").lower()
+        attach = " ".join(msg.get("attachments") or []).lower()
+        return q in content or q in attach
+
+    def _append(kind, guild, channel, msg):
+        nonlocal total
+        total += 1
+        if len(results) < limit:
+            results.append({
+                "kind": kind,
+                "guild": guild,
+                "channel": channel,
+                "author": msg.get("author", "Unknown"),
+                "timestamp": msg.get("timestamp"),
+                "content": msg.get("content", ""),
+                "attachments": msg.get("attachments") or [],
+                "id": str(msg.get("id")) if msg.get("id") else None,
+            })
+
+    for guild in (state.get("results") or {}).get("guilds", []):
+        for ch in guild.get("channels", []):
+            for msg in ch.get("messages", []):
+                if _matches(msg):
+                    _append("guild", guild.get("name", "Unknown"),
+                             ch.get("name", "channel"), msg)
+
+    for dm in (state.get("results") or {}).get("dms", []):
+        for msg in dm.get("messages", []):
+            if _matches(msg):
+                _append("dm", "Direct Messages", dm.get("name", "DM"), msg)
+
+    return results, total
+
+
 # ── HTML rendering ─────────────────────────────────────
 
 def _escape(text):
@@ -246,6 +308,63 @@ def _guild_dir(g):
     return f"{_safe_name(g['name'])}_{g['id']}"
 
 
+# ── GitHub data repo ──────────────────────────────────
+# Lazy import so the scanner can be used/tested without the store available.
+
+
+def _ghd():
+    """The GitHub data store singleton (lazy)."""
+    from utils.github_data_store import ghd
+    return ghd
+
+
+REPO_INDEX_PATH = "archives/index.json"
+
+
+def _repo_zip_path(name):
+    return f"archives/{name}.zip"
+
+
+def _repo_json_path(name):
+    return f"archives/{name}/index.json"
+
+
+def _raw_github_url(path):
+    """Raw download URL for a repo path (works for public repos).
+
+    Note: downloads are served via the dashboard proxy (which uses the GitHub
+    token), so this URL is informational only for private repos.
+    """
+    try:
+        from urllib.parse import quote
+    except ImportError:
+        quote = lambda s: s
+    store = _ghd()
+    repo = getattr(store, "repo", "yobin33607/data")
+    branch = getattr(store, "branch", "main")
+    return f"https://raw.githubusercontent.com/{repo}/{branch}/{quote(path)}"
+
+
+def fetch_github_file(path):
+    """Download a file from the data repo using the store's token.
+
+    Returns (bytes | None, error_str | None). Works for public and private
+    repos because it authenticates with the GitHub token.
+    """
+    store = _ghd()
+    try:
+        import requests
+        api_base = getattr(store, "api_base", None) or f"https://api.github.com/repos/{getattr(store, 'repo', 'yobin33607/data')}/contents"
+        headers = dict(getattr(store, "headers", {}) or {})
+        headers["Accept"] = "application/vnd.github.v3.raw"
+        r = requests.get(f"{api_base}/{path}", headers=headers, timeout=30)
+        if r.status_code == 200:
+            return r.content, None
+        return None, f"GitHub returned HTTP {r.status_code}"
+    except Exception as e:
+        return None, str(e)
+
+
 # ── Archive builder ────────────────────────────────────
 
 def _build_guild_html(g):
@@ -271,8 +390,108 @@ h1{{color:#8b8cff;}} li{{margin:8px 0;}} a{{color:#4da3ff;text-decoration:none;}
 </body></html>"""
 
 
-def create_archive(user_id):
+def _push_archive_to_github(name):
+    """Push a built archive (zip + index.json) to the GitHub data repo.
+
+    Returns (info_dict | None, error_str | None).
+    """
+    store = _ghd()
+    root = os.path.join(ARCHIVE_DIR, name)
+    zip_path = os.path.join(ARCHIVE_DIR, name + ".zip")
+
+    zip_bytes = None
+    if os.path.exists(zip_path):
+        try:
+            with open(zip_path, "rb") as f:
+                zip_bytes = f.read()
+        except OSError as e:
+            return None, f"Failed to read local archive zip: {e}"
+
+    json_bytes = None
+    json_local = os.path.join(root, "index.json")
+    if os.path.exists(json_local):
+        try:
+            with open(json_local, "r", encoding="utf-8") as f:
+                json_bytes = f.read()
+        except OSError as e:
+            return None, f"Failed to read local archive index.json: {e}"
+
+    if zip_bytes is None and json_bytes is None:
+        return None, "Archive files not found on disk."
+
+    # GitHub contents API caps a single file at 100 MB.
+    if zip_bytes is not None and len(zip_bytes) > 100 * 1024 * 1024:
+        return None, "Archive zip is larger than GitHub's 100 MB file limit — stored locally instead."
+
+    try:
+        # index.json first (small) so a partial failure leaves only a tiny
+        # orphaned file rather than a multi-MB zip.
+        if json_bytes is not None:
+            if not store.write_file(_repo_json_path(name), json_bytes,
+                                    message=f"Archive {name} (index.json)"):
+                return None, "Failed to push index.json to GitHub."
+        if zip_bytes is not None:
+            if not store.write_file(_repo_zip_path(name), zip_bytes,
+                                    message=f"Archive {name} (zip)"):
+                return None, "Failed to push zip to GitHub."
+    except Exception as e:
+        return None, f"GitHub push failed: {e}"
+
+    return {
+        "github_zip": _repo_zip_path(name),
+        "github_json": _repo_json_path(name),
+        "github_download": _raw_github_url(_repo_zip_path(name)),
+    }, None
+
+
+def _load_repo_index():
+    """The archive index stored in the GitHub repo (authoritative)."""
+    try:
+        data = _ghd().read_json(REPO_INDEX_PATH)
+    except Exception:
+        return None
+    if isinstance(data, dict):
+        return data.get("archives", [])
+    if isinstance(data, list):
+        return data
+    return None
+
+
+def _update_repo_index(info):
+    """Insert/replace an entry in the repo index; returns True on success."""
+    try:
+        entries = _load_repo_index() or []
+    except Exception:
+        entries = []
+    entries = [e for e in entries if e.get("name") != info.get("name")]
+    entries.insert(0, info)
+    try:
+        return bool(_ghd().write_json(REPO_INDEX_PATH, {"archives": entries},
+                                      message="Update archive index"))
+    except Exception:
+        return False
+
+
+def _remove_repo_archive(name):
+    """Delete the archive files from GitHub; returns True if anything was removed."""
+    removed = False
+    try:
+        store = _ghd()
+        if store.delete_file(_repo_zip_path(name), message=f"Delete archive {name} (zip)"):
+            removed = True
+        if store.delete_file(_repo_json_path(name), message=f"Delete archive {name} (index.json)"):
+            removed = True
+    except Exception:
+        pass
+    return removed
+
+
+def create_archive(user_id, push_to_github=True):
     """Write the completed scan out as JSON + HTML archive + zip.
+
+    After building locally, the archive is pushed to the GitHub data repo and
+    the local copy is removed (unless the push fails, in which case the local
+    copy is kept as a fallback).
 
     Returns (info_dict, error_str).
     """
@@ -363,7 +582,28 @@ def create_archive(user_id):
             "message_count": meta["message_count"],
             "size_bytes": os.path.getsize(zip_path),
             "download": f"/api/archive/download/{name}",
+            "stored_in": "local",
         }
+
+        # Push to GitHub, then drop the local copy on success.
+        if push_to_github:
+            github, push_err = _push_archive_to_github(name)
+            if push_err:
+                info["push_error"] = push_err
+            elif github:
+                info.update(github)
+                info["stored_in"] = "github"
+                info["download_github"] = github["github_download"]
+                info["size_bytes"] = os.path.getsize(zip_path)
+                # Local copy removed — GitHub is the source of truth.
+                shutil.rmtree(root, ignore_errors=True)
+                if os.path.exists(zip_path):
+                    try:
+                        os.remove(zip_path)
+                    except OSError:
+                        pass
+                _update_repo_index(info)
+
         _update_index(info)
         return info, None
     except Exception as e:
@@ -396,46 +636,98 @@ def _update_index(info):
 
 
 def list_archives():
-    entries = _load_index()
-    # Drop entries whose files no longer exist
-    valid = []
-    for e in entries:
+    """Archives available for download.
+
+    The repo index is authoritative; local entries are merged in so an archive
+    that could not be pushed (or was created while the repo was unreachable)
+    still shows up. Stale local entries whose files are gone are dropped.
+    """
+    entries: list = []
+    seen: set = set()
+
+    repo_index = _load_repo_index()
+    if isinstance(repo_index, list):
+        for e in repo_index:
+            name = e.get("name", "")
+            if not name or name in seen:
+                continue
+            if not e.get("stored_in"):
+                e["stored_in"] = "github"
+            if not e.get("github_download"):
+                e["github_download"] = _raw_github_url(_repo_zip_path(name))
+            entries.append(e)
+            seen.add(name)
+
+    # Local fallback: entries whose files still exist.
+    for e in _load_index():
         name = e.get("name", "")
+        if not name or name in seen:
+            continue
         if os.path.exists(os.path.join(ARCHIVE_DIR, name + ".zip")):
-            valid.append(e)
-    if len(valid) != len(entries):
-        try:
-            with open(INDEX_FILE, "w", encoding="utf-8") as f:
-                json.dump({"archives": valid}, f, indent=2, ensure_ascii=False)
-        except Exception:
-            pass
-    return valid
+            if not e.get("stored_in"):
+                e["stored_in"] = "local"
+            entries.append(e)
+            seen.add(name)
+
+    try:
+        with open(INDEX_FILE, "w", encoding="utf-8") as f:
+            json.dump({"archives": entries}, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+    return entries
 
 
 def archive_zip_path(name):
+    """Local zip path if the archive exists on disk (None otherwise)."""
     if not name or not re.fullmatch(r"[A-Za-z0-9._-]+", name):
         return None
     path = os.path.join(ARCHIVE_DIR, name + ".zip")
     return path if os.path.exists(path) else None
 
 
+def archive_download_github(name):
+    """Raw GitHub URL for the archive zip, if it was pushed to the repo."""
+    if not name or not re.fullmatch(r"[A-Za-z0-9._-]+", name):
+        return None
+    repo_index = _load_repo_index()
+    if not isinstance(repo_index, list):
+        return None
+    for e in repo_index:
+        if e.get("name") == name:
+            return e.get("github_download") or _raw_github_url(_repo_zip_path(name))
+    return None
+
+
 def delete_archive(name):
+    """Delete an archive (GitHub files + local folder + zip)."""
     if not name or not re.fullmatch(r"[A-Za-z0-9._-]+", name):
         return False
-    removed = False
+    removed = _remove_repo_archive(name)
     root = os.path.join(ARCHIVE_DIR, name)
     if os.path.isdir(root):
         shutil.rmtree(root, ignore_errors=True)
         removed = True
     zip_path = os.path.join(ARCHIVE_DIR, name + ".zip")
     if os.path.exists(zip_path):
-        os.remove(zip_path)
-        removed = True
-    if removed:
-        entries = [e for e in _load_index() if e.get("name") != name]
         try:
-            with open(INDEX_FILE, "w", encoding="utf-8") as f:
-                json.dump({"archives": entries}, f, indent=2, ensure_ascii=False)
+            os.remove(zip_path)
+            removed = True
+        except OSError:
+            pass
+
+    # Drop the entry from both indices.
+    local_entries = [e for e in _load_index() if e.get("name") != name]
+    try:
+        with open(INDEX_FILE, "w", encoding="utf-8") as f:
+            json.dump({"archives": local_entries}, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+    repo_index = _load_repo_index() or []
+    repo_entries = [e for e in repo_index if e.get("name") != name]
+    if len(repo_entries) != len(repo_index):
+        try:
+            _ghd().write_json(REPO_INDEX_PATH, {"archives": repo_entries},
+                              message="Update archive index")
         except Exception:
             pass
     return removed

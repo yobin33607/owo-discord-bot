@@ -125,9 +125,13 @@ function renderArchiveResult(scan) {
         errEl.style.display = '';
         errEl.textContent = '❌ ' + (scan.error || 'Scan failed.');
         statsEl.innerHTML = '';
+        document.getElementById('arch-search-block').style.display = 'none';
+        clearArchiveSearch();
         return;
     }
     errEl.style.display = 'none';
+    document.getElementById('arch-search-block').style.display = '';
+    clearArchiveSearch();
     statsEl.innerHTML =
         `<div class="proxy-stat-card"><span>${scan.guilds_total}</span><label>Servers</label></div>` +
         `<div class="proxy-stat-card"><span>${scan.dms_total}</span><label>DMs</label></div>` +
@@ -138,6 +142,7 @@ function renderArchiveResult(scan) {
 
 function resetArchiveScan() {
     clearTimeout(_archivePollTimer);
+    clearArchiveSearch();
     document.getElementById('arch-progress-panel').style.display = 'none';
     document.getElementById('arch-result-panel').style.display = 'none';
     const btn = document.getElementById('arch-scan-btn');
@@ -149,7 +154,7 @@ function resetArchiveScan() {
 
 async function createArchiveNow() {
     if (!_archiveAccountId) return;
-    if (!confirm('Create the archive now? All scanned messages will be written to a local zip (JSON + HTML) that only you can download.')) {
+    if (!confirm('Create the archive now? All scanned messages will be pushed to the GitHub data repo (zip + index.json) and only you can download them.')) {
         return;
     }
     try {
@@ -163,7 +168,11 @@ async function createArchiveNow() {
             showToast(data.error || 'Failed to create archive', 'error');
             return;
         }
-        showToast('Archive created!');
+        if (data.archive && data.archive.push_error) {
+            showToast('Archive created locally — GitHub push failed: ' + data.archive.push_error, 'error');
+        } else {
+            showToast('Archive created and pushed to GitHub!');
+        }
         resetArchiveScan();
         loadArchiveList();
     } catch (e) {
@@ -190,10 +199,14 @@ async function loadArchiveList() {
             list.innerHTML = '<div class="no-data">No archives yet. Run a scan and create one.</div>';
             return;
         }
-        list.innerHTML = archives.map(a => `
+        list.innerHTML = archives.map(a => {
+            const storage = a.stored_in === 'github'
+                ? '<span class="arch-badge github">☁️ GitHub</span>'
+                : '<span class="arch-badge local">💾 Local fallback</span>';
+            return `
             <div class="arch-item">
                 <div>
-                    <div class="arch-item-name">📦 ${escapeHtml(a.username)} — ${escapeHtml(a.created_at || '')}</div>
+                    <div class="arch-item-name">📦 ${escapeHtml(a.username)} — ${escapeHtml(a.created_at || '')} ${storage}</div>
                     <div class="arch-item-meta">
                         ${a.guild_count} servers · ${a.dm_count} DMs · ${(a.message_count || 0).toLocaleString()} messages · ${formatBytes(a.size_bytes)}
                     </div>
@@ -202,8 +215,8 @@ async function loadArchiveList() {
                     <a class="btn-control green" href="${escapeHtml(a.download)}" style="text-decoration:none;">⬇ Download</a>
                     <button class="btn-control red" onclick="deleteArchiveItem('${escapeHtml(a.name)}')">🗑️</button>
                 </div>
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
     } catch (e) {
         list.innerHTML = '<div class="no-data">Failed to load archives.</div>';
     }
@@ -227,4 +240,87 @@ async function deleteArchiveItem(name) {
     } catch (e) {
         showToast('Failed to delete', 'error');
     }
+}
+
+// ─── Search the completed scan (before creating) ─────
+
+let _archiveSearchTimer = null;
+let _archiveSearchSeq = 0;
+
+function debouncedArchiveSearch() {
+    clearTimeout(_archiveSearchTimer);
+    _archiveSearchTimer = setTimeout(archiveSearchNow, 350);
+}
+
+async function archiveSearchNow() {
+    clearTimeout(_archiveSearchTimer);
+    const input = document.getElementById('arch-search-input');
+    const q = input ? input.value.trim() : '';
+    if (!q || !_archiveAccountId) {
+        clearArchiveSearch();
+        return;
+    }
+    const reqId = ++_archiveSearchSeq;
+    const status = document.getElementById('arch-search-status');
+    const results = document.getElementById('arch-search-results');
+    status.textContent = 'Searching…';
+    try {
+        const r = await fetch('/api/archive/search?user_id=' + encodeURIComponent(_archiveAccountId) +
+            '&q=' + encodeURIComponent(q) + '&limit=200');
+        if (reqId !== _archiveSearchSeq) return; // stale response — a newer search is in flight
+        const data = await r.json();
+        if (!data.success) {
+            status.textContent = '❌ ' + (data.error || 'Search failed');
+            results.innerHTML = '';
+            return;
+        }
+        document.getElementById('arch-search-clear').style.display = '';
+        if (!data.total) {
+            status.textContent = 'No matches for “' + q + '”.';
+            results.innerHTML = '';
+            return;
+        }
+        status.textContent = data.total + ' match' + (data.total === 1 ? '' : 'es') + ' for “' +
+            q + '”' + (data.truncated ? ' — showing first ' + data.results.length : '');
+        results.innerHTML = data.results.map(m => {
+            const loc = m.kind === 'dm' ? '💬' : '📁';
+            const attachments = (m.attachments || []).map(u =>
+                '<div class="arch-search-attach">📎 ' + escapeHtml(u) + '</div>').join('');
+            return `
+                <div class="arch-search-item">
+                    <div class="arch-search-loc">${loc} ${escapeHtml(m.guild)} / ${escapeHtml(m.channel)}
+                        <span class="arch-item-meta">· ${escapeHtml(m.author || 'Unknown')} · ${escapeHtml(m.timestamp || '')}</span></div>
+                    <div class="arch-search-content">${highlightMatch(m.content, q)}</div>
+                    ${attachments}
+                </div>`;
+        }).join('');
+    } catch (e) {
+        status.textContent = '❌ Search failed';
+        results.innerHTML = '';
+    }
+}
+
+function highlightMatch(text, q) {
+    const escaped = escapeHtml(text || '');
+    const escapedQuery = escapeHtml(q || '');
+    if (!escapedQuery) return escaped;
+    let re;
+    try {
+        re = new RegExp('(' + escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+    } catch (e) {
+        return escaped;
+    }
+    return escaped.replace(re, '<mark>$1</mark>');
+}
+
+function clearArchiveSearch() {
+    clearTimeout(_archiveSearchTimer);
+    const input = document.getElementById('arch-search-input');
+    if (input) input.value = '';
+    const status = document.getElementById('arch-search-status');
+    if (status) status.textContent = '';
+    const results = document.getElementById('arch-search-results');
+    if (results) results.innerHTML = '';
+    const clear = document.getElementById('arch-search-clear');
+    if (clear) clear.style.display = 'none';
 }

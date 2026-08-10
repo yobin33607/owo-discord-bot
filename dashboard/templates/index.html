@@ -1194,6 +1194,14 @@
                     .arch-item{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:12px 14px;margin-bottom:10px;}
                     .arch-item-name{font-weight:600;}
                     .arch-item-meta{color:#888;font-size:0.8rem;}
+                    .arch-badge{font-size:0.7rem;font-weight:600;padding:2px 8px;border-radius:10px;margin-left:8px;vertical-align:middle;}
+                    .arch-badge.github{background:rgba(139,140,255,0.15);color:#a9aaff;border:1px solid rgba(139,140,255,0.35);}
+                    .arch-badge.local{background:rgba(255,180,84,0.12);color:#ffb454;border:1px solid rgba(255,180,84,0.35);}
+                    .arch-search-item{border-bottom:1px solid rgba(255,255,255,0.06);padding:8px 0;}
+                    .arch-search-loc{color:#8b8cff;font-size:0.8rem;}
+                    .arch-search-content{margin-top:3px;white-space:pre-wrap;word-break:break-word;font-size:0.9rem;}
+                    .arch-search-content mark{background:#ffb454;color:#1e1f29;border-radius:3px;padding:0 2px;}
+                    .arch-search-attach{color:#4da3ff;font-size:0.78rem;}
                 </style>
                 <div class="mod-header">
                     <h2 style="font-size:1.2rem; color:var(--primary); margin:0;"><span class="icon-svg"
@@ -1225,7 +1233,7 @@
                         </div>
                         <button class="btn-control gold" id="arch-scan-btn" onclick="startArchiveScan()">▶ Start Scan</button>
                     </div>
-                    <p class="accounts-page-hint" style="margin-top:10px;margin-bottom:0;">Scans only read message history — nothing is written or sent. Results stay in memory until you create the archive.</p>
+                    <p class="accounts-page-hint" style="margin-top:10px;margin-bottom:0;">Scans only read message history — nothing is written or sent. Results stay in memory until you create and confirm the archive, which is then pushed to the GitHub data repo.</p>
                 </div>
 
                 <!-- Progress -->
@@ -1240,7 +1248,23 @@
                     <div class="arch-card-title">✅ Scan Complete</div>
                     <div id="arch-result-stats" class="mod-stats-bar" style="margin:12px 0;"></div>
                     <div id="arch-result-error" style="color:#ff6b6b;display:none;margin-bottom:10px;"></div>
-                    <p class="accounts-page-hint">Review the summary above. Creating the archive writes everything to a local zip (JSON + HTML) you can download.</p>
+                    <p class="accounts-page-hint">Review the summary above. Search the scanned messages, then create the archive — it builds a zip (JSON + HTML) and pushes it to the GitHub data repo. If the push fails it stays stored locally.</p>
+
+                    <!-- Search the completed scan -->
+                    <div id="arch-search-block" style="margin:14px 0 16px;">
+                        <label class="form-label">🔍 Search scanned messages</label>
+                        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+                            <input type="text" id="arch-search-input" class="cfg-input" style="min-width:280px;flex:1;"
+                                   placeholder="Search message content across servers &amp; DMs…"
+                                   oninput="debouncedArchiveSearch()"
+                                   onkeydown="if(event.key==='Enter'){archiveSearchNow();}">
+                            <button class="btn-control" onclick="archiveSearchNow()">Search</button>
+                            <button class="btn-control" id="arch-search-clear" onclick="clearArchiveSearch()" style="display:none;">Clear</button>
+                        </div>
+                        <div id="arch-search-status" style="color:#aaa;font-size:0.8rem;margin-top:8px;"></div>
+                        <div id="arch-search-results" style="margin-top:10px;max-height:320px;overflow-y:auto;"></div>
+                    </div>
+
                     <button class="btn-control green" onclick="createArchiveNow()">🗄️ Create Archive</button>
                     <button class="btn-control" onclick="resetArchiveScan()" style="margin-left:8px;">Cancel</button>
                 </div>

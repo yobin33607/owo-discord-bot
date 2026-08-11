@@ -12,6 +12,10 @@ Flow:
                                     pushed to the GitHub data repo (zip + index.json)
   4. GET  /api/archive/download  -> serve the zip (from GitHub, local as fallback)
   5. POST /api/archive/delete    -> remove an archive (GitHub + local)
+  6. POST /api/archive/rename    -> rename an archive (record + files)
+  7. POST /api/archive/purge     -> delete every archive
+  8. GET  /api/archive/info      -> full metadata for one archive
+  9. GET  /api/archive/download-json / -html -> serve index.json / readable HTML
 
 Finished archives are stored in the GitHub data repo under ``archives/``
 (yobin33607/data). The local data/archives/ folder is used only as a build
@@ -734,6 +738,179 @@ def delete_archive(name):
         except Exception:
             pass
     return removed
+
+
+# ── Archive actions (rename / purge / info / file serving) ─
+
+def _rename_entry_in_list(entries, old_name, new_name):
+    """Rename an entry inside an index list; returns (new_list, renamed_entry)."""
+    renamed = None
+    out = []
+    for e in entries:
+        if e.get("name") == old_name:
+            e = dict(e)
+            e["name"] = new_name
+            e["download"] = f"/api/archive/download/{new_name}"
+            e["github_zip"] = _repo_zip_path(new_name)
+            e["github_json"] = _repo_json_path(new_name)
+            e["github_download"] = _raw_github_url(_repo_zip_path(new_name))
+            renamed = e
+        out.append(e)
+    return out, renamed
+
+
+def rename_archive(old_name, new_name):
+    """Rename an archive: record (both indices) + files on disk / in the repo.
+
+    Local files are renamed in place; GitHub-stored archives are re-uploaded
+    under the new name and the old copies deleted. Returns (info_dict, error_str)
+    — on success info_dict is the updated archive entry (errors, if any partial
+    failures happened, are surfaced in ``info["rename_warning"]``).
+    """
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", old_name) or not re.fullmatch(r"[A-Za-z0-9._-]+", new_name):
+        return None, "Invalid archive name."
+    if old_name == new_name:
+        return None, "New name is the same as the current name."
+
+    entries = list_archives()
+    entry = next((e for e in entries if e.get("name") == old_name), None)
+    if not entry:
+        return None, "Archive not found."
+    if any(e.get("name") == new_name for e in entries):
+        return None, f"An archive named '{new_name}' already exists."
+
+    stored_in = entry.get("stored_in", "local")
+    warnings = []
+
+    # ── Local files (kept when a GitHub push failed / repo was unreachable) ──
+    local_root = os.path.join(ARCHIVE_DIR, old_name)
+    local_zip = os.path.join(ARCHIVE_DIR, old_name + ".zip")
+    if os.path.isdir(local_root):
+        try:
+            os.rename(local_root, os.path.join(ARCHIVE_DIR, new_name))
+        except OSError as e:
+            warnings.append(f"local folder: {e}")
+    if os.path.exists(local_zip):
+        try:
+            os.rename(local_zip, os.path.join(ARCHIVE_DIR, new_name + ".zip"))
+        except OSError as e:
+            warnings.append(f"local zip: {e}")
+
+    # ── GitHub copy (authoritative for github-stored archives) ──
+    if stored_in == "github":
+        try:
+            zip_bytes, zip_err = fetch_github_file(_repo_zip_path(old_name))
+            json_bytes, json_err = fetch_github_file(_repo_json_path(old_name))
+            zip_ok = (zip_err is None and zip_bytes is not None
+                      and _ghd().write_file(_repo_zip_path(new_name), zip_bytes,
+                                            message=f"Rename archive {old_name} -> {new_name} (zip)"))
+            json_ok = (json_err is None and json_bytes is not None
+                       and _ghd().write_file(_repo_json_path(new_name), json_bytes,
+                                             message=f"Rename archive {old_name} -> {new_name} (index.json)"))
+            # Only remove the old copies once both new files are safely in place.
+            if zip_ok and json_ok:
+                _ghd().delete_file(_repo_zip_path(old_name),
+                                   message=f"Delete archive {old_name} (zip)")
+                _ghd().delete_file(_repo_json_path(old_name),
+                                   message=f"Delete archive {old_name} (index.json)")
+            else:
+                warnings.append("GitHub: failed to write renamed files (old copies kept)")
+        except Exception as e:
+            warnings.append(f"GitHub: {e}")
+
+    # ── Both indices ──
+    local_entries, _ = _rename_entry_in_list(_load_index(), old_name, new_name)
+    try:
+        os.makedirs(ARCHIVE_DIR, exist_ok=True)
+        with open(INDEX_FILE, "w", encoding="utf-8") as f:
+            json.dump({"archives": local_entries}, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+    repo_index = _load_repo_index() or []
+    repo_entries, renamed_entry = _rename_entry_in_list(repo_index, old_name, new_name)
+    if len(repo_entries) != len(repo_index):
+        try:
+            _ghd().write_json(REPO_INDEX_PATH, {"archives": repo_entries},
+                              message="Update archive index")
+        except Exception:
+            pass
+
+    # Drop cached parsed copies so the renamed archive is re-read fresh.
+    _reader_cache.pop(old_name, None)
+
+    info = renamed_entry or dict(entry, name=new_name,
+                                 download=f"/api/archive/download/{new_name}",
+                                 github_zip=_repo_zip_path(new_name),
+                                 github_json=_repo_json_path(new_name),
+                                 github_download=_raw_github_url(_repo_zip_path(new_name)))
+    if warnings:
+        info["rename_warning"] = "; ".join(warnings)
+    return info, None
+
+
+def purge_archives():
+    """Delete every archive (local + GitHub). Returns the number deleted."""
+    count = 0
+    for e in list_archives():
+        if delete_archive(e.get("name", "")):
+            count += 1
+    return count
+
+
+def archive_info(name):
+    """Full metadata for one archive: its index entry + index.json meta.
+
+    Returns (info_dict | None, error_str | None).
+    """
+    entries = list_archives()
+    entry = next((e for e in entries if e.get("name") == name), None)
+    if not entry:
+        return None, "Archive not found."
+    meta = {}
+    data, err = load_archive_index(name)
+    if err is None and isinstance(data, dict):
+        meta = data.get("meta") or {}
+    return {**entry, "meta": meta}, None
+
+
+def archive_file_bytes(name, kind):
+    """Serve an archive's index file: 'json' (raw index.json) or 'html' (readable index).
+
+    Returns (bytes | None, mime | None, error_str | None). Checks the local copy
+    first, then the GitHub repo. HTML is rendered server-side from the archive
+    index because only the zip + index.json are pushed to GitHub.
+    """
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", name):
+        return None, None, "Invalid archive name."
+
+    content = None
+    local_path = os.path.join(ARCHIVE_DIR, name, "index.json")
+    if os.path.exists(local_path):
+        try:
+            with open(local_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except OSError as e:
+            return None, None, f"Failed to read local archive: {e}"
+    else:
+        raw, err = fetch_github_file(_repo_json_path(name))
+        if err or raw is None:
+            return None, None, err or "Archive not found."
+        try:
+            content = raw.decode("utf-8")
+        except (UnicodeDecodeError, AttributeError):
+            content = None
+    if content is None:
+        return None, None, "Archive index is unreadable."
+
+    if kind == "html":
+        try:
+            data = json.loads(content)
+            meta = data.get("meta") or {}
+            html_doc = _render_index_html(meta, data.get("guilds") or [], data.get("dms") or [])
+            return html_doc.encode("utf-8"), "text/html; charset=utf-8", None
+        except Exception as e:
+            return None, None, f"Failed to render archive HTML: {e}"
+    return content.encode("utf-8"), "application/json", None
 
 
 # ── Archive reader (in-dashboard browsing) ──────────────

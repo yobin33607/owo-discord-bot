@@ -12,7 +12,7 @@
 
 """
 Author: Limey
-Limey - https://github.com/cubiced0/owo-discord-bot
+Limey - https://github.com/yobin33607/owo-discord-bot
 """
 
 
@@ -210,7 +210,7 @@ def _download_prebuilt_venv(venv_dir: str, venv_py: str) -> bool:
     else:
         asset_name = "venv-linux.tar.gz"
 
-    repo = "cubiced0/owo-discord-bot"
+    repo = "yobin33607/owo-discord-bot"
 
     # Pre-built venvs committed to the repo (prebuilt/ folder on main)
     committed_url = f"https://raw.githubusercontent.com/{repo}/main/prebuilt/{asset_name}"

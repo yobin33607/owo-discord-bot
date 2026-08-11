@@ -5,7 +5,7 @@ cd /d "%~dp0"
 chcp 65001 >nul
 
 set "INSTALL_DIR=%USERPROFILE%\Desktop\Limey"
-set "REPO_URL=https://github.com/cubiced0/owo-discord-bot.git"
+set "REPO_URL=https://github.com/yobin33607/owo-discord-bot.git"
 set "PYTHON_VER=3.10.11"
 set "PYTHON_URL=https://www.python.org/ftp/python/%PYTHON_VER%/python-%PYTHON_VER%-amd64.exe"
 
@@ -140,7 +140,7 @@ pushd "%INSTALL_DIR%"
 
 REM ── Virtual environment setup ──────────────────────────────
 set "VENV_DIR=%INSTALL_DIR%\.venv"
-set "PREBUILT_URL=https://raw.githubusercontent.com/cubiced0/owo-discord-bot/main/prebuilt/venv-windows.zip"
+set "PREBUILT_URL=https://raw.githubusercontent.com/yobin33607/owo-discord-bot/main/prebuilt/venv-windows.zip"
 set "USED_PREBUILT=0"
 
 REM Existing venv already works? Keep it.

@@ -6,7 +6,7 @@ Provides account age checking, captcha verification, and role assignment.
 
 Loaded as a cog by the ManagerBot class.
 
-Configuration (stored in manager_bot.verification in settings.json):
+Configuration (stored in config/verification.json in the GitHub data repo):
   guild_id              — Guild where verification happens
   verified_role_id      — Role to assign on successful verification
   unverified_role_id    — Optional role for unverified members
@@ -43,22 +43,44 @@ from utils.github_data_store import ghd
 
 from modules.staff_gate import staff_required, slash_staff_required
 
+# The verification config lives in its OWN file (config/verification.json) in
+# the GitHub data repo. It used to be stored under manager_bot.verification in
+# settings.json, but the dashboard rewrites that file from its config form on
+# every settings save and dropped keys it didn't know about — so the
+# verification config silently vanished and the bot reported "Verification is
+# not configured" after a restart. A dedicated file can't be clobbered by
+# settings writes. The legacy location is still read as a fallback so configs
+# saved by older versions aren't lost, and they migrate to the new file on the
+# next save.
+VERIFICATION_CONFIG_PATH = "config/verification.json"
+
 
 def _load_verification_config():
-    """Load verification config from manager_bot settings."""
-    cfg = ghd.read_json("config/settings.json", default={})
-    return cfg.get("manager_bot", {}).get("verification", {})
+    """Load verification config from config/verification.json.
+
+    Falls back to the legacy location (settings.json -> manager_bot.verification)
+    for configs saved by older versions.
+    """
+    cfg = ghd.read_json(VERIFICATION_CONFIG_PATH, default={})
+    if isinstance(cfg, dict) and cfg:
+        return cfg
+    legacy = ghd.read_json("config/settings.json", default={})
+    if isinstance(legacy, dict):
+        return (legacy.get("manager_bot") or {}).get("verification", {})
+    return {}
 
 
 def _save_verification_config(new_cfg):
-    """Save verification config back to settings.json."""
-    full = ghd.read_json("config/settings.json", default={})
-    if full is None:
-        full = {}
-    if "manager_bot" not in full:
-        full["manager_bot"] = {}
-    full["manager_bot"]["verification"] = new_cfg
-    return ghd.write_json("config/settings.json", full, message="Update verification config")
+    """Save verification config to config/verification.json in the GitHub repo.
+
+    Returns True on success. A dedicated file is used so dashboard settings
+    saves (which rewrite settings.json from the config form) can never drop it.
+    """
+    ok = bool(ghd.write_json(VERIFICATION_CONFIG_PATH, new_cfg,
+                             message="Update verification config"))
+    if not ok:
+        _log.warning("Verification config: failed to write %s to GitHub", VERIFICATION_CONFIG_PATH)
+    return ok
 
 
 def _log_verification(guild_id, user_id, username, action, details):
@@ -743,9 +765,15 @@ class Verification(commands.Cog):
             return
 
         if changed:
-            _save_verification_config(cfg)
-            await ctx.send(f"✅ `{setting.strip().lower()}` has been updated.")
-            _log.info(f"Verification config updated: {setting} = {value}")
+            saved = _save_verification_config(cfg)
+            _log.info(f"Verification config updated: {setting} = {value} (github_save={saved})")
+            if saved:
+                await ctx.send(f"✅ `{setting.strip().lower()}` has been updated and saved to GitHub.")
+            else:
+                await ctx.send(
+                    "❌ Config was updated in memory but **failed to save to the GitHub data repo** — "
+                    "it will be lost on restart. Check the GitHub token / repo access."
+                )
         else:
             await ctx.send("⚠️ No changes were made.")
 
@@ -893,11 +921,18 @@ class Verification(commands.Cog):
             return
 
         if changed:
-            _save_verification_config(cfg)
-            _log.info(f"Verification config updated via slash: {setting} = {value}")
-            await interaction.followup.send(
-                f"✅ `{setting}` has been updated.", ephemeral=True
-            )
+            saved = _save_verification_config(cfg)
+            _log.info(f"Verification config updated via slash: {setting} = {value} (github_save={saved})")
+            if saved:
+                await interaction.followup.send(
+                    f"✅ `{setting}` has been updated and saved to GitHub.", ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "❌ Config was updated in memory but **failed to save to the GitHub data repo** — "
+                    "it will be lost on restart. Check the GitHub token / repo access.",
+                    ephemeral=True,
+                )
         else:
             await interaction.followup.send("⚠️ No changes were made.", ephemeral=True)
 

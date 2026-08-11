@@ -196,6 +196,8 @@ async function loadArchiveList() {
         const data = await r.json();
         const archives = data.success ? data.archives : [];
         renderArchiveStats(archives);
+        const purgeBtn = document.getElementById('arch-purge-btn');
+        if (purgeBtn) purgeBtn.style.display = archives.length ? '' : 'none';
         if (!archives.length) {
             closeArchiveBrowser();
             clearArchiveSearchAll();
@@ -221,12 +223,21 @@ async function loadArchiveList() {
                     <div class="arch-item-meta">
                         ${a.guild_count} servers · ${a.dm_count} DMs · ${(a.message_count || 0).toLocaleString()} messages · ${formatBytes(a.size_bytes)}
                         ${a.push_error ? '<div style="color:#ff6b6b;font-size:0.75rem;margin-top:3px;">⚠️ ' + escapeHtml(a.push_error) + '</div>' : ''}
+                        ${a.rename_warning ? '<div style="color:#ffb454;font-size:0.75rem;margin-top:3px;">⚠️ ' + escapeHtml(a.rename_warning) + '</div>' : ''}
                     </div>
                 </div>
-                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                    <button class="btn-control arch-browse" onclick="openArchiveBrowser('${escapeHtml(a.name)}')">📖 Browse</button>
-                    <a class="btn-control green" href="${escapeHtml(a.download)}" style="text-decoration:none;">⬇ Download</a>
-                    <button class="btn-control red" onclick="deleteArchiveItem('${escapeHtml(a.name)}')">🗑️</button>
+                <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
+                    <div class="arch-actions">
+                        <button class="btn-control arch-browse" onclick="openArchiveBrowser('${escapeHtml(a.name)}')">📖 Browse</button>
+                        <a class="btn-control green" href="${escapeHtml(a.download)}" style="text-decoration:none;">⬇ Download</a>
+                        <button class="arch-act red" onclick="deleteArchiveItem('${escapeHtml(a.name)}')" title="Delete archive">🗑️</button>
+                    </div>
+                    <div class="arch-actions">
+                        <a class="arch-act" href="/api/archive/download-json/${encodeURIComponent(a.name)}" title="Download index.json (all message data)">JSON</a>
+                        <a class="arch-act" href="/api/archive/download-html/${encodeURIComponent(a.name)}" title="Download readable HTML index">HTML</a>
+                        <button class="arch-act" onclick="renameArchiveItem('${escapeHtml(a.name)}')" title="Rename archive">✏️ Rename</button>
+                        <button class="arch-act" onclick="showArchiveDetails('${escapeHtml(a.name)}')" title="View archive details">ℹ️ Details</button>
+                    </div>
                 </div>
             </div>`;
         }).join('');
@@ -272,6 +283,130 @@ async function deleteArchiveItem(name) {
         }
     } catch (e) {
         showToast('Failed to delete', 'error');
+    }
+}
+
+// ─── Archive actions: rename / details / purge ────────
+
+let _archiveRenameName = null;
+
+function renameArchiveItem(name) {
+    _archiveRenameName = name;
+    const modal = document.getElementById('arch-rename-modal');
+    const input = document.getElementById('arch-rename-input');
+    if (!modal || !input) return;
+    input.value = name;
+    modal.style.display = 'flex';
+    input.focus();
+    input.select();
+}
+
+function closeRenameArchiveModal() {
+    document.getElementById('arch-rename-modal').style.display = 'none';
+    _archiveRenameName = null;
+}
+
+async function confirmRenameArchive() {
+    if (!_archiveRenameName) return;
+    const input = document.getElementById('arch-rename-input');
+    const newName = (input.value || '').trim();
+    if (!newName) {
+        showToast('Enter a new name', 'error');
+        return;
+    }
+    if (!/^[A-Za-z0-9._-]+$/.test(newName)) {
+        showToast('Name may only contain letters, numbers, dots, dashes and underscores', 'error');
+        return;
+    }
+    const oldName = _archiveRenameName;
+    try {
+        const r = await fetch('/api/archive/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: oldName, new_name: newName })
+        });
+        const data = await r.json();
+        if (!data.success) {
+            showToast(data.error || 'Failed to rename archive', 'error');
+            return;
+        }
+        closeRenameArchiveModal();
+        if (_archiveBrowserName === oldName) closeArchiveBrowser();
+        if (data.archive && data.archive.rename_warning) {
+            showToast('Renamed — warning: ' + data.archive.rename_warning, 'error');
+        } else {
+            showToast('Archive renamed');
+        }
+        loadArchiveList();
+    } catch (e) {
+        showToast('Failed to rename archive', 'error');
+    }
+}
+
+async function showArchiveDetails(name) {
+    const modal = document.getElementById('arch-details-modal');
+    const content = document.getElementById('arch-details-content');
+    if (!modal || !content) return;
+    modal.style.display = 'flex';
+    content.innerHTML = '<div class="no-data">Loading…</div>';
+    try {
+        const r = await fetch('/api/archive/info/' + encodeURIComponent(name));
+        const data = await r.json();
+        if (!data.success) {
+            content.innerHTML = '<div class="no-data">' + escapeHtml(data.error || 'Failed to load details') + '</div>';
+            return;
+        }
+        const a = data.archive || {};
+        const meta = a.meta || {};
+        const row = (k, v) => `<div class="arch-det-row"><span class="arch-det-key">${k}</span><span class="arch-det-val">${v}</span></div>`;
+        const limit = meta.message_limit != null
+            ? (meta.message_limit === null ? 'All messages' : meta.message_limit + ' / channel')
+            : '—';
+        let html = '';
+        html += row('Name', escapeHtml(a.name || '—'));
+        html += row('Account', escapeHtml(a.username || '—'));
+        html += row('Created', escapeHtml(meta.created_at || a.created_at || '—'));
+        html += row('Scanned at', escapeHtml(meta.scanned_at || '—'));
+        html += row('Message limit', escapeHtml(String(limit)));
+        html += row('Servers', a.guild_count != null ? a.guild_count : '—');
+        html += row('DMs', a.dm_count != null ? a.dm_count : '—');
+        html += row('Messages', (a.message_count || 0).toLocaleString());
+        html += row('Size', formatBytes(a.size_bytes));
+        html += row('Storage', a.stored_in === 'github' ? '☁️ GitHub data repo' : '💾 Local');
+        if (a.stored_in === 'github' && a.github_download) {
+            html += row('GitHub zip', `<a href="${escapeHtml(a.github_download)}" target="_blank" rel="noopener">open ↗</a>`);
+        }
+        if (a.push_error) html += row('Push error', escapeHtml(a.push_error));
+        if (a.rename_warning) html += row('Rename warning', escapeHtml(a.rename_warning));
+        content.innerHTML = html;
+    } catch (e) {
+        content.innerHTML = '<div class="no-data">Failed to load details.</div>';
+    }
+}
+
+function closeArchiveDetailsModal() {
+    document.getElementById('arch-details-modal').style.display = 'none';
+}
+
+async function purgeAllArchives() {
+    if (!confirm('Delete ALL archives permanently? This removes every archive from the GitHub data repo and local storage. This cannot be undone.')) return;
+    try {
+        const r = await fetch('/api/archive/purge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const data = await r.json();
+        if (!data.success) {
+            showToast(data.error || 'Failed to purge archives', 'error');
+            return;
+        }
+        showToast((data.deleted || 0) + ' archive(s) deleted');
+        closeArchiveBrowser();
+        clearArchiveSearchAll();
+        loadArchiveList();
+    } catch (e) {
+        showToast('Failed to purge archives', 'error');
     }
 }
 

@@ -12,7 +12,7 @@
 
 """
 Author: Limey
-Limey - https://github.com/cubiced0/owo-discord-bot
+Limey - https://github.com/yobin33607/owo-discord-bot
 """
 
 
@@ -3544,6 +3544,60 @@ def archive_delete():
     if archive_mod.delete_archive(name):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Archive not found'}), 404
+
+
+@app.route('/api/archive/rename', methods=['POST'])
+@require_permission('manage')
+def archive_rename():
+    """Rename an archive (record + files on disk / in the GitHub repo)."""
+    payload = request.json or {}
+    info, err = archive_mod.rename_archive(
+        str(payload.get('name', '')), str(payload.get('new_name', '')))
+    if err:
+        return jsonify({'success': False, 'error': err}), 400
+    return jsonify({'success': True, 'archive': info})
+
+
+@app.route('/api/archive/purge', methods=['POST'])
+@require_permission('manage')
+def archive_purge():
+    """Delete every archive (local + GitHub)."""
+    deleted = archive_mod.purge_archives()
+    return jsonify({'success': True, 'deleted': deleted})
+
+
+@app.route('/api/archive/info/<name>')
+@require_permission('manage')
+def archive_info(name):
+    """Full metadata for one archive (index entry + index.json meta)."""
+    info, err = archive_mod.archive_info(name)
+    if err:
+        return jsonify({'success': False, 'error': err}), 404
+    return jsonify({'success': True, 'archive': info})
+
+
+@app.route('/api/archive/download-json/<name>')
+@login_required
+def archive_download_json(name):
+    """Download the archive's raw index.json (all message data)."""
+    content, mime, err = archive_mod.archive_file_bytes(name, 'json')
+    if err or content is None:
+        return jsonify({'success': False, 'error': err or 'Archive not found'}), 404
+    return Response(content, mimetype=mime or 'application/json', headers={
+        'Content-Disposition': f'attachment; filename="{name}.json"'
+    })
+
+
+@app.route('/api/archive/download-html/<name>')
+@login_required
+def archive_download_html(name):
+    """Download a readable HTML index of the archive."""
+    content, mime, err = archive_mod.archive_file_bytes(name, 'html')
+    if err or content is None:
+        return jsonify({'success': False, 'error': err or 'Archive not found'}), 404
+    return Response(content, mimetype=mime or 'text/html', headers={
+        'Content-Disposition': f'attachment; filename="{name}-index.html"'
+    })
 
 
 @app.route('/api/archive/detail/<name>')

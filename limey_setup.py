@@ -12,7 +12,7 @@
 
 """
 Author: Limey
-Limey - https://github.com/cubiced0/owo-discord-bot
+Limey - https://github.com/yobin33607/owo-discord-bot
 """
 
 import asyncio

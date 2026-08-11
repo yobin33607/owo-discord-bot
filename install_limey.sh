@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 APP_NAME="Limey"
-REPO_URL="https://github.com/cubiced0/owo-discord-bot.git"
+REPO_URL="https://github.com/yobin33607/owo-discord-bot.git"
 
 RED="\033[1;31m"
 GREEN="\033[1;32m"

@@ -12,7 +12,7 @@
 
 """
 Author: Limey
-Limey - https://github.com/cubiced0/owo-discord-bot
+Limey - https://github.com/yobin33607/owo-discord-bot
 """
 
 
@@ -24,7 +24,6 @@ import time
 import random
 import asyncio
 import re
-import sys
 import requests
 from modules.limey_human import LimeyHuman
 from modules.limey_logs import limey_logger
@@ -38,7 +37,6 @@ import unicodedata
 import copy
 import logging
 from rich.console import Console
-from rich.align import Align
 from utils.github_data_store import ghd
 
 _log = logging.getLogger(__name__)
@@ -737,41 +735,9 @@ class LimeyBot(commands.Bot):
             self.config = {}
 
 
-    def check_version(self):
-        CURRENT_VERSION = "2.4.3" 
-        VERSION_URL = "https://raw.githubusercontent.com/cubiced0/owo-discord-bot/main/version.json"
-        
-        self.log("SYS", "Checking for updates...")
-        try:
-            r = requests.get(VERSION_URL, timeout=5)
-            if r.status_code == 200:
-                data = r.json()
-                latest_version = data.get("version", "2.4.3")
-                changelog = data.get("changelog", "No changes listed.")
-                
-                if latest_version != CURRENT_VERSION:
-                    os.system('cls' if os.name == 'nt' else 'clear')
-                    line = "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈"
-                    self.console.print("\n")
-                    self.console.print(Align.center(f"[bold red]{line}[/bold red]"))
-                    self.console.print(Align.center(f"[bold white]   NEW VERSION AVAILABLE: [yellow]{latest_version}[/yellow] (Current: {CURRENT_VERSION})[/bold white]"))
-                    self.console.print(Align.center(f"[bold red]{line}[/bold red]"))
-                    self.console.print(Align.center(f"\n[bold cyan]CHANGELOG:[/bold cyan]\n[white]{changelog}[/white]\n"))
-                    self.console.print(Align.center(f"[bold red]{line}[/bold red]"))
-                    self.console.print(Align.center("[bold yellow]PLEASE UPDATE TO CONTINUE:[/bold yellow]"))
-                    self.console.print(Align.center("[bold cyan]https://github.com/cubiced0/owo-discord-bot[/bold cyan]"))
-                    self.console.print(Align.center(f"[bold red]{line}[/bold red]"))
-                    self.console.print("\n")
-                    sys.exit(0)
-                else:
-                    self.log("SYS", "You are on the latest version.")
-        except Exception as e:
-            self.log("WARN", f"Version check failed: {e}")
-    
     async def run_bot(self):
         # Capture the event loop BEFORE start() so dashboard can use it immediately
         self._loop_ref = asyncio.get_running_loop()
-        self.check_version()
         route = f"via {self.proxy_label}" if self.proxy_label != "direct" else "direct connection"
         self.log("SYS", f"Starting bot ({route})...")
         await self.start(self.token)

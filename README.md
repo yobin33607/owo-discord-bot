@@ -4,7 +4,6 @@
 
 **Discord Bot Ecosystem** • Moderation • Automation • Dashboard
 
-[![Version](https://img.shields.io/badge/version-2.5.0-brightgreen.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)]()
 [![License](https://img.shields.io/badge/license-GPLv3-red.svg)]()
 
@@ -44,8 +43,19 @@ A premium web interface at `http://localhost:8000` featuring:
 - **API key system** — Role-based API keys for external integrations
 - **Discord OAuth** — Sign in or link your Discord account
 - **Multi-user** — Role-based access (View, Manage, Admin)
+- **Chat archives** — Scan a selfbot account's servers + DMs, review before committing, then create a downloadable archive (zip with JSON + readable HTML) pushed to the GitHub data repo
 
-### 🛡️ Moderation System
+### 📦 Chat Archives
+
+The dashboard's **Archives** page lets you capture and manage chat history from any online selfbot account:
+
+- **Scan** — Pick an online account, choose a per-channel message depth, and scan its servers + DMs. Scans are read-only — nothing is written or sent, and results stay in memory until you confirm.
+- **Review** — Search the scanned messages right in the dashboard to check what would be archived before committing.
+- **Create** — Confirm to build a zip (JSON + readable HTML) and push it to the GitHub data repo (`archives/`). If the push fails, the archive stays stored locally as a fallback.
+- **Browse** — Open any archive in the dashboard and read its servers, channels, and DMs without downloading anything.
+- **Search all archives** — Search message content across every created archive.
+- **Actions** — Each archive supports: download the zip, download the raw `index.json`, download a readable HTML index, rename, view full details (created/scanned time, counts, storage location, GitHub paths), delete, or purge all archives at once.
+- **API** — Everything is available over the REST API: `scan`, `status`, `create`, `list`, `detail`, `messages`, `search-archives`, `rename`, `purge`, `info`, `download`, `download-json`, `download-html`, `delete`.
 - **Warn** — Track and threshold users with auto-punishment
 - **Kick / Ban** — With reason logging and violation storage
 - **Timeout / Mute** — Duration-based with auto-unmute
@@ -86,13 +96,13 @@ A premium web interface at `http://localhost:8000` featuring:
 ### Windows
 
 ```bash
-curl -o "%TEMP%\install_limey.bat" https://raw.githubusercontent.com/cubiced0/owo-discord-bot/main/install_limey.bat && "%TEMP%\install_limey.bat"
+curl -o "%TEMP%\install_limey.bat" https://raw.githubusercontent.com/yobin33607/owo-discord-bot/main/install_limey.bat && "%TEMP%\install_limey.bat"
 ```
 
 ### Termux / Linux / MacOS
 
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/cubiced0/owo-discord-bot/main/install_limey.sh)
+bash <(curl -s https://raw.githubusercontent.com/yobin33607/owo-discord-bot/main/install_limey.sh)
 ```
 
 ---
@@ -175,6 +185,7 @@ Features:
 - **Security alerts** — View and respond to captcha challenges
 - **API key management** — Create and revoke API keys
 - **User management** — Add/remove dashboard users with roles
+- **Chat archives** — Scan, create, browse, search, download (zip/JSON/HTML), rename, and purge archives
 
 ---
 

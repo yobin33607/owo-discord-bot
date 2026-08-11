@@ -14,6 +14,11 @@ Features:
   - Transcript generation to log channel on close
   - Ticket claiming by staff
   - Close with confirmation + transcript archive
+
+Configuration (stored in config/tickets.json in the GitHub data repo):
+  staff_role_id          — Role allowed to view/manage all tickets
+  log_channel_id         — Channel where transcripts/logs are sent on close
+  categories             — Per-ticket-type category channels
 """
 
 import discord
@@ -92,27 +97,41 @@ def _load_ticket_data():
 
 
 def _save_ticket_data(data):
-    """Save ticket data to GitHub data repo."""
-    ghd.write_json("config/tickets.json", data, message="Update ticket data")
+    """Save ticket data to GitHub data repo. Returns True on success."""
+    ok = bool(ghd.write_json("config/tickets.json", data, message="Update ticket data"))
+    if not ok:
+        _log.warning("Ticket data: failed to write config/tickets.json to GitHub")
+    return ok
 
 
 def _get_ticket_config():
-    """Get ticket config from settings.json manager_bot section via GitHub."""
-    cfg = ghd.read_json("config/settings.json", default={})
-    return cfg.get("manager_bot", {}).get("tickets", {})
+    """Get the ticket system config from config/tickets.json.
+
+    The ticket config used to be stored under manager_bot.tickets in
+    settings.json, but dashboard settings saves rewrite that file from the
+    config form and dropped keys it didn't know about. config/tickets.json is
+    the single dedicated source of truth. Falls back to the legacy settings.json
+    location for configs saved by older versions.
+    """
+    data = _load_ticket_data()
+    if data.get("config"):
+        return data["config"]
+    legacy = ghd.read_json("config/settings.json", default={})
+    if isinstance(legacy, dict):
+        return (legacy.get("manager_bot") or {}).get("tickets", {})
+    return {}
 
 
 def _save_ticket_config(new_ticket_cfg):
-    """Save full ticket config back to settings.json via GitHub.
-    Merges into the existing manager_bot section, preserving other keys.
-    Returns True on success."""
-    full = ghd.read_json("config/settings.json", default={})
-    if full is None:
-        full = {}
-    if "manager_bot" not in full:
-        full["manager_bot"] = {}
-    full["manager_bot"]["tickets"] = new_ticket_cfg
-    return ghd.write_json("config/settings.json", full, message="Update ticket config")
+    """Save the ticket system config into config/tickets.json.
+
+    Returns True on success. Writes into the existing ticket data file so
+    ticket records are preserved, and never touches settings.json (which the
+    dashboard rewrites from its config form and would drop this config).
+    """
+    data = _load_ticket_data()
+    data["config"] = new_ticket_cfg
+    return _save_ticket_data(data)
 
 
 def _build_ticket_channel_name(ticket_num, ticket_type, username):

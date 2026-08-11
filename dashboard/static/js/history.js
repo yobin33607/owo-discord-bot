@@ -15,8 +15,34 @@
 
 */
 
+async function loadConfigEvents() {
+    const list = document.getElementById('config-events-list');
+    if (!list) return;
+    try {
+        const res = await fetch('/api/config-events');
+        const data = await res.json();
+        const events = (data.success && data.events) ? data.events : [];
+        if (!events.length) {
+            list.innerHTML = '<div class="no-data">No configuration changes logged yet.</div>';
+            return;
+        }
+        list.innerHTML = events.map(e => {
+            const safeType = escapeHtml ? escapeHtml(e.type || 'CFG') : (e.type || 'CFG');
+            const safeMsg = escapeHtml ? escapeHtml(e.message || '') : (e.message || '');
+            return `<div class="arch-search-item" style="padding:7px 4px;">
+                <span style="color:#8b8cff;font-size:0.75rem;">[${safeType}]</span>
+                <span style="color:#5b6472;font-size:0.72rem;">${escapeHtml ? escapeHtml(e.timestamp || '') : (e.timestamp || '')}</span>
+                <div style="font-size:0.85rem;margin-top:2px;">${safeMsg}</div>
+            </div>`;
+        }).join('');
+    } catch (err) {
+        list.innerHTML = '<div class="no-data">Failed to load config change log.</div>';
+    }
+}
+
 window.loadHistory = async function() {
     console.log('loadHistory called');
+    loadConfigEvents();
     try {
         const startEl = document.getElementById('historyStartDate');
         const endEl = document.getElementById('historyEndDate');

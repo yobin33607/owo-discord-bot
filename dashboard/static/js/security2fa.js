@@ -250,7 +250,7 @@ async function addPasskey() {
         const vr = await fetch('/api/auth/passkey/register/verify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ credential: credentialToJSON(cred), device: device })
+            body: JSON.stringify({ credential: credentialToJSON(cred), device: device, ceremony: data.ceremony })
         });
         const vd = await vr.json();
         if (vd.success) {

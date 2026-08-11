@@ -126,6 +126,41 @@ except Exception as e:
 def load_history():
     return {} 
 
+def log_event(log_type, message):
+    """Persist an audit/event entry to the command_logs table.
+
+    Used for configuration changes and other dashboard events that should
+    survive restarts (the console only keeps logs in memory). The table is
+    kept bounded so it can't grow without limit.
+    """
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        c.execute('INSERT INTO command_logs (timestamp, log_type, message) VALUES (?, ?, ?)',
+                  (ts, str(log_type), str(message)))
+        c.execute('SELECT COUNT(*) FROM command_logs')
+        if c.fetchone()[0] > 2000:
+            c.execute('DELETE FROM command_logs WHERE id NOT IN '
+                      '(SELECT id FROM command_logs ORDER BY id DESC LIMIT 2000)')
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+def get_recent_events(limit=200):
+    """Most recent audit/event entries from the command_logs table."""
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('SELECT timestamp, log_type, message FROM command_logs ORDER BY id DESC LIMIT ?',
+                  (limit,))
+        rows = c.fetchall()
+        conn.close()
+        return [{"timestamp": r[0], "type": r[1], "message": r[2]} for r in rows]
+    except Exception:
+        return []
+
 def start_session(history_data=None):
     conn = get_db()
     c = conn.cursor()

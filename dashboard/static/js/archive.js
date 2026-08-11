@@ -195,8 +195,19 @@ async function loadArchiveList() {
         const r = await fetch('/api/archive/list');
         const data = await r.json();
         const archives = data.success ? data.archives : [];
+        renderArchiveStats(archives);
         if (!archives.length) {
-            list.innerHTML = '<div class="no-data">No archives yet. Run a scan and create one.</div>';
+            closeArchiveBrowser();
+            clearArchiveSearchAll();
+            list.innerHTML = `<div class="arch-empty">
+                <div class="arch-empty-icon">🗄️</div>
+                <div>No archives yet — your chat history starts here.</div>
+                <div class="arch-empty-steps">
+                    <div class="arch-empty-step"><b>1 · SCAN</b><span>Pick an online account, choose a depth, and scan its servers + DMs. Read-only — nothing is sent or stored.</span></div>
+                    <div class="arch-empty-step"><b>2 · REVIEW</b><span>Search the scanned messages right here to check what would be archived before committing.</span></div>
+                    <div class="arch-empty-step"><b>3 · CREATE</b><span>Confirm to build a zip (JSON + readable HTML) and push it to the GitHub data repo.</span></div>
+                </div>
+            </div>`;
             return;
         }
         list.innerHTML = archives.map(a => {
@@ -205,13 +216,15 @@ async function loadArchiveList() {
                 : '<span class="arch-badge local">💾 Local fallback</span>';
             return `
             <div class="arch-item">
-                <div>
+                <div style="min-width:0;flex:1;">
                     <div class="arch-item-name">📦 ${escapeHtml(a.username)} — ${escapeHtml(a.created_at || '')} ${storage}</div>
                     <div class="arch-item-meta">
                         ${a.guild_count} servers · ${a.dm_count} DMs · ${(a.message_count || 0).toLocaleString()} messages · ${formatBytes(a.size_bytes)}
+                        ${a.push_error ? '<div style="color:#ff6b6b;font-size:0.75rem;margin-top:3px;">⚠️ ' + escapeHtml(a.push_error) + '</div>' : ''}
                     </div>
                 </div>
-                <div style="display:flex;gap:8px;align-items:center;">
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <button class="btn-control arch-browse" onclick="openArchiveBrowser('${escapeHtml(a.name)}')">📖 Browse</button>
                     <a class="btn-control green" href="${escapeHtml(a.download)}" style="text-decoration:none;">⬇ Download</a>
                     <button class="btn-control red" onclick="deleteArchiveItem('${escapeHtml(a.name)}')">🗑️</button>
                 </div>
@@ -220,6 +233,25 @@ async function loadArchiveList() {
     } catch (e) {
         list.innerHTML = '<div class="no-data">Failed to load archives.</div>';
     }
+}
+
+function renderArchiveStats(archives) {
+    const bar = document.getElementById('arch-stat-bar');
+    if (!bar) return;
+    if (!archives.length) {
+        bar.innerHTML = '';
+        return;
+    }
+    const totalMsgs = archives.reduce((s, a) => s + (a.message_count || 0), 0);
+    const totalBytes = archives.reduce((s, a) => s + (a.size_bytes || 0), 0);
+    const githubCount = archives.filter(a => a.stored_in === 'github').length;
+    const localCount = archives.length - githubCount;
+    bar.innerHTML =
+        `<div class="proxy-stat-card"><span>${archives.length}</span><label>Archives</label></div>` +
+        `<div class="proxy-stat-card ok"><span>${totalMsgs.toLocaleString()}</span><label>Messages</label></div>` +
+        `<div class="proxy-stat-card"><span>${formatBytes(totalBytes)}</span><label>Total size</label></div>` +
+        `<div class="proxy-stat-card"><span>${githubCount}</span><label>☁️ GitHub</label></div>` +
+        `<div class="proxy-stat-card"><span>${localCount}</span><label>💾 Local</label></div>`;
 }
 
 async function deleteArchiveItem(name) {
@@ -233,6 +265,7 @@ async function deleteArchiveItem(name) {
         const data = await r.json();
         if (data.success) {
             showToast('Archive deleted');
+            if (_archiveBrowserName === name) closeArchiveBrowser();
             loadArchiveList();
         } else {
             showToast(data.error || 'Failed to delete', 'error');
@@ -322,5 +355,204 @@ function clearArchiveSearch() {
     const results = document.getElementById('arch-search-results');
     if (results) results.innerHTML = '';
     const clear = document.getElementById('arch-search-clear');
+    if (clear) clear.style.display = 'none';
+}
+
+// ─── Browse an existing archive in the dashboard ─────
+
+let _archiveBrowserName = null;
+let _archiveBrowserDetail = null;
+let _archiveBrowserLoc = null;
+
+async function openArchiveBrowser(name) {
+    const host = document.getElementById('arch-browser');
+    host.style.display = '';
+    host.innerHTML = '<div class="no-data">Loading archive…</div>';
+    _archiveBrowserName = name;
+    _archiveBrowserDetail = null;
+    _archiveBrowserLoc = null;
+    try {
+        const r = await fetch('/api/archive/detail/' + encodeURIComponent(name));
+        const data = await r.json();
+        if (!data.success) {
+            host.innerHTML = '<div class="no-data">' + escapeHtml(data.error || 'Failed to load archive') + '</div>';
+            return;
+        }
+        _archiveBrowserDetail = data.archive;
+        renderArchiveBrowser();
+    } catch (e) {
+        host.innerHTML = '<div class="no-data">Failed to load archive.</div>';
+    }
+}
+
+function closeArchiveBrowser() {
+    _archiveBrowserName = null;
+    _archiveBrowserDetail = null;
+    _archiveBrowserLoc = null;
+    const host = document.getElementById('arch-browser');
+    if (host) host.style.display = 'none';
+}
+
+function renderArchiveBrowser() {
+    const host = document.getElementById('arch-browser');
+    const d = _archiveBrowserDetail;
+    if (!d) return;
+    const meta = d.meta || {};
+
+    const treeRows = [];
+    (d.guilds || []).forEach(g => {
+        treeRows.push(`<div class="tree-group">📁 ${escapeHtml(g.name)}</div>`);
+        (g.channels || []).forEach(ch => {
+            const loc = 'guild:' + g.id + ':' + ch.id;
+            const active = _archiveBrowserLoc === loc ? ' active' : '';
+            treeRows.push(
+                `<div class="arch-tree-row${active}" onclick="archiveSelectChannel(this, '${loc}')">` +
+                `<span>💬</span><span class="tree-name">${escapeHtml(ch.name)}</span>` +
+                `<span class="tree-count">${(ch.message_count || 0).toLocaleString()}</span></div>`);
+        });
+    });
+    if ((d.dms || []).length) {
+        treeRows.push('<div class="tree-group">💬 Direct Messages</div>');
+        (d.dms || []).forEach(ch => {
+            const loc = 'dm:' + ch.id;
+            const active = _archiveBrowserLoc === loc ? ' active' : '';
+            treeRows.push(
+                `<div class="arch-tree-row${active}" onclick="archiveSelectChannel(this, '${loc}')">` +
+                `<span>💬</span><span class="tree-name">${escapeHtml(ch.name)}</span>` +
+                `<span class="tree-count">${(ch.message_count || 0).toLocaleString()}</span></div>`);
+        });
+    }
+    if (!treeRows.length) {
+        treeRows.push('<div class="view-empty">No channels in this archive.</div>');
+    }
+
+    host.innerHTML = `
+        <div class="arch-browser">
+            <div class="arch-browser-head">
+                <div class="arch-browser-title">📖 ${escapeHtml(meta.username || _archiveBrowserName)} <span style="color:#8892a0;font-size:0.75rem;">${escapeHtml(meta.created_at || '')} · ${(d.total_messages || 0).toLocaleString()} messages</span></div>
+                <div class="arch-browser-actions">
+                    <a class="btn-control" href="/api/archive/download/${encodeURIComponent(_archiveBrowserName)}" style="text-decoration:none;">⬇ Download zip</a>
+                    <button class="btn-control red" onclick="closeArchiveBrowser()">✕ Close</button>
+                </div>
+            </div>
+            <div class="arch-browser-grid">
+                <div class="arch-browser-tree">${treeRows.join('')}</div>
+                <div class="arch-browser-view" id="arch-browser-view">
+                    <div class="view-empty">👈 Pick a channel to read its messages here.</div>
+                </div>
+            </div>
+        </div>`;
+    if (_archiveBrowserLoc) {
+        archiveLoadChannelMessages(_archiveBrowserLoc);
+    }
+}
+
+function archiveSelectChannel(el, loc) {
+    _archiveBrowserLoc = loc;
+    // Update the active highlight in the tree.
+    const rows = document.querySelectorAll('.arch-browser-tree .arch-tree-row');
+    rows.forEach(row => row.classList.remove('active'));
+    if (el) el.classList.add('active');
+    // Load the messages.
+    const view = document.getElementById('arch-browser-view');
+    if (view) view.innerHTML = '<div class="view-empty">Loading messages…</div>';
+    archiveLoadChannelMessages(loc);
+}
+
+async function archiveLoadChannelMessages(loc) {
+    const view = document.getElementById('arch-browser-view');
+    if (!view) return;
+    try {
+        const r = await fetch('/api/archive/messages/' + encodeURIComponent(_archiveBrowserName) + '?loc=' + encodeURIComponent(loc));
+        const data = await r.json();
+        if (!data.success) {
+            view.innerHTML = '<div class="view-empty">' + escapeHtml(data.error || 'Failed to load messages') + '</div>';
+            return;
+        }
+        const msgs = data.messages || [];
+        if (!msgs.length) {
+            view.innerHTML = '<div class="view-empty">No messages in this channel.</div>';
+            return;
+        }
+        view.innerHTML = msgs.map(m => {
+            const ts = escapeHtml((m.timestamp || '').replace('T', ' ').slice(0, 16));
+            const atts = (m.attachments || []).map(u =>
+                '<div class="arch-msg-attach">📎 <a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(u) + '</a></div>').join('');
+            return `<div class="arch-msg">
+                <span class="arch-msg-author">${escapeHtml(m.author || 'Unknown')}</span><span class="arch-msg-time">${ts}</span>
+                <div class="arch-msg-content">${escapeHtml(m.content || '')}</div>${atts}
+            </div>`;
+        }).join('');
+    } catch (e) {
+        view.innerHTML = '<div class="view-empty">Failed to load messages.</div>';
+    }
+}
+
+// ─── Search across all created archives ───────────────
+
+let _archiveSearchAllTimer = null;
+let _archiveSearchAllSeq = 0;
+
+function debouncedArchiveSearchAll() {
+    clearTimeout(_archiveSearchAllTimer);
+    _archiveSearchAllTimer = setTimeout(archiveSearchAllNow, 400);
+}
+
+async function archiveSearchAllNow() {
+    clearTimeout(_archiveSearchAllTimer);
+    const input = document.getElementById('arch-archive-search-input');
+    const q = input ? input.value.trim() : '';
+    const status = document.getElementById('arch-archive-search-status');
+    const results = document.getElementById('arch-archive-search-results');
+    if (!q) {
+        clearArchiveSearchAll();
+        return;
+    }
+    const reqId = ++_archiveSearchAllSeq;
+    status.textContent = 'Searching archives…';
+    try {
+        const r = await fetch('/api/archive/search-archives?q=' + encodeURIComponent(q) + '&limit=200');
+        if (reqId !== _archiveSearchAllSeq) return; // stale
+        const data = await r.json();
+        if (!data.success) {
+            status.textContent = '❌ ' + (data.error || 'Search failed');
+            results.innerHTML = '';
+            return;
+        }
+        document.getElementById('arch-archive-search-clear').style.display = '';
+        if (!data.total) {
+            status.textContent = 'No matches for “' + q + '” in any archive.';
+            results.innerHTML = '';
+            return;
+        }
+        status.textContent = data.total + ' match' + (data.total === 1 ? '' : 'es') + ' across archives' +
+            (data.truncated ? ' — showing first ' + data.results.length : '');
+        results.innerHTML = data.results.map(m => {
+            const loc = m.kind === 'dm' ? '💬' : '📁';
+            const atts = (m.attachments || []).map(u =>
+                '<div class="arch-search-attach">📎 ' + escapeHtml(u) + '</div>').join('');
+            return `
+                <div class="arch-search-item">
+                    <div class="arch-search-loc">${loc} ${escapeHtml(m.archive)} / ${escapeHtml(m.guild)} / ${escapeHtml(m.channel)}
+                        <span class="arch-item-meta">· ${escapeHtml(m.author || 'Unknown')} · ${escapeHtml(m.timestamp || '')}</span></div>
+                    <div class="arch-search-content">${highlightMatch(m.content, q)}</div>
+                    ${atts}
+                </div>`;
+        }).join('');
+    } catch (e) {
+        status.textContent = '❌ Search failed';
+        results.innerHTML = '';
+    }
+}
+
+function clearArchiveSearchAll() {
+    clearTimeout(_archiveSearchAllTimer);
+    const input = document.getElementById('arch-archive-search-input');
+    if (input) input.value = '';
+    const status = document.getElementById('arch-archive-search-status');
+    if (status) status.textContent = '';
+    const results = document.getElementById('arch-archive-search-results');
+    if (results) results.innerHTML = '';
+    const clear = document.getElementById('arch-archive-search-clear');
     if (clear) clear.style.display = 'none';
 }

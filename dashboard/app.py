@@ -251,6 +251,46 @@ def protect_large_ints(obj):
     return obj
 
 
+def _log_config_change(action, detail=""):
+    """Audit-log a configuration change to the in-memory console AND the
+    persistent SQLite event log (survives restarts).
+
+    `detail` must never contain secrets — only what it is safe to show in
+    the dashboard console (target names, counts, etc.).
+    """
+    actor = "unknown"
+    if getattr(g, 'api_key_auth', False):
+        actor = getattr(g, 'api_key_user', 'API') or 'API'
+    elif session.get('username'):
+        actor = session.get('username')
+    elif session.get('2fa_pending_user'):
+        actor = session.get('2fa_pending_user')
+
+    msg = f"Config: {action}"
+    if detail:
+        msg += f" — {detail}"
+    msg += f" (by {actor})"
+
+    try:
+        state.log_command("CFG", msg, "info")
+    except Exception:
+        pass
+    try:
+        from utils import history_tracker as ht
+        ht.log_event("CFG", msg)
+    except Exception:
+        pass
+
+
+def _config_changed_keys(before, after):
+    """Top-level setting keys that were added/removed/changed, for audit detail."""
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return []
+    changed = [k for k in set(before) | set(after)
+               if before.get(k) != after.get(k)]
+    return sorted(changed)[:15]
+
+
 # ── Discord Account Linking ────────────────────────────
 
 
@@ -516,6 +556,7 @@ def change_password():
     auth_cfg['users'] = users
     ghd.write_json("config/auth.json", auth_cfg)
 
+    _log_config_change("Password changed", f"'{username}'")
     return jsonify({'success': True, 'message': 'Password changed successfully'})
 
 
@@ -593,6 +634,56 @@ def _webauthn_session_challenge():
         return None, None
 
 
+# ── WebAuthn ceremony store ────────────────────────────
+# The challenge is stored server-side (not in the session cookie) so that a
+# lost/stale session cookie — e.g. behind a proxy, after a browser cookie
+# reset, or when two ceremonies race (login options + register options share
+# the same session keys) — can't cause "Client data challenge was not expected
+# challenge". Each options call mints a fresh random token the browser echoes
+# back on verify; the token is single-use and expires.
+
+WEBAUTHN_CEREMONIES = {}
+WEBAUTHN_CEREMONY_TTL = 300  # seconds
+
+
+def _ceremony_prune():
+    now = time.time()
+    for token in [t for t, c in WEBAUTHN_CEREMONIES.items()
+                  if c.get("expires", 0) < now]:
+        WEBAUTHN_CEREMONIES.pop(token, None)
+
+
+def _ceremony_start(challenge, expected_origin):
+    """Mint a single-use ceremony token bound to a challenge/origin."""
+    _ceremony_prune()
+    token = secrets.token_urlsafe(24)
+    WEBAUTHN_CEREMONIES[token] = {
+        "challenge": challenge.hex(),
+        "origin": expected_origin,
+        "expires": time.time() + WEBAUTHN_CEREMONY_TTL,
+    }
+    return token
+
+
+def _ceremony_consume(token):
+    """Pop the challenge/origin for a ceremony token (single use).
+
+    Falls back to the session-stored ceremony for clients that predate the
+    token flow (and for the login page, which is served without a session
+    cookie when the browser blocks third-party cookies)."""
+    token = (token or "").strip()
+    if token:
+        entry = WEBAUTHN_CEREMONIES.pop(token, None)
+        if entry and entry.get("expires", 0) >= time.time():
+            try:
+                return bytes.fromhex(entry["challenge"]), entry["origin"]
+            except (ValueError, KeyError):
+                pass
+    # Expired/missing/unknown token — fall back to the session-stored ceremony
+    # for clients that predate the token flow (or a server restart mid-ceremony).
+    return _webauthn_session_challenge()
+
+
 @app.route('/api/auth/2fa/pending')
 def twofa_pending():
     """Whether the current browser has a password login waiting on an OTP."""
@@ -650,9 +741,11 @@ def passkey_options():
         # Unknown username — still allow discoverable-credential login.
         user = None
     options, challenge, expected_origin = sec_auth.authentication_options(_webauthn_origin(), user=user)
+    ceremony = _ceremony_start(challenge, expected_origin)
+    # Keep the session copy as a fallback for older clients.
     session['webauthn_challenge'] = challenge.hex()
     session['webauthn_origin'] = expected_origin
-    return jsonify({'success': True, 'options': options})
+    return jsonify({'success': True, 'options': options, 'ceremony': ceremony})
 
 
 @app.route('/api/auth/passkey/verify', methods=['POST'])
@@ -663,8 +756,9 @@ def passkey_verify():
     if not allowed:
         return jsonify({'success': False, 'error': f'Too many attempts. Try again in {wait_time}s'}), 429
 
-    credential = (request.json or {}).get('credential')
-    challenge, expected_origin = _webauthn_session_challenge()
+    body = request.json or {}
+    credential = body.get('credential')
+    challenge, expected_origin = _ceremony_consume(body.get('ceremony'))
     if not credential or not challenge:
         return jsonify({'success': False, 'error': 'Login session expired — try again.'}), 400
 
@@ -678,13 +772,18 @@ def passkey_verify():
         rp_id, _ = sec_auth.build_rp(expected_origin)
         new_count = sec_auth.verify_authentication(
             expected_origin, challenge, credential, rp_id, passkey)
-    except Exception:
+    except Exception as e:
+        app.logger.warning("Passkey login verify failed: %s", e)
         fail_login(ip)
         return jsonify({'success': False, 'error': 'Passkey verification failed.'}), 403
 
     passkey['sign_count'] = new_count
     if cfg:
         ghd.write_json("config/auth.json", cfg, message="Update passkey sign count")
+    # Token-based ceremony succeeded — drop the stale session copies so they
+    # can't be confused with a future ceremony.
+    session.pop('webauthn_challenge', None)
+    session.pop('webauthn_origin', None)
     _auth_complete_login(user)
     if ip in LOGIN_ATTEMPTS:
         del LOGIN_ATTEMPTS[ip]
@@ -704,9 +803,10 @@ def passkey_register_options():
     exclude = [p['id'] for p in (user.get('passkeys') or [])]
     options, challenge, expected_origin = sec_auth.registration_options(
         _webauthn_origin(), user['username'], exclude)
+    ceremony = _ceremony_start(challenge, expected_origin)
     session['webauthn_challenge'] = challenge.hex()
     session['webauthn_origin'] = expected_origin
-    return jsonify({'success': True, 'options': options})
+    return jsonify({'success': True, 'options': options, 'ceremony': ceremony})
 
 
 @app.route('/api/auth/passkey/register/verify', methods=['POST'])
@@ -716,7 +816,7 @@ def passkey_register_verify():
     body = request.json or {}
     credential = body.get('credential')
     device = (body.get('device') or 'Browser').strip()[:40]
-    challenge, expected_origin = _webauthn_session_challenge()
+    challenge, expected_origin = _ceremony_consume(body.get('ceremony'))
     if not credential or not challenge:
         return jsonify({'success': False, 'error': 'Registration session expired — try again.'}), 400
 
@@ -736,6 +836,10 @@ def passkey_register_verify():
     user.setdefault('passkeys', []).append(pk)
     if cfg:
         ghd.write_json("config/auth.json", cfg, message="Register passkey")
+    # Token-based ceremony succeeded — drop the stale session copies.
+    session.pop('webauthn_challenge', None)
+    session.pop('webauthn_origin', None)
+    _log_config_change("Passkey registered", f"'{device}' for '{user['username']}'")
     return jsonify({'success': True, 'passkey': {
         'id': pk['id'], 'device': pk['device'], 'created_at': pk['created_at']
     }})
@@ -756,6 +860,7 @@ def passkey_remove():
         return jsonify({'success': False, 'error': 'Passkey not found'}), 404
     if cfg:
         ghd.write_json("config/auth.json", cfg, message="Remove passkey")
+    _log_config_change("Passkey removed", f"for '{user['username']}'")
     return jsonify({'success': True})
 
 
@@ -805,6 +910,7 @@ def twofa_enable():
     user['backup_codes'] = [sec_auth.hash_backup_code(c) for c in codes]
     if cfg:
         ghd.write_json("config/auth.json", cfg, message="Enable 2FA")
+    _log_config_change("2FA enabled", f"'{username}'")
     return jsonify({'success': True, 'backup_codes': codes})
 
 
@@ -824,6 +930,7 @@ def twofa_disable():
     user.pop('backup_codes', None)
     if cfg:
         ghd.write_json("config/auth.json", cfg, message="Disable 2FA")
+    _log_config_change("2FA disabled", f"'{session.get('username')}'")
     return jsonify({'success': True})
 
 
@@ -878,6 +985,7 @@ def ext_pair():
     })
     if cfg:
         ghd.write_json("config/auth.json", cfg, message="Pair extension")
+    _log_config_change("Extension paired", f"'{label}' for '{user['username']}'")
     # id is returned so the page can auto-revoke if the extension never
     # confirms storing the token (keeps the 5-credential cap honest).
     return jsonify({'success': True, 'token': raw, 'label': label, 'id': cred_id})
@@ -913,6 +1021,7 @@ def ext_revoke():
         return jsonify({'success': False, 'error': 'Credential not found'}), 404
     if cfg:
         ghd.write_json("config/auth.json", cfg, message="Revoke extension credential")
+    _log_config_change("Extension credential revoked", f"for '{user['username']}'")
     return jsonify({'success': True})
 
 
@@ -954,6 +1063,7 @@ def manage_api_keys():
         username = session.get('username', 'admin')
         new_key = api_key_manager.generate_key(label=label, role=role, created_by=username)
 
+        _log_config_change("API key created", f"'{label}' (role: {role})")
         return jsonify({
             'success': True,
             'key': new_key,  # Full key only shown once on creation
@@ -971,6 +1081,7 @@ def manage_api_keys():
 def revoke_api_key(key_id):
     """Revoke an API key."""
     if api_key_manager.revoke_key(key_id):
+        _log_config_change("API key revoked", key_id)
         return jsonify({'success': True, 'message': 'API key revoked'})
     return jsonify({'success': False, 'error': 'API key not found'}), 404
 
@@ -980,6 +1091,7 @@ def revoke_api_key(key_id):
 def delete_api_key(key_id):
     """Permanently delete an API key."""
     if api_key_manager.delete_key(key_id):
+        _log_config_change("API key deleted", key_id)
         return jsonify({'success': True, 'message': 'API key deleted'})
     return jsonify({'success': False, 'error': 'API key not found'}), 404
 
@@ -1397,6 +1509,7 @@ def auth_users():
         cfg['users'] = users
         ghd.write_json("config/auth.json", cfg)
         
+        _log_config_change("User account saved", f"'{username}' (role: {role})")
         return jsonify({'success': True, 'message': f'User {username} saved'})
     
     users = []
@@ -1537,6 +1650,7 @@ def auth_users_delete(username):
     cfg['users'] = [u for u in users if u['username'] != username]
     ghd.write_json("config/auth.json", cfg)
     
+    _log_config_change("User account deleted", f"'{username}'")
     return jsonify({'success': True, 'message': f'User {username} deleted'})
 
 @app.route('/api/accounts/list')
@@ -1735,6 +1849,14 @@ def debug_status():
 def get_history():
     return jsonify(list(reversed(state.full_session_history)))
 
+
+@app.route('/api/config-events')
+@login_required
+def config_events():
+    """Persistent configuration-change audit log (survives restarts)."""
+    from utils import history_tracker as ht
+    return jsonify({'success': True, 'events': ht.get_recent_events(200)})
+
 @app.route('/api/history/analytics')
 @login_required
 def get_analytics():
@@ -1764,6 +1886,10 @@ def settings():
         try:
             save_to_all = request.args.get('all_accounts') == 'true' or request.args.get('all') == 'true'
             
+            # Capture the pre-write config so the audit diff is meaningful (the
+            # write below would otherwise make before == after).
+            old_config = ghd.read_json("config/settings.json", default={}) if save_to_all else None
+            
             if save_to_all:
                 ghd.write_json("config/settings.json", new_config, message="Update global settings from dashboard")
                 
@@ -1777,6 +1903,8 @@ def settings():
                     _run_on_bot_loop(bot, bot.sync_settings(new_config))
                 
                 state.log_command("SYS", "Settings updated for ALL accounts", "success")
+                _log_config_change("Settings updated for ALL accounts",
+                                   f"{len(_config_changed_keys(old_config, new_config))} key(s) changed")
             else:
                 if account_id:
                     safe_id = re.sub(r'[^a-zA-Z0-9_-]', '', account_id) if account_id else ''
@@ -1784,13 +1912,17 @@ def settings():
                 else:
                     config_path = 'config/settings.json'
                 
+                old_config = ghd.read_json(config_path, default={})
                 ghd.write_json(config_path, new_config, message=f"Update settings from dashboard")
                 
                 for bot in state.bot_instances:
                     if (not account_id) or (bot.user and str(bot.user.id) == str(account_id)):
                         _run_on_bot_loop(bot, bot.sync_settings(new_config))
                 
+                target = f"Account {account_id}" if account_id else "Global settings"
                 state.log_command("SYS", f"Settings updated for {'Account ' + account_id if account_id else 'Global'}", "success")
+                _log_config_change(f"Settings updated ({target})",
+                                   f"{len(_config_changed_keys(old_config, new_config))} key(s) changed")
             
             return jsonify({"status": "success"})
         except Exception as e:
@@ -1954,6 +2086,7 @@ def accounts_config_api():
             for bot in state.bot_instances:
                 bot.accounts = accounts
             state.log_command("SYS", "Accounts config updated. Restart recommended.", "success")
+            _log_config_change("Accounts config updated", f"{len(accounts)} account(s)")
             return jsonify({"status": "success"})
         except Exception as e:
             return jsonify({"status": "error", "message": f"Failed to save accounts config: {e}"}), 500
@@ -1985,6 +2118,8 @@ def accounts_api():
                 bot.accounts = new_accounts.get('accounts', new_accounts) if isinstance(new_accounts, dict) else new_accounts
 
             state.log_command("SYS", "Accounts updated successfully. Restart recommended.", "success")
+            count = len(new_accounts.get('accounts', [])) if isinstance(new_accounts, dict) else len(new_accounts)
+            _log_config_change("Accounts updated", f"{count} account(s)")
             return jsonify({"status": "success"})
         except Exception as e:
             return jsonify({"status": "error", "message": f"Failed to save accounts config: {e}"}), 500
@@ -2009,6 +2144,7 @@ def proxies_api():
         proxy_manager.save_proxies(proxies)
         proxy_manager.sync_proxy_assignments()
         state.log_command("SYS", "Proxy pool saved", "success")
+        _log_config_change("Proxy pool saved", f"{len(proxies)} proxy/proxies")
         return jsonify({"status": "success", "proxies": proxy_manager.load_proxies()})
     return jsonify({"proxies": proxy_manager.load_proxies()})
 
@@ -2020,6 +2156,7 @@ def proxies_bulk():
     text = (request.json or {}).get('text', '')
     result = proxy_manager.bulk_import(text)
     state.log_command("SYS", f"Bulk imported {len(result['added'])} proxies", "success")
+    _log_config_change("Bulk imported proxies", f"{len(result['added'])} added, {len(result['errors'])} error(s)")
     return jsonify({
         "status": "success",
         "added": len(result['added']),
@@ -2066,6 +2203,7 @@ def proxies_assign():
     from utils import proxy_manager
     assigned = proxy_manager.auto_assign()
     state.log_command("SYS", f"Auto-assigned {len(assigned)} proxies to accounts", "success")
+    _log_config_change("Proxy assignments updated", f"{len(assigned)} assignment(s)")
     return jsonify({"status": "success", "assigned": assigned, "proxies": proxy_manager.load_proxies()})
 
 
@@ -2075,6 +2213,7 @@ def proxies_delete(proxy_id):
     from utils import proxy_manager
     proxy_manager.remove_proxy(proxy_id)
     state.log_command("SYS", f"Removed proxy {proxy_id}", "info")
+    _log_config_change("Removed proxy", proxy_id)
     return jsonify({"status": "success", "proxies": proxy_manager.load_proxies()})
 
 
@@ -2084,6 +2223,7 @@ def proxies_delete_all():
     from utils import proxy_manager
     proxy_manager.remove_all_proxies()
     state.log_command("SYS", "Deleted ALL proxies", "info")
+    _log_config_change("Deleted ALL proxies")
     return jsonify({"status": "success", "proxies": []})
 
 
@@ -2093,6 +2233,7 @@ def proxies_delete_failed():
     from utils import proxy_manager
     count = proxy_manager.remove_failed_proxies()
     state.log_command("SYS", f"Deleted {count} failed proxies", "info")
+    _log_config_change("Deleted failed proxies", f"{count} removed")
     return jsonify({"status": "success", "count": count, "proxies": proxy_manager.load_proxies()})
 
 
@@ -3403,3 +3544,54 @@ def archive_delete():
     if archive_mod.delete_archive(name):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Archive not found'}), 404
+
+
+@app.route('/api/archive/detail/<name>')
+@require_permission('manage')
+def archive_detail(name):
+    """Tree view of an archive (servers/DMs/channels + counts, no messages).
+
+    Message content lives in the archive, so this requires the manage
+    permission, matching /api/archive/search and /api/archive/search-archives.
+    """
+    detail, err = archive_mod.archive_detail(name)
+    if err:
+        return jsonify({'success': False, 'error': err}), 404
+    return jsonify({'success': True, 'archive': detail})
+
+
+@app.route('/api/archive/messages/<name>')
+@require_permission('manage')
+def archive_messages(name):
+    """Messages for one channel of an archive (requires manage — private content).
+
+    loc is 'guild:<guild_id>:<channel_id>' or 'dm:<channel_id>'.
+    """
+    loc = request.args.get('loc', '')
+    channel, messages, err = archive_mod.archive_channel_messages(name, loc)
+    if err:
+        return jsonify({'success': False, 'error': err}), 404
+    return jsonify({'success': True, 'channel': channel, 'messages': messages})
+
+
+@app.route('/api/archive/search-archives')
+@require_permission('manage')
+def archive_search_all():
+    """Search message content across all created archives."""
+    query = request.args.get('q', '').strip()
+    try:
+        limit = max(1, min(int(request.args.get('limit', 200)), 500))
+    except (TypeError, ValueError):
+        limit = 200
+
+    if not query:
+        return jsonify({'success': True, 'total': 0, 'results': [], 'truncated': False})
+
+    results, total = archive_mod.search_archives(query, limit)
+    return jsonify({
+        'success': True,
+        'query': query,
+        'total': total,
+        'results': results,
+        'truncated': total > len(results),
+    })

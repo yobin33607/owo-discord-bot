@@ -715,6 +715,9 @@ def delete_archive(name):
         except OSError:
             pass
 
+    # Drop cached parsed copies so a deleted archive can't keep being browsed.
+    _reader_cache.pop(name, None)
+
     # Drop the entry from both indices.
     local_entries = [e for e in _load_index() if e.get("name") != name]
     try:
@@ -731,3 +734,206 @@ def delete_archive(name):
         except Exception:
             pass
     return removed
+
+
+# ── Archive reader (in-dashboard browsing) ──────────────
+# Lets the dashboard open an existing archive and read its contents (servers,
+# channels, messages) without downloading the zip. Archive index.json files
+# live either in the GitHub data repo (archives/<name>/index.json) or locally
+# (data/archives/<name>/index.json, kept when a GitHub push failed).
+
+# name -> (fetched_at, parsed_index)
+_reader_cache = {}
+_READER_TTL = 300.0  # seconds
+_READER_MAX = 8      # cap cached archives so memory stays bounded
+
+
+def _reader_evict():
+    if len(_reader_cache) <= _READER_MAX:
+        return
+    oldest = sorted(_reader_cache, key=lambda k: _reader_cache[k][0])
+    for k in oldest[: len(_reader_cache) - _READER_MAX]:
+        _reader_cache.pop(k, None)
+
+
+def load_archive_index(name):
+    """Parse an archive's index.json (local disk first, then GitHub repo).
+
+    Returns (parsed_dict | None, error_str | None). Results are cached briefly
+    so browsing many channels of the same archive doesn't re-download it.
+    """
+    if not name or not re.fullmatch(r"[A-Za-z0-9._-]+", name):
+        return None, "Invalid archive name."
+
+    now = time.time()
+    cached = _reader_cache.get(name)
+    if cached and now - cached[0] < _READER_TTL:
+        return cached[1], None
+    _reader_evict()
+
+    data = None
+    # Local copy first (fallback archives are stored locally only).
+    local_path = os.path.join(ARCHIVE_DIR, name, "index.json")
+    if os.path.exists(local_path):
+        try:
+            with open(local_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            return None, f"Failed to read local archive: {e}"
+    else:
+        content, err = fetch_github_file(_repo_json_path(name))
+        if err or content is None:
+            return None, err or "Archive not found."
+        try:
+            data = json.loads(content.decode("utf-8"))
+        except Exception as e:
+            return None, f"Failed to parse archive: {e}"
+
+    if not isinstance(data, dict):
+        return None, "Archive index is malformed."
+    _reader_cache[name] = (now, data)
+    return data, None
+
+
+def archive_detail(name):
+    """Tree view of an archive: meta + servers/DMs with per-channel summaries.
+
+    Returns (detail_dict | None, error_str | None). The full messages are NOT
+    included here — the UI fetches them per channel via archive_channel_messages
+    so we don't push entire chat logs to the browser at once.
+    """
+    data, err = load_archive_index(name)
+    if err or data is None:
+        return None, err or "Archive not found."
+
+    meta = data.get("meta") or {}
+
+    def _channel_summary(ch):
+        msgs = ch.get("messages") or []
+        first_ts = msgs[0].get("timestamp") if msgs else None
+        last_ts = msgs[-1].get("timestamp") if msgs else None
+        return {
+            "id": str(ch.get("id", "")),
+            "name": ch.get("name") or f"channel_{ch.get('id', '')}",
+            "message_count": len(msgs),
+            "first_ts": first_ts,
+            "last_ts": last_ts,
+        }
+
+    guilds = []
+    for g in data.get("guilds") or []:
+        guilds.append({
+            "id": str(g.get("id", "")),
+            "name": g.get("name") or "Unknown",
+            "channels": [_channel_summary(ch) for ch in (g.get("channels") or [])],
+        })
+    dms = [_channel_summary(ch) for ch in (data.get("dms") or [])]
+
+    total_messages = sum(len(ch.get("messages") or [])
+                         for g in data.get("guilds") or []
+                         for ch in (g.get("channels") or []))
+    total_messages += sum(len(ch.get("messages") or []) for ch in (data.get("dms") or []))
+
+    return {
+        "meta": meta,
+        "guilds": guilds,
+        "dms": dms,
+        "total_messages": total_messages,
+    }, None
+
+
+def archive_channel_messages(name, loc):
+    """Messages for one channel of an archive.
+
+    loc is 'guild:<guild_id>:<channel_id>' or 'dm:<channel_id>'.
+    Returns (channel_name, messages, error_str).
+    """
+    data, err = load_archive_index(name)
+    if err or data is None:
+        return None, None, err or "Archive not found."
+
+    parts = (loc or "").split(":")
+    if len(parts) == 3 and parts[0] == "guild":
+        _, guild_id, channel_id = parts
+        for g in data.get("guilds") or []:
+            if str(g.get("id")) != str(guild_id):
+                continue
+            for ch in g.get("channels") or []:
+                if str(ch.get("id")) == str(channel_id):
+                    return ch.get("name") or f"channel_{channel_id}", ch.get("messages") or [], None
+        return None, None, "Channel not found in archive."
+
+    if len(parts) == 2 and parts[0] == "dm":
+        _, channel_id = parts
+        for ch in data.get("dms") or []:
+            if str(ch.get("id")) == str(channel_id):
+                return ch.get("name") or f"dm_{channel_id}", ch.get("messages") or [], None
+        return None, None, "DM not found in archive."
+
+    return None, None, "Invalid location."
+
+
+# ── Cross-archive search ───────────────────────────────
+
+def search_archives(query, limit=200, max_archives=15):
+    """Search message content across already-created archives.
+
+    Searches the most recent `max_archives` archives (newest first) so the
+    request stays fast even with a big backlog. Returns (results_list, total)
+    where results_list is capped at `limit`; matches outside the cap still
+    count toward total.
+    """
+    query = (query or "").strip()
+    if not query:
+        return [], 0
+    q = query.lower()
+
+    results = []
+    total = 0
+
+    def _append(kind, archive_label, guild, channel, msg):
+        nonlocal total
+        total += 1
+        if len(results) < limit:
+            results.append({
+                "kind": kind,
+                "archive": archive_label,
+                "guild": guild,
+                "channel": channel,
+                "author": msg.get("author", "Unknown"),
+                "timestamp": msg.get("timestamp"),
+                "content": msg.get("content", ""),
+                "attachments": msg.get("attachments") or [],
+            })
+
+    def _matches(msg):
+        content = (msg.get("content") or "").lower()
+        attach = " ".join(msg.get("attachments") or []).lower()
+        return q in content or q in attach
+
+    scanned = 0
+    for entry in list_archives():
+        if scanned >= max_archives:
+            break
+        name = entry.get("name", "")
+        if not name:
+            continue
+        data, err = load_archive_index(name)
+        if err or data is None:
+            continue
+        scanned += 1
+        label = entry.get("username") or name
+
+        for guild in data.get("guilds") or []:
+            for ch in guild.get("channels") or []:
+                for msg in ch.get("messages") or []:
+                    if _matches(msg):
+                        _append("guild", label, guild.get("name", "Unknown"),
+                                ch.get("name", "channel"), msg)
+
+        for ch in data.get("dms") or []:
+            for msg in ch.get("messages") or []:
+                if _matches(msg):
+                    _append("dm", label, "Direct Messages", ch.get("name", "DM"), msg)
+
+    return results, total

@@ -762,7 +762,7 @@
                 const vr = await fetch('/api/auth/passkey/verify', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ credential: credentialToJSON(cred) })
+                    body: JSON.stringify({ credential: credentialToJSON(cred), ceremony: data.ceremony })
                 });
                 const vd = await vr.json();
                 if (vd.success) {

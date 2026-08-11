@@ -1090,6 +1090,15 @@
                         <div class="chart-container"><canvas id="cashHistoryChart"></canvas></div>
                     </div>
                 </div>
+
+                <!-- Config Change Audit Log -->
+                <div class="chart-box" style="margin-top:20px;">
+                    <h3><span class="icon-svg" style="--icon: url('/static/assets/limey_icons/settings.svg');"></span>
+                        Configuration Change Log <span style="color:#8892a0;font-size:0.75rem;">(persistent — survives restarts)</span></h3>
+                    <div id="config-events-list" style="max-height:360px;overflow-y:auto;margin-top:12px;">
+                        <div class="no-data">Loading…</div>
+                    </div>
+                </div>
             </div>
 
             <!-- Terminal Tab -->
@@ -1345,6 +1354,37 @@
                     .arch-search-content{margin-top:3px;white-space:pre-wrap;word-break:break-word;font-size:0.9rem;}
                     .arch-search-content mark{background:#ffb454;color:#1e1f29;border-radius:3px;padding:0 2px;}
                     .arch-search-attach{color:#4da3ff;font-size:0.78rem;}
+                    .arch-empty{border:1px dashed rgba(255,255,255,0.12);border-radius:12px;padding:28px 24px;text-align:center;color:#8892a0;}
+                    .arch-empty .arch-empty-icon{font-size:2.2rem;margin-bottom:10px;}
+                    .arch-empty-steps{display:flex;gap:12px;margin-top:18px;flex-wrap:wrap;justify-content:center;}
+                    .arch-empty-step{flex:1 1 180px;max-width:240px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px;text-align:left;}
+                    .arch-empty-step b{display:block;color:var(--primary,#8b8cff);font-size:0.8rem;margin-bottom:6px;letter-spacing:0.5px;}
+                    .arch-empty-step span{font-size:0.78rem;color:#8892a0;line-height:1.5;}
+                    .arch-browse{background:rgba(139,140,255,0.08);border:1px solid rgba(139,140,255,0.25);border-radius:8px;padding:10px 16px;font-weight:600;transition:all .2s ease;}
+                    .arch-browse:hover{background:rgba(139,140,255,0.18);box-shadow:0 0 18px rgba(139,140,255,0.2);}
+                    .arch-browser{background:rgba(139,140,255,0.05);border:1px solid rgba(139,140,255,0.2);border-radius:12px;padding:18px;margin-bottom:16px;}
+                    .arch-browser-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:14px;}
+                    .arch-browser-title{font-weight:700;color:var(--primary,#8b8cff);font-size:1rem;}
+                    .arch-browser-actions{display:flex;gap:8px;align-items:center;}
+                    .arch-browser-grid{display:grid;grid-template-columns:260px 1fr;gap:14px;}
+                    .arch-browser-tree{background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:10px;max-height:440px;overflow-y:auto;}
+                    .arch-browser-tree .tree-group{margin:6px 0 8px;font-size:0.78rem;color:#8892a0;letter-spacing:0.5px;text-transform:uppercase;font-weight:700;}
+                    .arch-tree-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:7px;cursor:pointer;transition:background .15s ease;font-size:0.85rem;color:#e4e6f0;}
+                    .arch-tree-row:hover{background:rgba(139,140,255,0.12);}
+                    .arch-tree-row.active{background:rgba(139,140,255,0.2);color:#c9caff;}
+                    .arch-tree-row .tree-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+                    .arch-tree-row .tree-count{font-size:0.72rem;color:#8892a0;}
+                    .arch-browser-view{background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px;max-height:440px;overflow-y:auto;}
+                    .arch-browser-view .view-empty{color:#8892a0;text-align:center;padding:40px 10px;font-size:0.85rem;}
+                    .arch-msg{border-bottom:1px solid rgba(255,255,255,0.05);padding:9px 4px;}
+                    .arch-msg:last-child{border-bottom:none;}
+                    .arch-msg-author{color:#ffb454;font-weight:600;font-size:0.82rem;margin-right:8px;}
+                    .arch-msg-time{color:#5b6472;font-size:0.7rem;}
+                    .arch-msg-content{margin-top:3px;white-space:pre-wrap;word-break:break-word;font-size:0.85rem;color:#e4e6f0;}
+                    .arch-msg-attach{color:#4da3ff;font-size:0.75rem;margin-top:3px;}
+                    .arch-msg-attach a{color:#4da3ff;text-decoration:none;word-break:break-all;}
+                    .arch-browser-sel{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);color:#e4e6f0;border-radius:8px;padding:8px 12px;font-size:0.85rem;}
+                    @media(max-width:760px){.arch-browser-grid{grid-template-columns:1fr;}.arch-browser-tree{max-height:220px;}}
                 </style>
                 <div class="mod-header">
                     <h2 style="font-size:1.2rem; color:var(--primary); margin:0;"><span class="icon-svg"
@@ -1414,7 +1454,32 @@
 
                 <!-- Existing archives -->
                 <div class="arch-card">
-                    <div class="arch-card-title">📦 Existing Archives</div>
+                    <div class="arch-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                        <span>📦 Existing Archives</span>
+                        <button class="btn-control" id="arch-refresh-btn" onclick="loadArchiveList()" title="Refresh archives">🔄 Refresh</button>
+                    </div>
+
+                    <!-- Summary stats -->
+                    <div class="mod-stats-bar" id="arch-stat-bar" style="margin-bottom:14px;"></div>
+
+                    <!-- Search across all created archives -->
+                    <div id="arch-archive-search" style="margin-bottom:16px;">
+                        <label class="form-label">🔍 Search all archives</label>
+                        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+                            <input type="text" id="arch-archive-search-input" class="cfg-input" style="min-width:280px;flex:1;"
+                                   placeholder="Search message content across every archive…"
+                                   oninput="debouncedArchiveSearchAll()"
+                                   onkeydown="if(event.key==='Enter'){archiveSearchAllNow();}">
+                            <button class="btn-control" onclick="archiveSearchAllNow()">Search</button>
+                            <button class="btn-control" id="arch-archive-search-clear" onclick="clearArchiveSearchAll()" style="display:none;">Clear</button>
+                        </div>
+                        <div id="arch-archive-search-status" style="color:#aaa;font-size:0.8rem;margin-top:8px;"></div>
+                        <div id="arch-archive-search-results" style="margin-top:10px;max-height:320px;overflow-y:auto;"></div>
+                    </div>
+
+                    <!-- Archive browser (opens an archive in the dashboard) -->
+                    <div id="arch-browser" style="display:none;"></div>
+
                     <div id="arch-archive-list"><div class="no-data">Loading…</div></div>
                 </div>
             </div>

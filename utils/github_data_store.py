@@ -41,6 +41,11 @@ try:
 except ImportError:
     requests = None  # type: ignore[assignment]
 
+try:
+    import certifi
+except ImportError:
+    certifi = None  # type: ignore[assignment]
+
 # Per-path write lock to prevent concurrent writes to the same file path
 _write_locks: dict[str, threading.Lock] = {}
 _write_locks_lock = threading.Lock()
@@ -130,6 +135,52 @@ HEADERS = {
     "Accept": "application/vnd.github.v3+json",
 }
 
+
+def _resolve_ca_bundle():
+    """Choose the CA bundle for GitHub HTTPS requests.
+
+    An explicit verify path prevents Requests from accidentally inheriting a
+    broken `REQUESTS_CA_BUNDLE` value from a hosting environment. Deployments
+    that use a legitimate TLS-inspecting proxy can opt in with
+    `LIMEY_GITHUB_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, or `CURL_CA_BUNDLE`.
+    Otherwise, use certifi's maintained public CA bundle.
+    """
+    candidates = (
+        os.environ.get("LIMEY_GITHUB_CA_BUNDLE"),
+        os.environ.get("REQUESTS_CA_BUNDLE"),
+        os.environ.get("CURL_CA_BUNDLE"),
+    )
+    for candidate in candidates:
+        candidate = (candidate or "").strip()
+        if not candidate:
+            continue
+        if os.path.isfile(candidate) or os.path.isdir(candidate):
+            return candidate
+        _log.warning("Ignoring configured GitHub CA bundle because it is not a file or directory: %s", candidate)
+
+    if certifi is not None:
+        return certifi.where()
+    return True
+
+
+GITHUB_CA_BUNDLE = _resolve_ca_bundle()
+
+# GitHub should be reached directly by default. A hosting environment's
+# inherited HTTPS proxy can replace GitHub's public certificate with an
+# untrusted self-signed certificate. Set LIMEY_GITHUB_USE_ENV_PROXY=1 only
+# when a deployment intentionally requires its HTTPS proxy.
+_github_session = requests.Session()
+_github_session.trust_env = os.environ.get("LIMEY_GITHUB_USE_ENV_PROXY", "").lower() in {
+    "1", "true", "yes", "on"
+}
+
+
+def _github_request(method: str, url: str, **kwargs):
+    """Make a verified GitHub API request with the selected CA bundle."""
+    kwargs.setdefault("verify", GITHUB_CA_BUNDLE)
+    return _github_session.request(method, url, **kwargs)
+
+
 # ── Cache ──────────────────────────────────────────────
 
 _cache: dict[str, dict] = {}  # path -> {data, sha, fetched_at}
@@ -178,7 +229,7 @@ def _get_sha(path: str, force: bool = False) -> str | None:
     if not force and path in _cache and _cache[path].get("sha"):
         return _cache[path]["sha"]
     try:
-        r = requests.get(f"{API_BASE}/{path}", headers=HEADERS, timeout=10)
+        r = _github_request("GET", f"{API_BASE}/{path}", headers=HEADERS, timeout=10)
         if r.status_code == 200:
             sha = r.json().get("sha")
             # Update cache with fresh SHA
@@ -195,7 +246,7 @@ def _get_sha(path: str, force: bool = False) -> str | None:
 def _read_raw(path: str) -> tuple[dict | None, str | None, bool]:
     """Read a file from GitHub. Returns (parsed_data, sha, exists)."""
     try:
-        r = requests.get(f"{API_BASE}/{path}", headers=HEADERS, timeout=10)
+        r = _github_request("GET", f"{API_BASE}/{path}", headers=HEADERS, timeout=10)
         if r.status_code == 404:
             return None, None, False
         if r.status_code != 200:
@@ -250,7 +301,7 @@ def _write_raw(path: str, data: dict | list | None = None, message: str = "", co
         if sha:
             body["sha"] = sha
         try:
-            r = requests.request("PUT", f"{API_BASE}/{path}", headers=HEADERS, json=body, timeout=15)
+            r = _github_request("PUT", f"{API_BASE}/{path}", headers=HEADERS, json=body, timeout=15)
             if r.status_code in (200, 201):
                 new_sha = r.json().get("content", {}).get("sha", sha)
                 return True, r.status_code, new_sha
@@ -343,6 +394,10 @@ class GitHubDataStore:
             }
         return parsed
 
+    def request(self, method: str, url: str, **kwargs):
+        """Make a verified request using the GitHub store's network policy."""
+        return _github_request(method, url, **kwargs)
+
     def write_json(self, path: str, data: dict | list, message: str = "") -> bool:
         """Write a JSON-serializable object to the data repo.
 
@@ -387,7 +442,8 @@ class GitHubDataStore:
                 return False
 
             commit_message = message or f"Delete {path} via Limey GitHub Data Store"
-            r = requests.delete(
+            r = _github_request(
+                "DELETE",
                 f"{API_BASE}/{path}",
                 headers=HEADERS,
                 json={"message": commit_message, "sha": sha, "branch": GITHUB_BRANCH},
@@ -421,7 +477,7 @@ class GitHubDataStore:
         """
         try:
             url = f"{API_BASE}/{prefix}" if prefix else API_BASE
-            r = requests.get(url, headers=HEADERS, timeout=10)
+            r = _github_request("GET", url, headers=HEADERS, timeout=10)
             if r.status_code != 200:
                 return []
             items = r.json()

@@ -357,11 +357,14 @@ def fetch_github_file(path):
     """
     store = _ghd()
     try:
-        import requests
         api_base = getattr(store, "api_base", None) or f"https://api.github.com/repos/{getattr(store, 'repo', 'yobin33607/data')}/contents"
         headers = dict(getattr(store, "headers", {}) or {})
         headers["Accept"] = "application/vnd.github.v3.raw"
-        r = requests.get(f"{api_base}/{path}", headers=headers, timeout=30)
+        request = getattr(store, "request", None)
+        if request is None:
+            import requests
+            request = requests.request
+        r = request("GET", f"{api_base}/{path}", headers=headers, timeout=30)
         if r.status_code == 200:
             return r.content, None
         return None, f"GitHub returned HTTP {r.status_code}"

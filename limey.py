@@ -89,7 +89,13 @@ def detect_platform():
     return is_termux
 
 def run_dashboard():
-    flask_app.run(host='0.0.0.0', port=8000, debug=False, use_reloader=False)
+    # Render and similar hosts provide the public listener through PORT.
+    try:
+        port = int(os.environ.get("PORT", "8000"))
+    except (TypeError, ValueError):
+        console.print("[yellow]Invalid PORT value; using 8000.[/yellow]")
+        port = 8000
+    flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 
 def _start_manager_bot_subprocess():
@@ -321,7 +327,16 @@ async def main():
     if "-1" in sys.argv[1:]:
         console.print("[bold cyan]Direct start mode (-1): launching Limey without the menu...[/bold cyan]")
         if not await start_limey():
-            sys.exit(1)
+            # Keep hosted deployments alive when the remote data store is
+            # temporarily unavailable or has no configured accounts. The
+            # dashboard remains available so the issue can be repaired instead
+            # of causing an endless deploy crash loop.
+            if os.environ.get("RENDER") or os.environ.get("LIMEY_KEEP_DASHBOARD_ON_EMPTY") == "1":
+                console.print("[yellow]No accounts started; keeping the dashboard online for configuration.[/yellow]")
+                dashboard_thread = threading.Thread(target=run_dashboard, daemon=True)
+                dashboard_thread.start()
+            else:
+                sys.exit(1)
         while True:
             await asyncio.sleep(60)
         return

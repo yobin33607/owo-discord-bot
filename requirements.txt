@@ -1,6 +1,7 @@
 discord.py-self @ git+https://github.com/dolfies/discord.py-self@20ae80b398ec83fa272f0a96812140e14868c88
 Flask==3.1.3
 requests==2.33.0
+certifi>=2024.2.2
 aiohttp==3.14.3
 rich==14.2.0
 plyer==2.1.0

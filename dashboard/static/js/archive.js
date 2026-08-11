@@ -11,11 +11,21 @@ function loadArchivePage() {
     loadArchiveList();
 }
 
+function focusArchiveSection(sectionId, focusId) {
+    const section = document.getElementById(sectionId);
+    if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    window.setTimeout(() => {
+        const target = document.getElementById(focusId);
+        if (target && !target.disabled) target.focus({ preventScroll: true });
+    }, 250);
+}
+
 // ─── Accounts & controls ──────────────────────────────
 
 async function loadArchiveAccounts() {
     const sel = document.getElementById('arch-account');
     const btn = document.getElementById('arch-scan-btn');
+    const ready = document.getElementById('arch-ready');
     try {
         const r = await fetch('/api/archive/accounts');
         const data = await r.json();
@@ -25,16 +35,28 @@ async function loadArchiveAccounts() {
                 `<option value="${escapeHtml(a.id)}">${escapeHtml(a.username)}</option>`).join('');
             sel.disabled = false;
             btn.disabled = false;
+            if (ready) {
+                ready.textContent = 'READY TO ARCHIVE';
+                ready.classList.remove('offline');
+            }
             _archiveAccountId = accounts[0].id;
         } else {
             sel.innerHTML = '<option value="">No accounts online</option>';
             sel.disabled = true;
             btn.disabled = true;
+            if (ready) {
+                ready.textContent = 'NO ACCOUNTS ONLINE';
+                ready.classList.add('offline');
+            }
         }
     } catch (e) {
         sel.innerHTML = '<option value="">Failed to load accounts</option>';
         sel.disabled = true;
         btn.disabled = true;
+        if (ready) {
+            ready.textContent = 'ACCOUNT STATUS UNAVAILABLE';
+            ready.classList.add('offline');
+        }
     }
 }
 
@@ -209,6 +231,7 @@ async function loadArchiveList() {
                     <div class="arch-empty-step"><b>2 · REVIEW</b><span>Search the scanned messages right here to check what would be archived before committing.</span></div>
                     <div class="arch-empty-step"><b>3 · CREATE</b><span>Confirm to build a zip (JSON + readable HTML) and push it to the GitHub data repo.</span></div>
                 </div>
+                <div class="arch-empty-cta"><button type="button" class="btn-control gold" onclick="focusArchiveSection('arch-scan-card', 'arch-account')">⌕ Start with a scan</button></div>
             </div>`;
             return;
         }

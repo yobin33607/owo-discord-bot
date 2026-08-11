@@ -1339,6 +1339,21 @@
                 <style>
                     .arch-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:18px;margin-bottom:16px;}
                     .arch-card-title{font-size:0.95rem;font-weight:700;color:var(--primary,#8b8cff);margin-bottom:12px;}
+                    .arch-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:22px 24px;margin-bottom:16px;border:1px solid rgba(139,140,255,0.2);border-radius:14px;background:radial-gradient(circle at 88% 20%,rgba(139,140,255,0.16),transparent 38%),linear-gradient(135deg,rgba(255,255,255,0.045),rgba(255,255,255,0.018));box-shadow:0 12px 36px rgba(0,0,0,0.16);}
+                    .arch-hero-copy{max-width:680px;}
+                    .arch-eyebrow{margin-bottom:7px;color:#a9aaff;font:600 0.68rem var(--font-mono);letter-spacing:1.4px;text-transform:uppercase;}
+                    .arch-hero h3{margin:0;color:#f1f3fa;font:700 1.35rem var(--font-heading);letter-spacing:.3px;}
+                    .arch-hero p{margin:8px 0 0;color:#9ca5b4;font-size:.86rem;line-height:1.55;}
+                    .arch-ready{display:inline-flex;align-items:center;gap:8px;padding:8px 11px;border:1px solid rgba(80,220,155,.25);border-radius:999px;background:rgba(80,220,155,.08);color:#75e0ae;font:600 .7rem var(--font-mono);letter-spacing:.6px;white-space:nowrap;}
+                    .arch-ready::before{content:"";width:7px;height:7px;border-radius:50%;background:#50dc9b;box-shadow:0 0 10px rgba(80,220,155,.8);}
+                    .arch-ready.offline{border-color:rgba(255,180,84,.28);background:rgba(255,180,84,.08);color:#ffbf70;}
+                    .arch-ready.offline::before{background:#ffb454;box-shadow:0 0 10px rgba(255,180,84,.8);}
+                    .arch-menu{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:16px;}
+                    .arch-menu-item{display:flex;align-items:center;gap:12px;min-width:0;padding:13px 14px;text-align:left;color:#dfe3ee;background:rgba(255,255,255,.028);border:1px solid rgba(255,255,255,.08);border-radius:10px;cursor:pointer;transition:transform .18s ease,background .18s ease,border-color .18s ease,box-shadow .18s ease;}
+                    .arch-menu-item:hover,.arch-menu-item:focus-visible{transform:translateY(-2px);background:rgba(139,140,255,.11);border-color:rgba(139,140,255,.38);box-shadow:0 8px 22px rgba(0,0,0,.18);outline:none;}
+                    .arch-menu-icon{display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px;border-radius:9px;background:rgba(139,140,255,.13);color:#b7b8ff;font-size:1rem;}
+                    .arch-menu-label{display:block;font:600 .82rem var(--font-heading);}
+                    .arch-menu-hint{display:block;margin-top:3px;color:#7f8998;font-size:.7rem;line-height:1.35;}
                     .arch-progress-track{background:#23243a;border-radius:8px;height:14px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);}
                     .arch-progress-fill{height:100%;background:linear-gradient(90deg,#8b8cff,#00d9ff);border-radius:8px;transition:width .5s ease;}
                     .arch-item{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:12px 14px;margin-bottom:10px;}
@@ -1358,6 +1373,7 @@
                     .arch-empty-step{flex:1 1 180px;max-width:240px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:14px;text-align:left;}
                     .arch-empty-step b{display:block;color:var(--primary,#8b8cff);font-size:0.8rem;margin-bottom:6px;letter-spacing:0.5px;}
                     .arch-empty-step span{font-size:0.78rem;color:#8892a0;line-height:1.5;}
+                    .arch-empty-cta{margin-top:18px;}
                     .arch-browse{background:rgba(139,140,255,0.08);border:1px solid rgba(139,140,255,0.25);border-radius:8px;padding:10px 16px;font-weight:600;transition:all .2s ease;}
                     .arch-browse:hover{background:rgba(139,140,255,0.18);box-shadow:0 0 18px rgba(139,140,255,0.2);}
                     .arch-browser{background:rgba(139,140,255,0.05);border:1px solid rgba(139,140,255,0.2);border-radius:12px;padding:18px;margin-bottom:16px;}
@@ -1392,7 +1408,7 @@
                     .arch-det-key{color:#8892a0;flex-shrink:0;}
                     .arch-det-val{color:#e4e6f0;text-align:right;word-break:break-word;}
                     .arch-det-val a{color:#4da3ff;text-decoration:none;}
-                    @media(max-width:760px){.arch-browser-grid{grid-template-columns:1fr;}.arch-browser-tree{max-height:220px;}}
+                    @media(max-width:760px){.arch-browser-grid{grid-template-columns:1fr;}.arch-browser-tree{max-height:220px;}.arch-hero{align-items:flex-start;flex-direction:column;padding:18px;}.arch-menu{grid-template-columns:1fr;}}
                 </style>
                 <div class="mod-header">
                     <h2 style="font-size:1.2rem; color:var(--primary); margin:0;"><span class="icon-svg"
@@ -1400,8 +1416,31 @@
                     <p class="accounts-page-hint">Scan a selfbot account's servers and DMs, review what was found, then create an archive (JSON + readable HTML).</p>
                 </div>
 
+                <div class="arch-hero">
+                    <div class="arch-hero-copy">
+                        <div class="arch-eyebrow">Archive workspace</div>
+                        <h3>Preserve the conversations that matter.</h3>
+                        <p>Choose an action below to start a read-only scan, find an existing archive, or search across your saved history.</p>
+                    </div>
+                    <span class="arch-ready" id="arch-ready">CONNECTING…</span>
+                </div>
+                <nav class="arch-menu" aria-label="Archive actions">
+                    <button type="button" class="arch-menu-item" onclick="focusArchiveSection('arch-scan-card', 'arch-account')">
+                        <span class="arch-menu-icon">⌕</span>
+                        <span><span class="arch-menu-label">Create an archive</span><span class="arch-menu-hint">Scan servers and DMs</span></span>
+                    </button>
+                    <button type="button" class="arch-menu-item" onclick="focusArchiveSection('arch-library-card', 'arch-refresh-btn')">
+                        <span class="arch-menu-icon">▣</span>
+                        <span><span class="arch-menu-label">Browse archives</span><span class="arch-menu-hint">Open or download a saved archive</span></span>
+                    </button>
+                    <button type="button" class="arch-menu-item" onclick="focusArchiveSection('arch-library-card', 'arch-archive-search-input')">
+                        <span class="arch-menu-icon">⌕</span>
+                        <span><span class="arch-menu-label">Search history</span><span class="arch-menu-hint">Search every saved archive</span></span>
+                    </button>
+                </nav>
+
                 <!-- Scan setup -->
-                <div class="arch-card">
+                <div class="arch-card" id="arch-scan-card">
                     <div class="arch-card-title">🔎 Scan</div>
                     <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;">
                         <div>
@@ -1461,7 +1500,7 @@
                 </div>
 
                 <!-- Existing archives -->
-                <div class="arch-card">
+                <div class="arch-card" id="arch-library-card">
                     <div class="arch-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
                         <span>📦 Existing Archives</span>
                         <div style="display:flex;gap:8px;align-items:center;">

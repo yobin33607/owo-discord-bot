@@ -329,6 +329,12 @@ async def start_limey(switch_servers=False):
                 guild_id=guild_id,
                 guild_name=guild_name,
             )
+            # Restore a saved "stop" state: accounts stopped via the dashboard
+            # (presence "offline") must come back offline — not grinding — after
+            # a process restart. Applied for real in on_ready once connected.
+            bot.presence_status = (
+                "offline" if (str(acc.get("presence") or "online")).lower() == "offline" else "online"
+            )
             state.bot_instances.append(bot)
             bots.append(bot)
             # Connect immediately, then yield a delay window BEFORE the next

@@ -1668,6 +1668,9 @@ def account_list():
             'username': bot.username,
             'avatar': str(bot.user.display_avatar.url) if bot.user.display_avatar else None,
             'paused': bot.paused,
+            # A stopped account stays connected but presents as offline — show
+            # it as such instead of letting it disappear from the grid.
+            'offline': getattr(bot, 'presence_status', 'online') == 'offline',
             'cash': st.get('current_cash', 0),
             'session_total': session_total,
             'gems_used': st.get('gems_used', 0)
@@ -1741,7 +1744,10 @@ def stats():
             cph = round(cash_diff / time_diff_hrs)
 
     is_active = bot and str(bot.user.id) == uid if bot and bot.user else False
-    current_status = ("PAUSED" if bot.paused else "ONLINE") if is_active else "OFFLINE"
+    if is_active and getattr(bot, 'presence_status', 'online') == 'offline':
+        current_status = "OFFLINE"
+    else:
+        current_status = ("PAUSED" if bot.paused else "ONLINE") if is_active else "OFFLINE"
 
     # ── Defensive scheduling / throttle data ───────────────────
     # cmd_states values are normally dicts, but a bad cog could store
@@ -2256,6 +2262,26 @@ def test_security():
     
     return jsonify({'status': 'error', 'message': 'Security module not loaded'}), 500
 
+def _persist_account_presence(bot, status):
+    """Save the requested presence for an account so it survives restarts
+    (a stopped account should stay offline after Render redeploys)."""
+    try:
+        from utils.proxy_manager import load_accounts, save_accounts
+        accounts = load_accounts()
+        uid = str(bot.user.id) if bot.user else str(getattr(bot, 'user_id', '') or '')
+        token = getattr(bot, 'token', None)
+        if not accounts or (not uid and not token):
+            return
+        for acc in accounts:
+            acc_uid = str(acc.get('id', acc.get('user_id', '')) or '')
+            if (uid and acc_uid == uid) or (token and acc.get('token') == token):
+                acc['presence'] = status
+                save_accounts(accounts)
+                return
+    except Exception:
+        pass
+
+
 @app.route('/api/control', methods=['POST'])
 @require_permission('manage')
 def control():
@@ -2268,12 +2294,25 @@ def control():
     
     if action == 'stop':
         bot.paused = True
-        bot.log("SYS", "Bot STOPPED via Dashboard")
+        # "Stop" = "make offline": keep the connection alive but show the
+        # account as offline in Discord (and as Offline in the dashboard),
+        # instead of disconnecting it and letting it disappear.
+        bot.presence_status = "offline"
+        _persist_account_presence(bot, "offline")
+        err = _run_on_bot_loop(bot, bot.set_presence("offline"))
+        if err:
+            bot.log("WARN", f"Presence offline not applied yet: {err}")
+        bot.log("SYS", "Bot STOPPED (offline) via Dashboard")
             
     elif action == 'start':
         bot.paused = False
         bot.throttle_until = 0
-        bot.log("SYS", "Bot RESUMED via Dashboard")
+        bot.presence_status = "online"
+        _persist_account_presence(bot, "online")
+        err = _run_on_bot_loop(bot, bot.set_presence("online"))
+        if err:
+            bot.log("WARN", f"Presence online not applied yet: {err}")
+        bot.log("SYS", "Bot RESUMED (online) via Dashboard")
             
     elif action == 'cash':
         err = _run_on_bot_loop(bot, bot.send_message(f"{bot.prefix}cash", skip_typing=True, priority=True))
@@ -2301,11 +2340,18 @@ def control_all():
         try:
             if action == 'stop':
                 bot.paused = True
-                bot.log("SYS", f"Bot STOPPED via Dashboard (bulk {action})")
+                # Bulk stop = bulk "make offline": stay connected, appear offline.
+                bot.presence_status = "offline"
+                _persist_account_presence(bot, "offline")
+                _run_on_bot_loop(bot, bot.set_presence("offline"))
+                bot.log("SYS", f"Bot STOPPED (offline) via Dashboard (bulk {action})")
             elif action == 'start':
                 bot.paused = False
                 bot.throttle_until = 0
-                bot.log("SYS", f"Bot RESUMED via Dashboard (bulk {action})")
+                bot.presence_status = "online"
+                _persist_account_presence(bot, "online")
+                _run_on_bot_loop(bot, bot.set_presence("online"))
+                bot.log("SYS", f"Bot RESUMED (online) via Dashboard (bulk {action})")
             success_count += 1
         except Exception:
             fail_count += 1

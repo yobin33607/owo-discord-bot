@@ -95,6 +95,10 @@ class LimeyBot(commands.Bot):
         self.modules = {}
         self.active = True
         self.paused = False
+        # Discord presence requested for this account: 'online' or 'offline'.
+        # 'offline' makes the account appear offline/invisible in Discord while
+        # the connection stays alive — this is what "stop" now means.
+        self.presence_status = "online"
         self.warmup_until = time.time() + 10
         self.throttle_until = 0.0
         self.last_sent_time = 0
@@ -107,6 +111,10 @@ class LimeyBot(commands.Bot):
         self.cmd_states = {}
         self.limey_queue = asyncio.PriorityQueue()
         self.limey_scheduler_task = None
+        # Background tasks started in setup_hook — cancelled together when the
+        # bot is shut down (memory watchdog) so nothing keeps the bot's object
+        # graph alive and its memory can actually be freed.
+        self._bg_tasks = []
         self.is_busy = False
         self.quest_grinder = None
         self.weapon_manager = None
@@ -168,7 +176,7 @@ class LimeyBot(commands.Bot):
         try:
             from modules.quest_grinder import QuestGrinder
             self.quest_grinder = QuestGrinder(self)
-            asyncio.create_task(self.quest_grinder.run())
+            self._bg_tasks.append(asyncio.create_task(self.quest_grinder.run()))
             self.log("SYS", "Orb Grinder initialized")
         except Exception as e:
             self.log("ERROR", f"Failed to initialize Orb Grinder: {e}")
@@ -188,11 +196,12 @@ class LimeyBot(commands.Bot):
         except Exception as e:
             self.log("ERROR", f"Failed to start history session: {e}")
 
-        asyncio.create_task(self._process_pending_commands())
-        asyncio.create_task(self.limey_queue_worker())
-        asyncio.create_task(self._track_active_time())
-        asyncio.create_task(self._balance_monitor_worker())
+        self._bg_tasks.append(asyncio.create_task(self._process_pending_commands()))
+        self._bg_tasks.append(asyncio.create_task(self.limey_queue_worker()))
+        self._bg_tasks.append(asyncio.create_task(self._track_active_time()))
+        self._bg_tasks.append(asyncio.create_task(self._balance_monitor_worker()))
         self.limey_scheduler_task = asyncio.create_task(self.limey_scheduler_worker())
+        self._bg_tasks.append(self.limey_scheduler_task)
         await self._load_cogs()
     
     async def _track_active_time(self):
@@ -266,7 +275,10 @@ class LimeyBot(commands.Bot):
 
     async def _process_pending_commands(self):
         await asyncio.sleep(5)
-        while True:
+        # Must exit when the bot is shut down — a `while True` here would keep
+        # this task (and the whole bot object graph) alive forever, so the
+        # memory watchdog could never actually free a disconnected account.
+        while self.active:
             if not self.is_ready:
                 await asyncio.sleep(1)
                 continue
@@ -292,8 +304,40 @@ class LimeyBot(commands.Bot):
     def get_startup_delay(self, offset=0):
         return random.uniform(5, 15) + offset
 
+    async def set_presence(self, status="online"):
+        """Set the account's Discord presence.
+
+        'offline' shows the account as offline/invisible in Discord while
+        keeping the gateway connection alive (so it never disappears from the
+        dashboard and doesn't need to re-login to come back). The requested
+        state is stored on the bot so it also survives reconnects.
+        """
+        if status == "offline":
+            self.presence_status = "offline"
+        else:
+            self.presence_status = "online"
+        if not self.is_ready:
+            # Applied automatically in on_ready once the account connects.
+            return
+        try:
+            await self.change_presence(
+                status=discord.Status.offline
+                if self.presence_status == "offline"
+                else discord.Status.online
+            )
+        except Exception as e:
+            self.log("ERROR", f"Failed to set presence to {self.presence_status}: {e}")
+
     async def on_ready(self):
         if getattr(self, '_already_ready', False):
+            # Reconnect: is_ready is still True, so apply the stored presence
+            # now — a fresh gateway IDENTIFY resets presence to online and a
+            # stopped account must be told to go invisible again.
+            if getattr(self, "presence_status", "online") == "offline":
+                try:
+                    await self.set_presence("offline")
+                except Exception:
+                    pass
             _log.info(f"Reconnected as {self.user.name}")
             return
 
@@ -385,7 +429,16 @@ class LimeyBot(commands.Bot):
         
         self.is_ready = True
         self._already_ready = True
-        
+
+        # First connect: is_ready was False during the re-apply check at the top
+        # of on_ready, so apply a stored "offline" presence now that the account
+        # is actually ready (a stopped bot must come back invisible).
+        if getattr(self, "presence_status", "online") == "offline":
+            try:
+                await self.set_presence("offline")
+            except Exception:
+                pass
+
         if self.session is None:
             self.session = aiohttp.ClientSession()
     

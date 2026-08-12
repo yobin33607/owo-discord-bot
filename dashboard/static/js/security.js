@@ -60,7 +60,7 @@ async function fetchSecuritySummary() {
             const d = await res.json();
             if (!d || !d.security) continue;
             const isActive = acc.id === currentAccountId;
-            const statusColor = d.status === "PAUSED" ? "var(--danger)" : "var(--success)";
+            const statusColor = d.status === "PAUSED" ? "var(--danger)" : (d.status === "OFFLINE" ? "#8b8fa3" : "var(--success)");
             html += `
                 <div class="sec-account-card ${d.status === "PAUSED" ? 'alert-active' : ''} ${isActive ? 'selected' : ''}">
                     <div class="sec-acc-header">

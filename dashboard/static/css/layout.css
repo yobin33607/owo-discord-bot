@@ -315,6 +315,11 @@
     background: #f59e0b;
     box-shadow: 0 0 10px #f59e0b;
 }
+.ping-dot.offline {
+    background: #8b8fa3;
+    box-shadow: 0 0 8px rgba(139, 143, 163, 0.5);
+    animation: none;
+}
 #botStatus {
     font-family: var(--font-mono);
     font-size: 0.8rem;

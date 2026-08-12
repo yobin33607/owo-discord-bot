@@ -101,6 +101,11 @@
     background: rgba(255, 204, 0, 0.1);
     border: 1px solid rgba(255, 204, 0, 0.25);
 }
+.account-card-status.offline {
+    color: #8b8fa3;
+    background: rgba(139, 143, 163, 0.1);
+    border: 1px solid rgba(139, 143, 163, 0.25);
+}
 .account-selected-badge {
     flex-shrink: 0;
     font-size: 0.65rem;

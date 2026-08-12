@@ -329,6 +329,7 @@
                             </tr>
                         </tbody>
                     </table>
+                    <span class="proxy-render-status" id="proxy-render-status"></span>
                 </div>
                 <div id="proxy-add-modal" class="proxy-modal">
                     <div class="proxy-modal-inner">
@@ -1321,20 +1322,6 @@
                     </div>
                 </div>
             </div>
-        </main>
-    </div>
-
-    <div class="mobile-control-panel" id="mobileControls">
-        <button class="mobile-btn green" onclick="action('resume')" title="Start Bot">
-            <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/play.svg');"></span>
-        </button>
-        <button class="mobile-btn red" onclick="action('pause')" title="Pause Bot">
-            <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/stop.svg');"></span>
-        </button>
-
-    </div>
-
-    <script src="/static/js/core.js"></script>
             <div id="archives" class="view">
                 <style>
                     .arch-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:18px;margin-bottom:16px;}
@@ -1558,6 +1545,20 @@
                     </div>
                 </div>
             </div>
+        </main>
+    </div>
+
+    <div class="mobile-control-panel" id="mobileControls">
+        <button class="mobile-btn green" onclick="action('resume')" title="Start Bot">
+            <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/play.svg');"></span>
+        </button>
+        <button class="mobile-btn red" onclick="action('pause')" title="Pause Bot">
+            <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/stop.svg');"></span>
+        </button>
+
+    </div>
+
+    <script src="/static/js/core.js"></script>
     <script src="/static/js/navigation.js?v=2026.08.11"></script>
     <script src="/static/js/accounts.js?v=2.4.0.2"></script>
     <script src="/static/js/extension.js?v=1.1.0"></script>

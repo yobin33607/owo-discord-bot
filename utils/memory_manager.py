@@ -42,6 +42,7 @@ _DEGRADED_TTL = 1800  # seconds — a degraded marker older than this is ignored
 DEFAULT_LIMITS = {
     "enabled": True,
     "max_accounts": 0,        # 0 = auto (computed from the memory budget)
+    "min_accounts": 1,        # watchdog floor — never disconnect below this many
     "memory_limit_mb": 0,     # 0 = auto-detect (512 on Render, else system total)
     "reserve_mb": 120,        # base: Python runtime + dashboard + manager-bot subprocess
     "per_account_mb": 55,     # avg memory of one discord.py-self client
@@ -110,6 +111,11 @@ def load_memory_limits():
     _enabled = section.get("enabled", limits.get("enabled", True))
     limits["enabled"] = _enabled if isinstance(_enabled, bool) else str(_enabled).lower() in ("1", "true", "yes", "on")
     limits["max_accounts"] = max(0, int(limits.get("max_accounts") or 0))
+    limits["min_accounts"] = max(0, int(limits.get("min_accounts") or 0))
+    if limits["max_accounts"] > 0:
+        # The floor can't demand more accounts than the cap allows.
+        limits["min_accounts"] = min(limits["min_accounts"], limits["max_accounts"])
+
     limits["memory_limit_mb"] = int(limits.get("memory_limit_mb") or 0) or get_memory_limit_mb()
     limits["reserve_mb"] = max(0, int(limits.get("reserve_mb") or 0))
     limits["per_account_mb"] = max(10, int(limits.get("per_account_mb") or 0))
@@ -209,6 +215,7 @@ def ensure_resource_limits_defaults():
             cfg["resource_limits"] = {
                 "enabled": True,
                 "max_accounts": 0,
+                "min_accounts": DEFAULT_LIMITS["min_accounts"],
                 "memory_limit_mb": 0,
                 "reserve_mb": DEFAULT_LIMITS["reserve_mb"],
                 "per_account_mb": DEFAULT_LIMITS["per_account_mb"],
@@ -230,6 +237,33 @@ async def disconnect_bot(bot):
     name = getattr(bot, "username", "Unknown")
     bot.active = False
     bot.is_ready = False
+
+    # Cancel the bot's background workers so nothing keeps the object graph
+    # alive. A zombie task (an old `while True` loop) would pin every cache,
+    # session and cog in memory, so disconnecting would free almost nothing.
+    tasks = [t for t in list(getattr(bot, "_bg_tasks", []) or []) if t and not t.done()]
+    for t in tasks:
+        t.cancel()
+    if tasks:
+        # Timeout-guarded so a single task that swallows CancelledError can't
+        # wedge the disconnect (and the watchdog) forever.
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True), timeout=10
+            )
+        except Exception:
+            pass
+
+    # The quest grinder runs its own child worker + per-quest tasks that aren't
+    # in _bg_tasks — cancel them too so the whole object graph is freed now,
+    # not up to 15s later when its loop notices active=False.
+    grinder = getattr(bot, "quest_grinder", None)
+    if grinder is not None and hasattr(grinder, "shutdown"):
+        try:
+            await grinder.shutdown()
+        except Exception:
+            pass
+
     try:
         await bot.close()
     except Exception:
@@ -243,6 +277,13 @@ async def disconnect_bot(bot):
     try:
         if bot in state.bot_instances:
             state.bot_instances.remove(bot)
+    except Exception:
+        pass
+    # Force a collection pass so the freed memory is actually reclaimed
+    # instead of lingering until the next automatic GC cycle.
+    try:
+        import gc
+        gc.collect()
     except Exception:
         pass
     return name
@@ -272,25 +313,77 @@ async def run_memory_watchdog(limits=None, interval=None):
     if interval is None:
         interval = limits.get("watchdog_interval", 30)
 
+    min_accounts = max(0, int(limits.get("min_accounts") or 0))
+    floor_hold_ticks = 0
+    floor_marker_written = False
+    last_floor_log_at = 0.0
     while True:
         await asyncio.sleep(interval)
         try:
             rss = get_rss_mb()
             if rss <= 0:
+                floor_hold_ticks = 0
                 continue
             limit = limits["memory_limit_mb"]
             critical = limit * limits["critical_ratio"]
             if rss < critical:
+                floor_hold_ticks = 0
+                floor_marker_written = False
+                # Memory recovered — clear any degraded marker this watchdog
+                # wrote, so a transient spike can't cap the next boot forever.
+                # Only touch the file when a degraded marker actually exists
+                # (avoids a pointless disk write every tick while healthy).
+                try:
+                    if read_degraded_state():
+                        persist_degraded_state(False)
+                except Exception:
+                    pass
                 continue
 
             active = [b for b in state.bot_instances if getattr(b, "active", False)]
             if not active:
                 continue
+
+            # Never drain accounts below the configured floor — if memory is
+            # still over the mark with the minimum left, say so loudly instead
+            # of taking the last account(s) offline one by one.
+            if len(active) <= min_accounts:
+                floor_hold_ticks += 1
+                # Loud but not spammy: at most one log per 5 minutes.
+                now = time.time()
+                if now - last_floor_log_at >= 300:
+                    last_floor_log_at = now
+                    msg = (
+                        f"Memory watchdog: RSS {rss:.0f} MB is still above critical "
+                        f"{critical:.0f} MB with the minimum of {len(active)} account(s) "
+                        f"running — no more accounts will be disconnected. Free memory "
+                        f"or raise `resource_limits.memory_limit_mb` / lower "
+                        f"`per_account_mb` (Dashboard → Settings)."
+                    )
+                    print(msg)
+                    try:
+                        state.log_command("SYS", msg, "warning")
+                    except Exception:
+                        pass
+                # Memory over the mark with the minimum running for a sustained
+                # period (10+ ticks) means the budget math is provably wrong —
+                # record the degraded marker ONCE so the NEXT boot starts with a
+                # reduced cap instead of OOM-restart-looping. Writing it only
+                # once (not every tick) keeps its TTL meaningful, and it's
+                # actively cleared above when RSS recovers.
+                if floor_hold_ticks >= 10 and not floor_marker_written:
+                    floor_marker_written = True
+                    persist_degraded_state(True, min_accounts)
+                continue
+
+            floor_hold_ticks = 0
+            floor_marker_written = False
             bot = min(active, key=_activity_key)
             name = await disconnect_bot(bot)
             msg = (
                 f"Memory watchdog: RSS {rss:.0f} MB ≥ critical {critical:.0f} MB — "
-                f"disconnected least-active account '{name}' to prevent an OOM restart."
+                f"disconnected least-active account '{name}' to prevent an OOM restart "
+                f"({len(state.bot_instances)} account(s) left)."
             )
             print(msg)
             try:
@@ -312,6 +405,7 @@ def memory_status():
         "reserve_mb": limits["reserve_mb"],
         "per_account_mb": limits["per_account_mb"],
         "max_accounts": limits["max_accounts"],
+        "min_accounts": limits["min_accounts"],
         "budget_mb": max(0, limits["memory_limit_mb"] - limits["reserve_mb"]),
         "critical_mb": round(limits["memory_limit_mb"] * limits["critical_ratio"], 1),
         "watchdog_enabled": bool(limits.get("enabled", True)),

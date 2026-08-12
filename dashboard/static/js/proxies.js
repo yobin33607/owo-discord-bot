@@ -27,17 +27,23 @@ window.fetchProxies = async function() {
         populateAccountProxyDropdown();
     } catch (e) {
         console.error('Failed to fetch proxies', e);
+        _proxyRowCache.clear();
+        _proxyRenderInFlight = false;
         const el = document.getElementById('proxy-table-body');
         if (el) el.innerHTML = `<tr><td colspan="8" class="no-data error">Failed to load proxies</td></tr>`;
     }
 };
 
 function renderProxyStats() {
-    const total = proxyList.length;
-    const enabled = proxyList.filter(p => p.enabled !== false).length;
-    const healthy = proxyList.filter(p => p.status === 'ok').length;
-    const assigned = proxyList.filter(p => p.assigned_to).length;
-    const free = proxyList.filter(p => p.enabled !== false && !p.assigned_to).length;
+    let total = 0, enabled = 0, healthy = 0, assigned = 0, free = 0;
+    for (const p of proxyList) {
+        total++;
+        const isEnabled = p.enabled !== false;
+        if (isEnabled) enabled++;
+        if (p.status === 'ok') healthy++;
+        if (p.assigned_to) assigned++;
+        if (isEnabled && !p.assigned_to) free++;
+    }
 
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
     set('proxy-stat-total', total);
@@ -64,30 +70,121 @@ function attemptsBadge(p) {
     return `<span class="proxy-attempts ${cls}" title="${a.ok} of ${a.total} attempts succeeded (${pct}%)">${a.ok}/${a.total}</span>`;
 }
 
+// Row elements cached by proxy id, so a single test result updates just its
+// own row instead of rebuilding the entire table (which made the page lag
+// with large pools and high-concurrency test runs).
+const _proxyRowCache = new Map();
+let _proxyRenderGen = 0;
+let _proxyRenderInFlight = false;
+const _PROXY_RENDER_CHUNK = 300; // rows appended per frame
+
+function escapeHtml(v) {
+    return String(v).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+}
+
+function proxyRowHtml(p, i) {
+    return `
+        <tr data-id="${escapeHtml(p.id)}">
+            <td>${i + 1}</td>
+            <td>${escapeHtml(p.label || '-')}</td>
+            <td>${escapeHtml(p.type || 'socks5')}</td>
+            <td class="mono">${escapeHtml(p.host)}:${escapeHtml(p.port)}</td>
+            <td class="js-proxy-status">${statusBadge(p.status || 'unknown')}</td>
+            <td class="js-proxy-attempts">${attemptsBadge(p)}</td>
+            <td>${escapeHtml(p.assigned_to || '-')}</td>
+            <td class="proxy-actions">
+                <button class="btn-proxy-sm" data-proxy-action="test">Test</button>
+                <button class="btn-proxy-sm danger" data-proxy-action="delete">Del</button>
+            </td>
+        </tr>
+    `;
+}
+
 function renderProxyTable() {
     const body = document.getElementById('proxy-table-body');
     if (!body) return;
 
+    _proxyRowCache.clear();
+    const statusEl = document.getElementById('proxy-render-status');
     if (!proxyList.length) {
         body.innerHTML = '<tr><td colspan="8" class="no-data">No proxies yet. Use bulk import or add one.</td></tr>';
+        if (statusEl) statusEl.textContent = '';
+        _proxyRenderInFlight = false;
         return;
     }
 
-    body.innerHTML = proxyList.map((p, i) => `
-        <tr>
-            <td>${i + 1}</td>
-            <td>${p.label || '-'}</td>
-            <td>${p.type || 'socks5'}</td>
-            <td class="mono">${p.host}:${p.port}</td>
-            <td>${statusBadge(p.status || 'unknown')}</td>
-            <td>${attemptsBadge(p)}</td>
-            <td>${p.assigned_to || '-'}</td>
-            <td class="proxy-actions">
-                <button class="btn-proxy-sm" onclick="testProxy('${p.id}')">Test</button>
-                <button class="btn-proxy-sm danger" onclick="deleteProxy('${p.id}')">Del</button>
-            </td>
-        </tr>
-    `).join('');
+    // Rebuild in chunks (yielding between frames) so a huge proxy list never
+    // freezes the page with one giant synchronous innerHTML parse.
+    const gen = ++_proxyRenderGen;
+    _proxyRenderInFlight = true;
+    const total = proxyList.length;
+    body.innerHTML = '';
+    let idx = 0;
+
+    const step = () => {
+        if (gen !== _proxyRenderGen) return; // superseded — the new render owns the flag
+        const end = Math.min(idx + _PROXY_RENDER_CHUNK, total);
+        const frag = document.createDocumentFragment();
+        for (; idx < end; idx++) {
+            const p = proxyList[idx];
+            const tr = document.createElement('tr');
+            tr.innerHTML = proxyRowHtml(p, idx);
+            _proxyRowCache.set(p.id, {
+                tr,
+                statusTd: tr.querySelector('.js-proxy-status'),
+                attemptsTd: tr.querySelector('.js-proxy-attempts'),
+            });
+            frag.appendChild(tr);
+        }
+        body.appendChild(frag);
+        if (idx < total) {
+            if (statusEl) statusEl.textContent = `Rendering ${idx}/${total} proxies…`;
+            requestAnimationFrame(step);
+        } else {
+            if (statusEl) statusEl.textContent = '';
+            _proxyRenderInFlight = false;
+        }
+    };
+    requestAnimationFrame(step);
+}
+
+// Update only the affected row's cells — the key fix for test-run lag.
+function updateProxyRow(p) {
+    if (!p || p.id == null) return;
+    const row = _proxyRowCache.get(p.id);
+    if (!row) {
+        // A render in flight re-reads the live proxyList, so the fresh status
+        // will be picked up anyway — don't cancel and restart it.
+        if (!_proxyRenderInFlight) scheduleProxyTableRender();
+        return;
+    }
+    if (row.statusTd) row.statusTd.innerHTML = statusBadge(p.status || 'unknown');
+    if (row.attemptsTd) row.attemptsTd.innerHTML = attemptsBadge(p);
+}
+
+// Row actions (Test / Del) via event delegation — avoids building inline
+// onclick strings from data, and HTML-unescapes ids safely through data-id.
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-proxy-action]');
+    if (!btn) return;
+    const tr = btn.closest('tr[data-id]');
+    if (!tr) return;
+    const id = tr.dataset.id;
+    if (btn.dataset.proxyAction === 'test') window.testProxy(id);
+    else if (btn.dataset.proxyAction === 'delete') window.deleteProxy(id);
+});
+
+// Coalesce bursts of updates into one render per animation frame.
+let _proxyRenderScheduled = false;
+function scheduleProxyTableRender() {
+    if (_proxyRenderScheduled) return;
+    _proxyRenderScheduled = true;
+    requestAnimationFrame(() => {
+        _proxyRenderScheduled = false;
+        renderProxyTable();
+    });
 }
 
 window.bulkImportProxies = async function() {
@@ -213,10 +310,10 @@ async function testProxiesParallel(filter, limit) {
     showProgress(true);
     setProgress(`Testing 0/${targets.length}...`, 0);
 
-    const tick = (label, done) => {
+    const tick = (label, done, p) => {
         setProgress(label, done / targets.length);
         renderProxyStats();
-        renderProxyTable();
+        if (p) updateProxyRow(p);
     };
 
     try {
@@ -243,7 +340,10 @@ async function testProxiesParallel(filter, limit) {
                     markProxyFail(p);
                 }
                 completedCount++;
-                tick(`Tested ${completedCount}/${targets.length}: ${p.host}:${p.port}`, completedCount);
+                // Refresh just this row in place — no full-table rebuild per
+                // completed proxy (that was the source of the page lag).
+                const updated = proxyList.find(x => x.id === p.id);
+                tick(`Tested ${completedCount}/${targets.length}: ${p.host}:${p.port}`, completedCount, updated);
             }
         };
         const poolSize = Math.min(PROXY_TEST_CONCURRENCY, targets.length);
@@ -353,7 +453,7 @@ window.testProxy = async function(id) {
         const { ok, data } = await testProxyRequest(p, true);
         applyProxyTestResult(data);
         renderProxyStats();
-        renderProxyTable();
+        updateProxyRow(proxyList.find(x => x.id === id));
         const a = data.last_attempts || (data.proxy && data.proxy.last_attempts);
         const suffix = a ? ` (${a.ok}/${a.total} attempts)` : '';
         showToast(ok ? `Proxy OK${suffix}` : 'Proxy failed', ok ? 'success' : 'error');
@@ -469,9 +569,19 @@ window.addSingleProxy = async function() {
     showToast('Proxy added', 'success');
 };
 
+let _proxyDropdownSig = '';
 function populateAccountProxyDropdown() {
     const sel = document.getElementById('acct-form-proxy');
     if (!sel) return;
+    // Rebuilding the <select> resets the user's open form state — only rebuild
+    // when the actual option list changed (ids/labels/types), not on every
+    // fetch (status changes don't affect the dropdown).
+    const sig = proxyList
+        .filter(p => p.enabled !== false)
+        .map(p => p.id + '\u0001' + (p.label || p.host + ':' + p.port) + '\u0001' + (p.type || 'socks5'))
+        .join('\u0002');
+    if (sig === _proxyDropdownSig) return;
+    _proxyDropdownSig = sig;
     const current = sel.value;
     sel.innerHTML = '<option value="">None (direct)</option>' +
         proxyList.filter(p => p.enabled !== false).map(p =>

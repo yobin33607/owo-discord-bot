@@ -165,6 +165,34 @@ class QuestGrinder:
         if self._loop_task is None:
             self._loop_task = asyncio.create_task(self._worker())
 
+    async def shutdown(self):
+        """Cancel the background worker and in-flight quest tasks so the bot's
+        object graph can actually be freed when it's disconnected (memory
+        watchdog) instead of lingering up to 15s on the next active-check."""
+        tasks = []
+        if self._loop_task and not self._loop_task.done():
+            tasks.append(self._loop_task)
+        for t in list(self._quest_tasks.values() or []):
+            if t and not t.done():
+                tasks.append(t)
+        for t in tasks:
+            t.cancel()
+        if tasks:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True), timeout=10
+                )
+            except Exception:
+                pass
+        # Second pass: _worker may have been mid-`_spawn_quest_tasks` when
+        # cancelled and created a quest task after our snapshot — cancel any
+        # stragglers that ended up in the dict so nothing pins the bot.
+        for t in list(self._quest_tasks.values() or []):
+            if t and not t.done():
+                t.cancel()
+        self._loop_task = None
+        self._quest_tasks.clear()
+
     async def set_auto(self, enabled):
         if bool(enabled) == self.auto_enabled:
             await self.refresh()

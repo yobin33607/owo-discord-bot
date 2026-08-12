@@ -211,6 +211,7 @@ class LimeySetupEngine:
                 "resource_limits": {
                     "enabled": True,
                     "max_accounts": 0,
+                    "min_accounts": 1,
                     "memory_limit_mb": 0,
                     "reserve_mb": 120,
                     "per_account_mb": 55,

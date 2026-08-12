@@ -123,7 +123,9 @@ function update() {
             if (d.uptime) document.getElementById('uptimeDisplay').innerText = d.uptime;
             if (d.logs) renderLogs(d.logs);
             const dot = document.getElementById('statusDot'), lbl = document.getElementById('botStatus');
-            lbl.innerText = d.status; dot.className = "ping-dot " + (d.status === "PAUSED" ? "paused" : "");
+            lbl.innerText = d.status;
+            lbl.style.color = d.status === "OFFLINE" ? "#8b8fa3" : "";
+            dot.className = "ping-dot " + (d.status === "OFFLINE" ? "offline" : (d.status === "PAUSED" ? "paused" : ""));
             if (d.status === "PAUSED" && d.security && d.security.last_message) {
                 document.getElementById('securityAlert').style.display = 'flex';
                 document.getElementById('captchaMsg').innerText = d.security.last_message;

@@ -226,8 +226,8 @@ function renderAccountGrid() {
     }
     grid.innerHTML = accountsList.map(acc => {
         const isSelected = acc.id === currentAccountId;
-        const statusClass = acc.paused ? 'paused' : 'running';
-        const statusLabel = acc.paused ? 'Paused' : 'Running';
+        const statusClass = acc.offline ? 'offline' : (acc.paused ? 'paused' : 'running');
+        const statusLabel = acc.offline ? 'Offline' : (acc.paused ? 'Paused' : 'Running');
         const avatar = acc.avatar
             ? `<img src="${acc.avatar}" class="account-avatar-lg" alt="">`
             : `<span class="icon-svg account-avatar-lg account-avatar-fallback" style="--icon: url('/static/assets/limey_icons/discord.svg');"></span>`;
@@ -373,7 +373,9 @@ window.saveAccountForm = async function() {
             showToast('Token is required for new accounts', 'error');
             return;
         }
-        accountConfigList[index] = entry;
+        // Merge over the existing entry so fields we don't edit (id, user_id,
+        // presence/stop-state, …) aren't silently dropped on save.
+        accountConfigList[index] = Object.assign({}, accountConfigList[index], entry);
     } else {
         if (!token) {
             showToast('Token is required', 'error');

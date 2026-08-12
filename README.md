@@ -215,6 +215,7 @@ Configure it in **Dashboard → Settings → `resource_limits`** (or
 | --- | --- | --- |
 | `enabled` | `true` | Master switch for all memory limits |
 | `max_accounts` | `0` | Hard cap on accounts; `0` = auto from budget |
+| `min_accounts` | `1` | Watchdog floor — never disconnects below this many |
 | `memory_limit_mb` | `0` | Instance memory limit; `0` = auto (512 on Render) |
 | `reserve_mb` | `120` | Reserved for Python + dashboard + manager bot |
 | `per_account_mb` | `55` | Estimated memory per account |

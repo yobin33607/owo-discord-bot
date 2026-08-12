@@ -2689,7 +2689,8 @@ def system_status():
     """Get system status information."""
     uptime = time.time() - state.active_session_start if state.active_session_start else 0
     bot_count = len(state.bot_instances)
-    active_count = sum(1 for b in state.bot_instances if not b.paused)
+    # A watchdog-disconnected bot has active=False — don't count it as running.
+    active_count = sum(1 for b in state.bot_instances if getattr(b, 'active', True) and not b.paused)
     
     # Get memory info (cross-platform)
     memory_info = {}
@@ -2710,6 +2711,11 @@ def system_status():
         memory_info = {'available': False}
     except Exception:
         memory_info = {'available': False}
+    try:
+        from utils import memory_manager
+        memory_info.update(memory_manager.memory_status())
+    except Exception:
+        pass
     
     return jsonify({
         'success': True,

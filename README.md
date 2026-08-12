@@ -189,6 +189,45 @@ Features:
 
 ---
 
+## Memory Management (`resource_limits`)
+
+Every enabled selfbot account runs a full discord.py-self client in the same
+process, so on memory-constrained hosts (like **Render's 512 MB free tier**)
+starting too many accounts used to OOM-kill the instance, which restarted it,
+which started every account again — an infinite restart loop.
+
+Limey now budgets memory automatically:
+
+- **Startup limit** — Accounts are started one at a time, and only while the
+  projected RSS fits inside the budget. If the budget runs out, remaining
+  accounts are skipped with a clear warning instead of the process being
+  killed (the dashboard stays online).
+- **Runtime watchdog** — A background task checks RSS periodically and, if
+  usage climbs past the critical mark (slow leaks, big servers, etc.),
+  gracefully disconnects the least-active account until usage drops again.
+- **Crash-loop guard** — A constrained boot is remembered on disk, so a
+  restart after an OOM starts with fewer accounts instead of repeating it.
+
+Configure it in **Dashboard → Settings → `resource_limits`** (or
+`LIMEY_MEMORY_LIMIT_MB` env var):
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `true` | Master switch for all memory limits |
+| `max_accounts` | `0` | Hard cap on accounts; `0` = auto from budget |
+| `memory_limit_mb` | `0` | Instance memory limit; `0` = auto (512 on Render) |
+| `reserve_mb` | `120` | Reserved for Python + dashboard + manager bot |
+| `per_account_mb` | `55` | Estimated memory per account |
+| `watchdog_interval` | `30` | Seconds between watchdog memory checks |
+| `critical_ratio` | `0.8` | % of limit where the watchdog starts disconnecting |
+
+Example: on a 512 MB Render instance with defaults, roughly
+`(512 − 120) ÷ 55 ≈ 7` accounts fit; raise `memory_limit_mb` / lower
+`per_account_mb` if your accounts are lighter, or set `max_accounts` for a
+hard cap.
+
+---
+
 ## Disclaimer
 
 This tool is for **educational purposes only**. Using self-bots violates Discord's Terms of Service. Use at your own risk in private servers only.

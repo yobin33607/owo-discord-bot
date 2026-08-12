@@ -204,6 +204,19 @@ class LimeySetupEngine:
                     "token": "",
                     "prefix": "!"
                 },
+                # Memory safety on constrained hosts (e.g. Render's 512 MB):
+                # accounts are only started while they fit inside this budget,
+                # and a watchdog disconnects idle accounts if usage climbs
+                # too high — prevents the OOM restart loop.
+                "resource_limits": {
+                    "enabled": True,
+                    "max_accounts": 0,
+                    "memory_limit_mb": 0,
+                    "reserve_mb": 120,
+                    "per_account_mb": 55,
+                    "watchdog_interval": 30,
+                    "critical_ratio": 0.8
+                },
             }
             with open(settings_path, "w", encoding="utf-8") as f:
                 json.dump(default_settings, f, indent=4)

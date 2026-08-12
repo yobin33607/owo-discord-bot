@@ -255,6 +255,21 @@ async def start_limey(switch_servers=False):
             console.print("[bold red]No active accounts after server selection.[/bold red]")
             return False
 
+    # ── Memory budget setup ────────────────────────────────────
+    # Every enabled account runs a full discord.py-self client in this
+    # process. On memory-constrained hosts (e.g. Render's 512 MB) starting
+    # them all at once OOM-kills the process → restart → same OOM → infinite
+    # loop. We work out a safe budget up-front and stop starting accounts
+    # before the ceiling is hit, keeping the dashboard alive instead.
+    from utils import memory_manager
+    memory_manager.ensure_resource_limits_defaults()
+    limits = memory_manager.load_memory_limits()
+    degraded = memory_manager.read_degraded_state()
+    if degraded and not limits.get("max_accounts"):
+        cap = max(1, int(degraded.get("started") or 1))
+        limits["max_accounts"] = cap
+        console.print(f"[yellow]Memory safety: previous boot was memory-constrained — starting at most {cap} account(s).[/yellow]")
+
     import utils.history_tracker as ht
     ht.start_session()
     dashboard_thread = threading.Thread(target=run_dashboard, daemon=True)
@@ -265,13 +280,36 @@ async def start_limey(switch_servers=False):
         console.print("[dim]Starting Manager Bot subprocess...[/dim]")
         _start_manager_bot_subprocess()
 
-    console.print(f"[bold yellow]Initializing {len(accounts)} accounts...[/bold yellow]")
+    valid_accounts = [
+        a for a in accounts
+        if a.get('token') and "YOUR_TOKEN_HERE" not in a.get('token', '') and "PLACEHOLDER" not in a.get('token', '')
+    ]
+    console.print(f"[bold yellow]Initializing {len(valid_accounts)} accounts...[/bold yellow]")
+    if limits.get("enabled", True):
+        budget = memory_manager.account_budget(limits)
+        console.print(
+            f"[dim]Memory budget: {limits['memory_limit_mb']} MB limit, "
+            f"{limits['reserve_mb']} MB reserved → up to {budget} account(s) "
+            f"(≈{limits['per_account_mb']} MB each).[/dim]"
+        )
     bots = []
-    for i, acc in enumerate(accounts):
+    budget_stopped = False  # stopped by real memory pressure
+    cap_stopped = False     # stopped by the degraded-mode account cap
+    for i, acc in enumerate(valid_accounts):
         token = acc.get('token')
         channels = acc.get('channels')
-        if not token or "YOUR_TOKEN_HERE" in token or "PLACEHOLDER" in token:
-            continue
+        # Stop starting accounts before the process runs out of memory —
+        # this is what breaks the Render OOM restart loop.
+        if limits.get("enabled", True):
+            ok, reason = memory_manager.can_start_account(limits, memory_manager.get_rss_mb(), len(bots))
+            if not ok:
+                if "max_accounts" in reason:
+                    cap_stopped = True
+                else:
+                    budget_stopped = True
+                console.print(f"[bold yellow]Memory budget reached — stopped starting accounts: {reason}[/bold yellow]")
+                console.print(f"[yellow]Started {len(bots)}/{len(valid_accounts)} account(s). Disable accounts or raise `resource_limits` (Dashboard → Settings) to fit more.[/yellow]")
+                break
         valid_channels = []
         if channels:
             for ch in channels:
@@ -293,16 +331,40 @@ async def start_limey(switch_servers=False):
             )
             state.bot_instances.append(bot)
             bots.append(bot)
+            # Connect immediately, then yield a delay window BEFORE the next
+            # memory check so the account actually connects (and its RSS shows
+            # up) — keeps the budget projection accurate instead of optimistic.
+            asyncio.create_task(bot.run_bot())
             if i > 0:
                 delay = random.uniform(2.5, 4.5)
                 console.print(f"[dim]Waiting {delay:.1f}s for next account...[/dim]")
-                time.sleep(delay)
-            asyncio.create_task(bot.run_bot())
-            console.print(f"[green]Starting Account {i+1}/{len(accounts)} ({acc.get('name', 'Unknown')})[/green]")
+                await asyncio.sleep(delay)
+            console.print(f"[green]Starting Account {i+1}/{len(valid_accounts)} ({acc.get('name', 'Unknown')})[/green]")
         except Exception as e:
             console.print(f"[bold red]Failed to initialize Account {i+1}: {e}[/bold red]")
             continue
-    console.print("[bold green]All accounts are now connecting in background...[/bold green]")
+
+    if bots:
+        # Runtime watchdog: disconnect idle accounts if usage climbs past the
+        # critical mark later (slow leaks), instead of being OOM-killed.
+        if limits.get("enabled", True):
+            asyncio.create_task(memory_manager.run_memory_watchdog(limits))
+
+    # Remember constrained boots so a crash-loop restart starts with fewer
+    # accounts. The marker is refreshed on real memory pressure (budget wall
+    # or watchdog) but NOT when the boot was merely stopped by the cap itself
+    # — that lets it age out, so a later larger budget (upgraded plan, lighter
+    # accounts) is re-evaluated instead of being locked in forever.
+    if limits.get("enabled", True):
+        if budget_stopped:
+            memory_manager.persist_degraded_state(True, len(bots))
+        elif not cap_stopped:
+            memory_manager.persist_degraded_state(False)
+
+    if budget_stopped:
+        console.print(f"[bold yellow]Started {len(bots)} of {len(valid_accounts)} account(s) within the memory budget — remaining accounts skipped (no restart loop).[/bold yellow]")
+    else:
+        console.print("[bold green]All accounts are now connecting in background...[/bold green]")
     return True
 
 async def main():

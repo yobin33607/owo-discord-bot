@@ -34,13 +34,23 @@ logging.basicConfig(
 )
 
 
+def _dashboard_url():
+    """The dashboard URL — same port logic as limey.py's run_dashboard()."""
+    try:
+        port = int(os.environ.get("PORT", "8000"))
+    except (TypeError, ValueError):
+        port = 8000
+    return f"http://localhost:{port}"
+
+
 def wait_for_dashboard(max_retries=15, delay=2):
     """Wait until the dashboard API is reachable."""
     import urllib.request
 
+    url = _dashboard_url() + "/api/debug_status"
     for attempt in range(1, max_retries + 1):
         try:
-            urllib.request.urlopen("http://localhost:8000/api/debug_status", timeout=3)
+            urllib.request.urlopen(url, timeout=3)
             return True
         except Exception:
             if attempt < max_retries:
@@ -50,7 +60,7 @@ def wait_for_dashboard(max_retries=15, delay=2):
 
 def main():
     if not wait_for_dashboard():
-        print("[Manager Bot] ❌ Dashboard not reachable at localhost:8000 — exiting")
+        print(f"[Manager Bot] ❌ Dashboard not reachable at {_dashboard_url()} — exiting")
         sys.exit(1)
 
     from modules.manager_bot import run_manager_bot

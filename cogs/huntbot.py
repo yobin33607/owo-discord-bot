@@ -19,11 +19,8 @@ Limey - https://github.com/yobin33607/owo-discord-bot
 
 import discord
 from discord.ext import commands
-import asyncio
 import time
 import re
-import os
-import core.state as state
 
 class HuntBot(commands.Cog):
     def __init__(self, bot):
@@ -205,45 +202,7 @@ class HuntBot(commands.Cog):
 
         elif "here is your password" in content_lower or "confirm your identity" in content_lower or "link below" in content_lower:
             self.bot.is_busy = True
-
-            img_url = None
-            if message.attachments:
-                img_url = message.attachments[0].url
-            elif message.embeds:
-                for em in message.embeds:
-                    if em.image:
-                        img_url = em.image.url
-                        break
-            try:
-                import modules.nhuntbotsolver as solver
-                if self.bot.session and img_url:
-                    self.bot.log("AutoHunt", "Attempting LimeySolver auto-solve...")
-                    answer = await solver.solveHbCaptcha(img_url, self.bot.session)
-                    
-                    if answer and len(answer) > 0:
-                        self.bot.log("SUCCESS", f"Captcha Solved: {answer}")
-                        cash = cfg.get('cash_to_spend', 15000)
-                        await self.bot.limey_enqueue(f"autohunt {cash} {answer}", priority=1)
-                        
-                        uid = str(self.bot.user.id)
-                        if uid in state.account_stats:
-                            self.bot.stats['captchas_solved_today'] = self.bot.stats.get('captchas_solved_today', 0) + 1
-                            self.bot.stats['captcha_success_count'] = self.bot.stats.get('captcha_success_count', 0) + 1
-                        self.bot.is_busy = False
-                    else:
-                        self.bot.log("WARN", "Could not solve captcha automatically.")
-                        # base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                        # path = os.path.join(base, "beeps", "huntbot_image_beep.mp3")
-                        # plat_settings = self.bot.config.get('platform_settings', {})
-                        # if plat_settings.get('desktop_notifications', True):
-                        #     if os.path.exists(path):
-                        #         asyncio.create_task(self._play_beep_async(path))
-            except Exception as e:
-                self.bot.log("ERROR", f"Solver failed: {e}")
-                # base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                # path = os.path.join(base, "beeps", "huntbot_image_beep.mp3")
-                # if os.path.exists(path):
-                #     asyncio.create_task(self._play_beep_async(path))
+            self.bot.log("WARN", "HuntBot password captcha detected – auto-solver removed. Send `autohunt <cash> <password>` manually to continue.")
 
         elif "wrong password" in content_lower or "incorrect password" in content_lower:
             self.bot.log("AutoHunt", "Wrong password provided. Waiting for reset.")

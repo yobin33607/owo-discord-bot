@@ -110,7 +110,7 @@ def _start_manager_bot_subprocess():
         mgr_cfg = cfg.get('manager_bot', {})
         token = mgr_cfg.get('token', '')
         if not token:
-            console.print("[dim]  Manager Bot not configured — skipping[/dim]")
+            console.print("[dim]  Manager Bot not configured — add `manager_bot.token` in Dashboard → Settings → manager_bot to enable it[/dim]")
             return
     except Exception:
         console.print("[dim]  Manager Bot config not found — skipping[/dim]")
@@ -435,6 +435,17 @@ if __name__ == "__main__":
     except (KeyboardInterrupt, SystemExit):
         pass
     finally:
+        # Stop the manager bot subprocess so it doesn't linger as an orphan.
+        try:
+            if _manager_bot_proc and _manager_bot_proc.poll() is None:
+                _manager_bot_proc.terminate()
+                try:
+                    _manager_bot_proc.wait(timeout=5)
+                except Exception:
+                    _manager_bot_proc.kill()
+                console.print("[dim]  Manager Bot subprocess stopped.[/dim]")
+        except Exception:
+            pass
         try:
             import utils.history_tracker as ht
             ht.end_session()

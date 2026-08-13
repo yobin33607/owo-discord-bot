@@ -229,15 +229,8 @@ function renderCategoryFlat(obj, path, categoryName, depth = 0, parentEnabled = 
         const isMasterToggle = key === 'enabled' && typeof val === 'boolean';
         if (fullPath === 'commands.shop.itemsToBuy') {
             h += renderRingSelection(fullPath, val, selfEnabled);
-        } else if (path === 'security.captcha_solver' && key !== 'enabled') {
-        } else if (path === 'security' && key === 'captcha_solver') {
-            const solverEnabled = val.enabled !== false;
-            h += `
-                <div class="cfg-section cfg-section-nested ${solverEnabled ? '' : 'cfg-section-disabled'}" id="captcha-solver-section">
-                    <div class="cfg-section-head">Captcha Solver</div>
-                    <div class="cfg-section-rows">${renderCaptchaSolverWidget(val, fullPath, selfEnabled)}</div>
-                </div>
-            `;
+        } else if (path === 'security.captcha_solver' || (path === 'security' && key === 'captcha_solver')) {
+            // Auto captcha solver removed — don't render leftover config keys
         } else if (typeof val === 'boolean') {
             h += renderField(fullPath, { l: key, type: 'toggle', master: isMasterToggle }, val, false, isMasterToggle ? parentEnabled : selfEnabled);
         } else if (Array.isArray(val) && val.length === 2 && typeof val[0] === 'number') {

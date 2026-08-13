@@ -161,9 +161,11 @@ async def run_scan(bot, user_id, message_limit=200, include_guilds=True, include
             state["dms_total"] = len(dms)
             for dc in dms:
                 msgs = await _fetch_channel(bot, dc, message_limit)
+                recipient = getattr(dc, "recipient", None)
                 state["results"]["dms"].append({
                     "id": str(dc.id),
                     "name": _channel_name(dc),
+                    "recipient_id": str(recipient.id) if recipient else None,
                     "messages": msgs,
                 })
                 state["dms_done"] += 1
@@ -279,6 +281,12 @@ a{{color:#4da3ff;text-decoration:none;}}
 
 
 def _render_index_html(meta, guilds, dms):
+    scope_name = meta.get("scope_name") or meta.get("username") or "Unknown"
+    scope_type = meta.get("scope_type")
+    if scope_type == "dm":
+        heading = "Direct Messages"
+    else:
+        heading = "Servers"
     rows = []
     for g in guilds:
         link = f"guilds/{_safe_name(g['name'])}_{g['id']}/index.html"
@@ -297,9 +305,9 @@ li{{margin:8px 0;}}
 a{{color:#4da3ff;text-decoration:none;}}
 .count,.meta{{color:#888;font-size:0.85em;}}
 </style></head><body>
-<h1>🗄️ Chat Archive — {_escape(meta.get('username', 'Unknown'))}</h1>
-<p class="meta">Scanned {meta.get('scanned_at', '?')} · {meta.get('guild_count', 0)} servers · {meta.get('dm_count', 0)} DMs · {meta.get('message_count', 0)} messages</p>
-<h2>Servers</h2><ul>{list_html}</ul>
+<h1>🗄️ Chat Archive — {_escape(scope_name)}</h1>
+<p class="meta">Scanned {meta.get('scanned_at', '?')} · {meta.get('message_count', 0)} messages · account {_escape(meta.get('username', 'Unknown'))}</p>
+<h2>{heading}</h2><ul>{list_html}</ul>
 </body></html>"""
 
 
@@ -493,25 +501,62 @@ def _remove_repo_archive(name):
     return removed
 
 
-def create_archive(user_id, push_to_github=True):
-    """Write the completed scan out as JSON + HTML archive + zip.
+# ── Archive scope helpers ──────────────────────────────
+# Archives are organized per conversation: every server gets its own archive
+# and every DM conversation gets its own archive (named after the other
+# user). Each archive carries a scope_key so re-archiving the same server /
+# DM — even from a different selfbot — replaces the previous archive (the
+# latest scan wins).
 
-    After building locally, the archive is pushed to the GitHub data repo and
-    the local copy is removed (unless the push fails, in which case the local
-    copy is kept as a fallback).
 
-    Returns (info_dict, error_str).
-    """
-    state = scans.get(user_id)
-    if not state or state.get("status") != "ready":
-        return None, "No completed scan for this account — run a scan first."
-    results = state.get("results") or {"guilds": [], "dms": []}
-    guilds, dms = results.get("guilds", []), results.get("dms", [])
+def _scope_key_for_guild(g):
+    return f"guild:{g['id']}"
 
-    username = _safe_name(state.get("username") or f"account_{user_id}")
+
+def _scope_key_for_dm(d):
+    if d.get("recipient_id"):
+        return f"dm:{d['recipient_id']}"
+    return f"dm_group:{d['id']}"
+
+
+def _archive_name_exists(name):
+    if os.path.exists(os.path.join(ARCHIVE_DIR, name)):
+        return True
+    if os.path.exists(os.path.join(ARCHIVE_DIR, name + ".zip")):
+        return True
+    return any(e.get("name") == name for e in list_archives())
+
+
+def _unique_archive_name(base):
+    name = base
+    suffix = 2
+    while _archive_name_exists(name):
+        name = f"{base}_{suffix}"
+        suffix += 1
+    return name
+
+
+def _remove_archives_with_scope(scope_key):
+    """Delete every existing archive with the same scope key (latest wins)."""
+    for entry in list_archives():
+        if entry.get("scope_key") == scope_key:
+            delete_archive(entry.get("name", ""))
+
+
+def _build_scope_archive(scope_type, scope_name, scope_key, username, user_id,
+                         guilds, dms, push_to_github, message_limit, finished_at):
+    """Build one archive for a single scope (one server or one DM)."""
+    # Latest scan wins: drop any previous archive for the same server / DM.
+    _remove_archives_with_scope(scope_key)
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    name = f"{username}_{timestamp}"
+    base = _safe_name(scope_name) or f"{scope_type}_{timestamp}"
+    name = _unique_archive_name(f"{base}_{timestamp}")
     root = os.path.join(ARCHIVE_DIR, name)
+
+    message_count = sum(len(ch.get("messages") or [])
+                        for g in guilds for ch in g.get("channels") or [])
+    message_count += sum(len(d.get("messages") or []) for d in dms)
 
     try:
         os.makedirs(ARCHIVE_DIR, exist_ok=True)
@@ -522,9 +567,7 @@ def create_archive(user_id, push_to_github=True):
         os.makedirs(guild_dir, exist_ok=True)
         os.makedirs(dm_dir, exist_ok=True)
 
-        message_count = state.get("messages_total", 0)
-
-        # Per-guild JSON + channel pages
+        # Per-guild JSON + channel pages (server archives)
         for g in guilds:
             g_folder = os.path.join(guild_dir, _guild_dir(g))
             os.makedirs(g_folder, exist_ok=True)
@@ -533,34 +576,37 @@ def create_archive(user_id, push_to_github=True):
             with open(os.path.join(g_folder, "index.html"), "w", encoding="utf-8") as f:
                 f.write(_build_guild_html(g))
             for ch in g["channels"]:
-                base = f"{_safe_name(ch['name'])}_{ch['id']}"
-                with open(os.path.join(g_folder, base + ".json"), "w", encoding="utf-8") as f:
+                ch_base = f"{_safe_name(ch['name'])}_{ch['id']}"
+                with open(os.path.join(g_folder, ch_base + ".json"), "w", encoding="utf-8") as f:
                     json.dump({
                         "channel": ch["name"],
                         "guild": g["name"],
                         "guild_id": g["id"],
                         "messages": ch["messages"],
                     }, f, indent=2, ensure_ascii=False)
-                with open(os.path.join(g_folder, base + ".html"), "w", encoding="utf-8") as f:
+                with open(os.path.join(g_folder, ch_base + ".html"), "w", encoding="utf-8") as f:
                     f.write(_render_chat_page(f"{g['name']} — {ch['name']}", ch["messages"], ch["name"]))
 
-        # Per-DM JSON + HTML
+        # Per-DM JSON + HTML (DM archives)
         for d in dms:
-            base = f"{_safe_name(d['name'])}_{d['id']}"
-            with open(os.path.join(dm_dir, base + ".json"), "w", encoding="utf-8") as f:
+            dm_base = f"{_safe_name(d['name'])}_{d['id']}"
+            with open(os.path.join(dm_dir, dm_base + ".json"), "w", encoding="utf-8") as f:
                 json.dump({"name": d["name"], "id": d["id"], "messages": d["messages"]},
                           f, indent=2, ensure_ascii=False)
-            with open(os.path.join(dm_dir, base + ".html"), "w", encoding="utf-8") as f:
+            with open(os.path.join(dm_dir, dm_base + ".html"), "w", encoding="utf-8") as f:
                 f.write(_render_chat_page(f"DM — {d['name']}", d["messages"], d["name"]))
 
         # Index files
         meta = {
-            "username": state.get("username") or f"account_{user_id}",
+            "username": username,
             "user_id": user_id,
+            "scope_type": scope_type,
+            "scope_key": scope_key,
+            "scope_name": scope_name,
             "created_at": datetime.now().isoformat(timespec="seconds"),
-            "scanned_at": datetime.fromtimestamp(state.get("finished_at") or time.time())
+            "scanned_at": datetime.fromtimestamp(finished_at or time.time())
                 .isoformat(timespec="seconds"),
-            "message_limit": state.get("message_limit"),
+            "message_limit": message_limit,
             "guild_count": len(guilds),
             "dm_count": len(dms),
             "message_count": message_count,
@@ -582,7 +628,10 @@ def create_archive(user_id, push_to_github=True):
 
         info = {
             "name": name,
-            "username": meta["username"],
+            "username": username,
+            "scope_type": scope_type,
+            "scope_key": scope_key,
+            "scope_name": scope_name,
             "created_at": meta["created_at"],
             "guild_count": meta["guild_count"],
             "dm_count": meta["dm_count"],
@@ -615,6 +664,61 @@ def create_archive(user_id, push_to_github=True):
         return info, None
     except Exception as e:
         return None, f"Failed to build archive: {e}"
+
+
+def create_archive(user_id, push_to_github=True):
+    """Write the completed scan out as one archive per server and per DM.
+
+    Every server becomes its own archive and every DM conversation becomes
+    its own archive (named after the other user). Re-archiving the same
+    server / DM — even from a different selfbot — replaces the previous
+    archive, so the latest scan always wins.
+
+    After building locally, each archive is pushed to the GitHub data repo
+    and the local copy is removed (unless the push fails, in which case the
+    local copy is kept as a fallback).
+
+    Returns (infos, errs) — lists of created archive info dicts and per-scope
+    error strings.
+    """
+    state = scans.get(user_id)
+    if not state or state.get("status") != "ready":
+        return [], ["No completed scan for this account — run a scan first."]
+    results = state.get("results") or {"guilds": [], "dms": []}
+    guilds, dms = results.get("guilds", []), results.get("dms", [])
+
+    username = state.get("username") or f"account_{user_id}"
+    infos, errs = [], []
+
+    for g in guilds:
+        info, err = _build_scope_archive(
+            scope_type="guild", scope_name=g.get("name", "Unknown"),
+            scope_key=_scope_key_for_guild(g),
+            username=username, user_id=user_id,
+            guilds=[g], dms=[], push_to_github=push_to_github,
+            message_limit=state.get("message_limit"),
+            finished_at=state.get("finished_at") or time.time(),
+        )
+        if err:
+            errs.append(f"{g.get('name', 'Unknown')}: {err}")
+        else:
+            infos.append(info)
+
+    for d in dms:
+        info, err = _build_scope_archive(
+            scope_type="dm", scope_name=d.get("name", "DM"),
+            scope_key=_scope_key_for_dm(d),
+            username=username, user_id=user_id,
+            guilds=[], dms=[d], push_to_github=push_to_github,
+            message_limit=state.get("message_limit"),
+            finished_at=state.get("finished_at") or time.time(),
+        )
+        if err:
+            errs.append(f"{d.get('name', 'DM')}: {err}")
+        else:
+            infos.append(info)
+
+    return infos, errs
 
 
 # ── Archive index (data/archives/index.json) ───────────
@@ -1102,7 +1206,7 @@ def search_archives(query, limit=200, max_archives=15):
         if err or data is None:
             continue
         scanned += 1
-        label = entry.get("username") or name
+        label = entry.get("scope_name") or entry.get("username") or name
 
         for guild in data.get("guilds") or []:
             for ch in guild.get("channels") or []:

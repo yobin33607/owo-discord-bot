@@ -241,7 +241,7 @@ class LimeySetupEngine:
             if line and not line.startswith("#"):
                 pkg = line.split("@")[0].split("==")[0].strip()
                 needed.append((pkg, line))
-        heavy = [("numpy", "numpy"), ("pillow", "pillow"), ("onnxruntime", "onnxruntime")]
+        heavy = [("pillow", "pillow")]
         for p, full in heavy:
             if not any(p == x[0] for x in needed):
                 needed.append((p, full))
@@ -271,10 +271,7 @@ class LimeySetupEngine:
             "playsound3": "playsound3",
             "aiohttp-socks": "aiohttp_socks",
             "aiohttp_socks": "aiohttp_socks",
-            "numpy": "numpy",
             "pillow": "PIL",
-            "onnxruntime": "onnxruntime",
-            "nopecha": "nopecha",
         }
         key = name.lower().replace("-", "_")
         if key in ("discord_py_self", "discord.py-self"):
@@ -341,9 +338,7 @@ class LimeySetupEngine:
             )
 
         pkg_map = {
-            "numpy": "python-numpy",
-            "pillow": "python-pillow",
-            "onnxruntime": "python-onnxruntime"
+            "pillow": "python-pillow"
         }
         failed = []
 
@@ -387,7 +382,7 @@ class LimeySetupEngine:
         return True
 
     def verify_imports(self):
-        modules = ["discord", "flask", "rich", "aiohttp", "aiohttp_socks", "requests", "numpy", "PIL", "nopecha"]
+        modules = ["discord", "flask", "rich", "aiohttp", "aiohttp_socks", "requests", "PIL"]
         missing = []
         for mod in modules:
             try:

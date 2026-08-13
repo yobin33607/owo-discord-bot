@@ -11,13 +11,6 @@
 # along with Limey. If not, see <https://www.gnu.org/licenses/>.
 */
 
-const CAPTCHA_SERVICES = {
-    yescaptcha:  { label: 'YesCaptcha',   keyField: 'yescaptcha_api_key',  balanceUnit: 'pts',    color: '#f59e0b', hint: 'Paid service – requires ≥ 30 pts to auto-solve.' },
-    nopecha:     { label: 'NopeCHA',      keyField: 'nopecha_api_key',     balanceUnit: 'credits',color: '#a855f7', hint: 'Free 100 credits daily – resets every day.' },
-    anticaptcha: { label: 'Anti-Captcha', keyField: 'anticaptcha_api_key', balanceUnit: '$',      color: '#22c55e', hint: 'Paid service – supports hCaptcha Enterprise too.' },
-    captchaly:   { label: 'Captchaly',    keyField: 'captchaly_api_key',   balanceUnit: '$',      color: '#3b82f6', hint: 'Paid service – strict 120s solve times.' },
-};
-
 let pendingCaptchas = {};
 let pendingInterval = null;
 let _manualSolvePopup = null;
@@ -96,110 +89,6 @@ async function fetchSecuritySummary() {
     }
     container.innerHTML = html || '<div class="no-data">Initializing system details...</div>';
 }
-
-function renderCaptchaSolverWidget(cfg, basePath, parentEnabled) {
-    const enabled    = cfg.enabled !== false;
-    const service    = (cfg.service || 'yescaptcha').toLowerCase();
-    const svcInfo    = CAPTCHA_SERVICES[service] || CAPTCHA_SERVICES.yescaptcha;
-    const apiKey     = cfg[svcInfo.keyField] || '';
-    const dis        = parentEnabled ? '' : ' disabled';
-    const serviceOptions = Object.entries(CAPTCHA_SERVICES).map(([id, s]) => `
-        <option value="${id}" ${id === service ? 'selected' : ''}>${s.label}</option>
-    `).join('');
-    return `
-        <div class="cfg-row" data-path="${basePath}.enabled">
-            <div class="cfg-row-label"><span class="cfg-label-text">Enable Auto-Solver</span></div>
-            <div class="cfg-row-control">${renderLimeyToggle(basePath + '.enabled', enabled, parentEnabled, true)}</div>
-        </div>
-        <div class="cfg-row csw-service-row" data-path="${basePath}.service">
-            <div class="cfg-row-label">
-                <span class="cfg-label-text">Service</span>
-                <span class="csw-service-hint">${svcInfo.hint}</span>
-            </div>
-            <div class="cfg-row-control">
-                <div class="csw-dropdown-wrap">
-                    <div class="csw-svc-dot" style="background:${svcInfo.color}"></div>
-                    <select id="csw-service-select" class="csw-select" ${!enabled || !parentEnabled ? 'disabled' : ''}
-                        onchange="updateCaptchaService(this.value)">
-                        ${serviceOptions}
-                    </select>
-                </div>
-            </div>
-        </div>
-        <div class="cfg-row csw-key-row" data-path="${basePath}.${svcInfo.keyField}" id="csw-key-row">
-            <div class="cfg-row-label">
-                <span class="cfg-label-text">${svcInfo.label} API Key</span>
-            </div>
-            <div class="cfg-row-control">
-                <div class="cfg-input-wrap">
-                    <input type="password" id="csw-api-key-input" class="cfg-input" value="${apiKey}"${dis}
-                        placeholder="Paste your ${svcInfo.label} API key here…"
-                        onchange="updateDeepVal('${basePath}.${svcInfo.keyField}', this.value)">
-                </div>
-            </div>
-        </div>
-        <div class="cfg-row csw-balance-row">
-            <div class="cfg-row-label"><span class="cfg-label-text">Live Balance</span></div>
-            <div class="cfg-row-control">
-                <div class="csw-balance-wrap">
-                    <span id="csw-balance-badge" class="csw-balance-badge" onclick="fetchCaptchaBalance()">
-                        <span class="csw-balance-dot"></span>
-                        <span id="csw-balance-text">Click to check…</span>
-                    </span>
-                    <button class="cfg-stepper-btn csw-refresh-btn" onclick="fetchCaptchaBalance()" title="Refresh balance">
-                        <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/sync.svg');"></span>
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-}
-
-window.updateCaptchaService = function(newService) {
-    const basePath = 'security.captcha_solver';
-    setDeep(currentConfig, `${basePath}.service`.split('.'), newService);
-    checkDirty();
-    renderSettings(currentConfig);
-};
-
-window.fetchCaptchaBalance = async function() {
-    const badge   = document.getElementById('csw-balance-badge');
-    const balText = document.getElementById('csw-balance-text');
-    if (!badge || !balText) return;
-    balText.textContent = 'Checking…';
-    badge.className = 'csw-balance-badge loading';
-    try {
-        const q = currentAccountId ? `?id=${currentAccountId}` : '';
-        const selectedService = getDeep(currentConfig, 'security.captcha_solver.service'.split('.')) || 'yescaptcha';
-        const svcInfo = CAPTCHA_SERVICES[selectedService] || CAPTCHA_SERVICES.yescaptcha;
-        const currentKey = getDeep(currentConfig, `security.captcha_solver.${svcInfo.keyField}`.split('.')) || '';
-        const res = await fetch(`/api/captcha/balance${q}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ service: selectedService, api_key: currentKey })
-        });
-        const d = await res.json();
-        if (d.error || d.balance === null || d.balance === undefined) {
-            balText.textContent = d.message || d.error || 'Error – check API key';
-            badge.className = 'csw-balance-badge error';
-        } else {
-            let balance = d.balance;
-            let unit = svcInfo.balanceUnit;
-            let display;
-            if (typeof balance === 'number') {
-                if (unit === '$') display = `$${balance.toFixed(2)}`;
-                else display = `${Math.round(balance).toLocaleString()} ${unit}`;
-            } else {
-                display = String(balance);
-            }
-            balText.textContent = display;
-            badge.className = 'csw-balance-badge ok';
-        }
-    } catch (e) {
-        balText.textContent = 'Request failed';
-        badge.className = 'csw-balance-badge error';
-    }
-};
 
 let _captchaPollFailStreak = 0;
 let _lastCaptchaPollFailAt = 0;

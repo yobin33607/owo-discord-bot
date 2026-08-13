@@ -29,7 +29,6 @@ from modules.limey_human import LimeyHuman
 from modules.limey_logs import limey_logger
 from modules.identity import IdentityManager
 from component_v2_limey import setup_interactions
-from modules.captcha_solver import setup_solver
 from modules.web_solver import setup_web_solver
 import core.state as state
 import aiohttp
@@ -168,7 +167,6 @@ class LimeyBot(commands.Bot):
         else:
             self.session = aiohttp.ClientSession()
         self.interactions = setup_interactions(self)
-        self.captcha_solver = setup_solver(self)
         self.web_solver = setup_web_solver(self)
         self.log("SYS", "Initializing systems...")
         
@@ -388,7 +386,6 @@ class LimeyBot(commands.Bot):
         self.log("DEBUG", f"Active Scheduler: {', '.join(active_cmds) if active_cmds else 'None'}")
         
         self.interactions = setup_interactions(self)
-        self.captcha_solver = setup_solver(self)
         self.web_solver = setup_web_solver(self)
         
         # ── Server binding: operate inside the chosen server only ─────────

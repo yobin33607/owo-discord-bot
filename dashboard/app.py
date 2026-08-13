@@ -2447,61 +2447,6 @@ def captcha_submit():
     
     return jsonify({'success': True, 'message': f'Captcha solution sent: {full_command}'})
 
-@app.route('/api/captcha/balance', methods=['GET', 'POST'])
-@login_required
-def captcha_balance():
-    account_id = request.args.get('id')
-    bot = get_bot(account_id)
-    if not bot:
-        return jsonify({'balance': None, 'service': 'unknown', 'error': 'Bot not found'})
-    
-    cfg = bot.config.get('security', {}).get('captcha_solver', {})
-    service = cfg.get('service', 'yescaptcha')
-    api_key = ''
-    
-    if request.method == 'POST':
-        data = request.json or {}
-        if 'service' in data:
-            service = data['service']
-        if 'api_key' in data:
-            api_key = data['api_key']
-            
-    if not api_key:
-        if service == 'nopecha':
-            api_key = cfg.get('nopecha_api_key', cfg.get('api_key', ''))
-        elif service == 'anticaptcha':
-            api_key = cfg.get('anticaptcha_api_key', cfg.get('api_key', ''))
-        elif service == 'captchaly':
-            api_key = cfg.get('captchaly_api_key', cfg.get('api_key', ''))
-        else:
-            api_key = cfg.get('yescaptcha_api_key', cfg.get('api_key', ''))
-
-
-    temp_solver = None
-    if service == 'nopecha':
-        from modules.services.nopecha import NopeCaptchaService
-        temp_solver = NopeCaptchaService(bot, api_key, "")
-    elif service == 'anticaptcha':
-        from modules.services.anticaptcha import AntiCaptchaService
-        temp_solver = AntiCaptchaService(bot, api_key, "")
-    elif service == 'captchaly':
-        from modules.services.captchaly import CaptchalyService
-        temp_solver = CaptchalyService(bot, api_key, "")
-    else:
-        from modules.services.yescaptcha import YesCaptchaService
-        temp_solver = YesCaptchaService(bot, api_key, "")
-
-    loop = bot.loop_ref
-    if loop is None:
-        return jsonify({'balance': None, 'service': service, 'error': 'Bot is still connecting – try again in a moment.'}), 503
-
-    try:
-        future = asyncio.run_coroutine_threadsafe(temp_solver.get_balance(), loop)
-        balance = future.result(timeout=10)
-        return jsonify({'balance': balance, 'service': service, 'enabled': cfg.get('enabled', False)})
-    except Exception:
-        return jsonify({'balance': None, 'service': service, 'error': 'Failed to get balance'})
-
 @app.route('/api/captcha/stats')
 @login_required
 def captcha_stats():
@@ -3556,13 +3501,17 @@ def archive_scan():
 @app.route('/api/archive/create', methods=['POST'])
 @require_permission('manage')
 def archive_create():
-    """Owner confirmed — write the completed scan to disk (JSON + HTML + zip)."""
+    """Owner confirmed — write the completed scan out as one archive per
+    server and per DM (JSON + HTML + zip), then push to GitHub."""
     payload = request.json or {}
     user_id = str(payload.get('user_id', ''))
-    info, err = archive_mod.create_archive(user_id)
-    if err:
-        return jsonify({'success': False, 'error': err}), 400
-    return jsonify({'success': True, 'archive': info})
+    infos, errs = archive_mod.create_archive(user_id)
+    if not infos and errs:
+        return jsonify({'success': False, 'error': '; '.join(errs)}), 400
+    resp = {'success': True, 'archives': infos}
+    if errs:
+        resp['warnings'] = errs
+    return jsonify(resp)
 
 
 @app.route('/api/archive/download/<name>')

@@ -176,7 +176,7 @@ function resetArchiveScan() {
 
 async function createArchiveNow() {
     if (!_archiveAccountId) return;
-    if (!confirm('Create the archive now? All scanned messages will be pushed to the GitHub data repo (zip + index.json) and only you can download them.')) {
+    if (!confirm('Create the archives now? Each server and each DM conversation becomes its own archive. All scanned messages will be pushed to the GitHub data repo (zip + index.json) and only you can download them.')) {
         return;
     }
     try {
@@ -187,18 +187,29 @@ async function createArchiveNow() {
         });
         const data = await r.json();
         if (!data.success) {
-            showToast(data.error || 'Failed to create archive', 'error');
+            showToast(data.error || 'Failed to create archives', 'error');
             return;
         }
-        if (data.archive && data.archive.push_error) {
-            showToast('Archive created locally — GitHub push failed: ' + data.archive.push_error, 'error');
+        const archives = data.archives || [];
+        const failed = data.warnings || [];
+        if (!archives.length) {
+            showToast('No archives created', 'error');
+            return;
+        }
+        const serverCount = archives.filter(a => a.scope_type === 'guild').length;
+        const dmCount = archives.filter(a => a.scope_type === 'dm').length;
+        const localOnly = archives.some(a => a.push_error);
+        let msg = `Created ${serverCount} server archive(s) and ${dmCount} DM archive(s)`;
+        msg += localOnly ? ' (some kept locally — GitHub push failed)' : ' and pushed to GitHub!';
+        if (failed.length) {
+            showToast(msg + '. Warnings: ' + failed.join('; '), 'error');
         } else {
-            showToast('Archive created and pushed to GitHub!');
+            showToast(msg);
         }
         resetArchiveScan();
         loadArchiveList();
     } catch (e) {
-        showToast('Failed to create archive', 'error');
+        showToast('Failed to create archives', 'error');
     }
 }
 
@@ -229,7 +240,7 @@ async function loadArchiveList() {
                 <div class="arch-empty-steps">
                     <div class="arch-empty-step"><b>1 · SCAN</b><span>Pick an online account, choose a depth, and scan its servers + DMs. Read-only — nothing is sent or stored.</span></div>
                     <div class="arch-empty-step"><b>2 · REVIEW</b><span>Search the scanned messages right here to check what would be archived before committing.</span></div>
-                    <div class="arch-empty-step"><b>3 · CREATE</b><span>Confirm to build a zip (JSON + readable HTML) and push it to the GitHub data repo.</span></div>
+                    <div class="arch-empty-step"><b>3 · CREATE</b><span>Confirm to build a zip (JSON + readable HTML) per server and per DM, and push them to the GitHub data repo.</span></div>
                 </div>
                 <div class="arch-empty-cta"><button type="button" class="btn-control gold" onclick="focusArchiveSection('arch-scan-card', 'arch-account')">⌕ Start with a scan</button></div>
             </div>`;
@@ -239,12 +250,23 @@ async function loadArchiveList() {
             const storage = a.stored_in === 'github'
                 ? '<span class="arch-badge github">☁️ GitHub</span>'
                 : '<span class="arch-badge local">💾 Local fallback</span>';
+            const scopeType = a.scope_type === 'guild'
+                ? '<span class="arch-badge" style="background:rgba(139,140,255,0.12);color:#a9aaff;border:1px solid rgba(139,140,255,0.3);">📁 Server</span>'
+                : (a.scope_type === 'dm'
+                    ? '<span class="arch-badge" style="background:rgba(80,220,155,0.12);color:#75e0ae;border:1px solid rgba(80,220,155,0.3);">💬 DM</span>'
+                    : '');
+            const scopeName = a.scope_name ? escapeHtml(a.scope_name) : escapeHtml(a.username || '');
+            const scopeDetail = a.scope_type === 'guild'
+                ? `${a.guild_count || 0} server · ${(a.message_count || 0).toLocaleString()} messages`
+                : (a.scope_type === 'dm'
+                    ? `${(a.message_count || 0).toLocaleString()} messages`
+                    : `${a.guild_count} servers · ${a.dm_count} DMs · ${(a.message_count || 0).toLocaleString()} messages`);
             return `
             <div class="arch-item">
                 <div style="min-width:0;flex:1;">
-                    <div class="arch-item-name">📦 ${escapeHtml(a.username)} — ${escapeHtml(a.created_at || '')} ${storage}</div>
+                    <div class="arch-item-name">${scopeType} ${scopeName} <span style="color:#8892a0;font-weight:400;">· scanned by ${escapeHtml(a.username || '—')} · ${escapeHtml(a.created_at || '')}</span> ${storage}</div>
                     <div class="arch-item-meta">
-                        ${a.guild_count} servers · ${a.dm_count} DMs · ${(a.message_count || 0).toLocaleString()} messages · ${formatBytes(a.size_bytes)}
+                        ${scopeDetail} · ${formatBytes(a.size_bytes)}
                         ${a.push_error ? '<div style="color:#ff6b6b;font-size:0.75rem;margin-top:3px;">⚠️ ' + escapeHtml(a.push_error) + '</div>' : ''}
                         ${a.rename_warning ? '<div style="color:#ffb454;font-size:0.75rem;margin-top:3px;">⚠️ ' + escapeHtml(a.rename_warning) + '</div>' : ''}
                     </div>
@@ -387,6 +409,8 @@ async function showArchiveDetails(name) {
             : '—';
         let html = '';
         html += row('Name', escapeHtml(a.name || '—'));
+        html += row('Type', a.scope_type === 'guild' ? '📁 Server archive' : (a.scope_type === 'dm' ? '💬 DM archive' : '—'));
+        html += row('Scope', escapeHtml(a.scope_name || '—'));
         html += row('Account', escapeHtml(a.username || '—'));
         html += row('Created', escapeHtml(meta.created_at || a.created_at || '—'));
         html += row('Scanned at', escapeHtml(meta.scanned_at || '—'));
@@ -570,7 +594,8 @@ function renderArchiveBrowser() {
         });
     });
     if ((d.dms || []).length) {
-        treeRows.push('<div class="tree-group">💬 Direct Messages</div>');
+        const dmGroup = meta.scope_type === 'dm' ? ('💬 ' + escapeHtml(meta.scope_name || 'Direct Messages')) : '💬 Direct Messages';
+        treeRows.push('<div class="tree-group">' + dmGroup + '</div>');
         (d.dms || []).forEach(ch => {
             const loc = 'dm:' + ch.id;
             const active = _archiveBrowserLoc === loc ? ' active' : '';
@@ -584,10 +609,13 @@ function renderArchiveBrowser() {
         treeRows.push('<div class="view-empty">No channels in this archive.</div>');
     }
 
+    const scopeIcon = meta.scope_type === 'dm' ? '💬' : '📖';
+    const scopeName = meta.scope_name || meta.username || _archiveBrowserName;
+
     host.innerHTML = `
         <div class="arch-browser">
             <div class="arch-browser-head">
-                <div class="arch-browser-title">📖 ${escapeHtml(meta.username || _archiveBrowserName)} <span style="color:#8892a0;font-size:0.75rem;">${escapeHtml(meta.created_at || '')} · ${(d.total_messages || 0).toLocaleString()} messages</span></div>
+                <div class="arch-browser-title">${scopeIcon} ${escapeHtml(scopeName)} <span style="color:#8892a0;font-size:0.75rem;">${escapeHtml(meta.username || '')} · ${escapeHtml(meta.created_at || '')} · ${(d.total_messages || 0).toLocaleString()} messages</span></div>
                 <div class="arch-browser-actions">
                     <a class="btn-control" href="/api/archive/download/${encodeURIComponent(_archiveBrowserName)}" style="text-decoration:none;">⬇ Download zip</a>
                     <button class="btn-control red" onclick="closeArchiveBrowser()">✕ Close</button>

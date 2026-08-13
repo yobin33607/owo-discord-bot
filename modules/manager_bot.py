@@ -48,7 +48,16 @@ from utils.github_data_store import ghd
 # Staff gate for admin commands
 from modules.staff_gate import StaffRoleRequired
 
-DASHBOARD_URL = "http://localhost:8000"
+def _dashboard_url():
+    """The dashboard URL — same port logic as limey.py's run_dashboard()."""
+    try:
+        port = int(os.environ.get("PORT", "8000"))
+    except (TypeError, ValueError):
+        port = 8000
+    return f"http://localhost:{port}"
+
+
+DASHBOARD_URL = _dashboard_url()
 INTERNAL_KEY = os.environ.get("LIMEY_INTERNAL_KEY", "")
 
 # Default target guild for appeals (can be overridden in settings)

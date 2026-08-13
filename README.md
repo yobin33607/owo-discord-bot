@@ -37,7 +37,7 @@ A premium web interface at `http://localhost:8000` featuring:
 - **Live stats** — Real-time CPH, command counters, session analytics, cash history charts
 - **Account management** — Add/remove/edit bot accounts with proxy assignment
 - **Settings editor** — Full configuration UI with live save
-- **Captcha solving** — Manual captcha solver panel with balance checks
+- **Captcha solving** — Manual captcha solver panel
 - **Proxy manager** — Bulk import, auto-testing, health monitoring, auto-assignment
 - **Appeals management** — Review, approve, or reject user appeals with violation history displayed
 - **API key system** — Role-based API keys for external integrations
@@ -84,7 +84,7 @@ The dashboard's **Archives** page lets you capture and manage chat history from 
 - **Gambling** — Martingale and flat betting strategies with stop-loss
 
 ### 🛡️ Security
-- **Captcha solvers** — YesCaptcha, AntiCaptcha, NopeCHA, Captcha.ly, ONNX AI
+- **Manual captcha solving** — Dashboard panel for solving captchas by hand
 - **Stealth mode** — Human-like typing, random delays, configurable presets
 - **Webhook alerts** — Real-time security notifications
 - **Auto-pause** — Pause on detection triggers
@@ -180,7 +180,7 @@ Features:
 - **Account controls** — Start/stop/pause individual bots
 - **Settings editor** — Full configuration with live save
 - **Proxy manager** — Import, test, assign proxies
-- **Captcha solver** — Manual captcha submission
+- **Captcha solving** — Manual captcha submission
 - **Appeals management** — Review and handle user appeals
 - **Security alerts** — View and respond to captcha challenges
 - **API key management** — Create and revoke API keys

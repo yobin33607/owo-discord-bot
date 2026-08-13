@@ -1400,7 +1400,7 @@
                 <div class="mod-header">
                     <h2 style="font-size:1.2rem; color:var(--primary); margin:0;"><span class="icon-svg"
                             style="--icon: url('/static/assets/limey_icons/floppy-disk.svg');"></span> Chat Archives</h2>
-                    <p class="accounts-page-hint">Scan a selfbot account's servers and DMs, review what was found, then create an archive (JSON + readable HTML).</p>
+                    <p class="accounts-page-hint">Scan a selfbot account's servers and DMs, review what was found, then create archives (JSON + readable HTML) — every server and every DM conversation becomes its own archive.</p>
                 </div>
 
                 <div class="arch-hero">
@@ -1450,7 +1450,7 @@
                         </div>
                         <button class="btn-control gold" id="arch-scan-btn" onclick="startArchiveScan()">▶ Start Scan</button>
                     </div>
-                    <p class="accounts-page-hint" style="margin-top:10px;margin-bottom:0;">Scans only read message history — nothing is written or sent. Results stay in memory until you create and confirm the archive, which is then pushed to the GitHub data repo.</p>
+                    <p class="accounts-page-hint" style="margin-top:10px;margin-bottom:0;">Scans only read message history — nothing is written or sent. Results stay in memory until you create and confirm the archives, which are then pushed to the GitHub data repo.</p>
                 </div>
 
                 <!-- Progress -->
@@ -1465,7 +1465,7 @@
                     <div class="arch-card-title">✅ Scan Complete</div>
                     <div id="arch-result-stats" class="mod-stats-bar" style="margin:12px 0;"></div>
                     <div id="arch-result-error" style="color:#ff6b6b;display:none;margin-bottom:10px;"></div>
-                    <p class="accounts-page-hint">Review the summary above. Search the scanned messages, then create the archive — it builds a zip (JSON + HTML) and pushes it to the GitHub data repo. If the push fails it stays stored locally.</p>
+                    <p class="accounts-page-hint">Review the summary above. Search the scanned messages, then create the archives — each server and each DM conversation is built into its own zip (JSON + HTML) and pushed to the GitHub data repo. If a push fails that archive stays stored locally. Re-creating an archive for the same server or DM replaces the older one.</p>
 
                     <!-- Search the completed scan -->
                     <div id="arch-search-block" style="margin:14px 0 16px;">

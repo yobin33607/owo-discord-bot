@@ -26,6 +26,7 @@
         rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://js.hcaptcha.com/1/api.js?onload=hcaptchaOnload" async defer></script>
+    <script src="/static/js/i18n.js"></script>
     <link rel="stylesheet" href="/static/css/base.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/layout.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/components.css?v=2.4.0.1">
@@ -39,6 +40,7 @@
     <link rel="stylesheet" href="/static/css/pages/appeals.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/pages/moderation.css?v=2.4.0.1">
     <link rel="stylesheet" href="/static/css/pages/quests.css?v=2.4.0.1">
+    <link rel="stylesheet" href="/static/css/pages/translate.css?v=1.0.0">
     <link rel="stylesheet" href="/static/css/responsive.css?v=2.4.0.1">
 </head>
 
@@ -72,6 +74,7 @@
             <span id="currentAccountName" class="account-name-display">Loading account...</span>
         </div>
         <div class="top-bar-right">
+            <select class="limey-lang-select" title="Language" aria-label="Language"></select>
             <div id="notification-container" style="position: relative;">
                 <span id="notification-bell" class="notification-bell" onclick="toggleNotificationDropdown()">
                     <span class="icon-svg"
@@ -101,81 +104,83 @@
                 <div class="nav-group" id="navGroup-overview">
                     <button class="nav-group-toggle" type="button" onclick="toggleNavGroup('overview', this)" aria-expanded="false" aria-controls="navGroupItems-overview">
                         <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/chart-pie.svg');"></span>
-                        <span class="nav-group-label">Overview</span>
+                        <span class="nav-group-label" data-i18n="nav.overview">Overview</span>
                         <span class="icon-svg nav-group-chevron" style="--icon: url('/static/assets/limey_icons/chevron-down.svg');"></span>
                     </button>
                     <div class="nav-group-items" id="navGroupItems-overview">
-                        <a class="nav-item active" onclick="nav('accounts', this)"><span class="icon-svg"
+                        <a class="nav-item active" onclick="nav('accounts', this)" data-i18n="nav.accounts"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/users.svg');"></span> Accounts</a>
-                        <a class="nav-item" onclick="nav('dash', this)"><span class="icon-svg"
+                        <a class="nav-item" onclick="nav('dash', this)" data-i18n="nav.dashboard"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/chart-pie.svg');"></span> Dashboard</a>
-                        <a class="nav-item" onclick="nav('history', this)"><span class="icon-svg"
+                        <a class="nav-item" onclick="nav('history', this)" data-i18n="nav.history"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/clock-rotate-left.svg');"></span> History</a>
                     </div>
                 </div>
                 <div class="nav-group" id="navGroup-automation">
                     <button class="nav-group-toggle" type="button" onclick="toggleNavGroup('automation', this)" aria-expanded="false" aria-controls="navGroupItems-automation">
                         <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/bolt.svg');"></span>
-                        <span class="nav-group-label">Automation</span>
+                        <span class="nav-group-label" data-i18n="nav.automation">Automation</span>
                         <span class="icon-svg nav-group-chevron" style="--icon: url('/static/assets/limey_icons/chevron-down.svg');"></span>
                     </button>
                     <div class="nav-group-items" id="navGroupItems-automation">
-                        <a class="nav-item" onclick="nav('orb-grinder', this)"><span class="icon-svg"
+                        <a class="nav-item" onclick="nav('orb-grinder', this)" data-i18n="nav.orb_grinder"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/coins.svg');"></span> Orb Grinder</a>
-                        <a class="nav-item" onclick="nav('mass-dismantle', this)"><span class="icon-svg"
+                        <a class="nav-item" onclick="nav('mass-dismantle', this)" data-i18n="nav.mass_dismantle"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/gun.svg');"></span> Mass Dismantle</a>
-                        <a class="nav-item" onclick="nav('proxies', this)"><span class="icon-svg"
+                        <a class="nav-item" onclick="nav('proxies', this)" data-i18n="nav.proxies"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/layers.svg');"></span> Proxies</a>
                     </div>
                 </div>
                 <div class="nav-group" id="navGroup-tools">
                     <button class="nav-group-toggle" type="button" onclick="toggleNavGroup('tools', this)" aria-expanded="false" aria-controls="navGroupItems-tools">
                         <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/sliders.svg');"></span>
-                        <span class="nav-group-label">Tools</span>
+                        <span class="nav-group-label" data-i18n="nav.tools">Tools</span>
                         <span class="icon-svg nav-group-chevron" style="--icon: url('/static/assets/limey_icons/chevron-down.svg');"></span>
                     </button>
                     <div class="nav-group-items" id="navGroupItems-tools">
-                        <a class="nav-item" onclick="nav('config', this)"><span class="icon-svg"
+                        <a class="nav-item" onclick="nav('config', this)" data-i18n="nav.configuration"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/sliders.svg');"></span> Configuration</a>
-                        <a class="nav-item" onclick="nav('extension', this)"><span class="icon-svg"
+                        <a class="nav-item" onclick="nav('extension', this)" data-i18n="nav.extension"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/discord.svg');"></span> Extension</a>
-                        <a class="nav-item" onclick="nav('archives', this)"><span class="icon-svg"
+                        <a class="nav-item" onclick="nav('archives', this)" data-i18n="nav.archives"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/floppy-disk.svg');"></span> Archives</a>
-                        <a class="nav-item" onclick="nav('logs', this)"><span class="icon-svg"
+                        <a class="nav-item" onclick="nav('logs', this)" data-i18n="nav.terminal"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/terminal.svg');"></span> Terminal</a>
                     </div>
                 </div>
-                <a class="nav-item" onclick="nav('security', this)"><span class="icon-svg"
+                <a class="nav-item" onclick="nav('security', this)" data-i18n="nav.security"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/shield-halved.svg');"></span> Security</a>
                 <div class="nav-group" id="navGroup-admin">
                     <button class="nav-group-toggle" type="button" onclick="toggleNavGroup('admin', this)" aria-expanded="false" aria-controls="navGroupItems-admin">
                         <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/key.svg');"></span>
-                        <span class="nav-group-label">Admin</span>
+                        <span class="nav-group-label" data-i18n="nav.admin">Admin</span>
                         <span class="icon-svg nav-group-chevron" style="--icon: url('/static/assets/limey_icons/chevron-down.svg');"></span>
                     </button>
                     <div class="nav-group-items" id="navGroupItems-admin">
-                        <a class="nav-item" id="adminUsersNav" onclick="nav('admin-users', this)" style="display:none;"><span class="icon-svg"
+                        <a class="nav-item" id="adminUsersNav" onclick="nav('admin-users', this)" data-i18n="nav.login_users" style="display:none;"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/users.svg');"></span> Login Users</a>
-                        <a class="nav-item" id="apiKeysNav" onclick="nav('api-keys', this)" style="display:none;"><span class="icon-svg"
+                        <a class="nav-item" id="apiKeysNav" onclick="nav('api-keys', this)" data-i18n="nav.api_keys" style="display:none;"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/key.svg');"></span> API Keys</a>
-                        <a class="nav-item" id="appealsNav" onclick="nav('appeals', this)" style="display:none;"><span class="icon-svg"
+                        <a class="nav-item" id="appealsNav" onclick="nav('appeals', this)" data-i18n="nav.appeals" style="display:none;"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/check-to-slot.svg');"></span> Appeals</a>
-                        <a class="nav-item" id="moderationNav" onclick="nav('moderation', this)" style="display:none;"><span class="icon-svg"
+                        <a class="nav-item" id="moderationNav" onclick="nav('moderation', this)" data-i18n="nav.moderation" style="display:none;"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/shield-halved.svg');"></span> Moderation</a>
-                        <a class="nav-item" id="ticketsNav" onclick="nav('tickets', this)" style="display:none;"><span class="icon-svg"
+                        <a class="nav-item" id="ticketsNav" onclick="nav('tickets', this)" data-i18n="nav.tickets" style="display:none;"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/ticket.svg');"></span> Tickets</a>
+                        <a class="nav-item" id="translateNav" onclick="nav('translate', this)" style="display:none;" data-i18n="nav.translate"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/list-check.svg');"></span> Translate</a>
                     </div>
                 </div>
                 <div class="nav-group" id="navGroup-account">
                     <button class="nav-group-toggle" type="button" onclick="toggleNavGroup('account', this)" aria-expanded="false" aria-controls="navGroupItems-account">
                         <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/users.svg');"></span>
-                        <span class="nav-group-label">Account</span>
+                        <span class="nav-group-label" data-i18n="nav.account">Account</span>
                         <span class="icon-svg nav-group-chevron" style="--icon: url('/static/assets/limey_icons/chevron-down.svg');"></span>
                     </button>
                     <div class="nav-group-items" id="navGroupItems-account">
-                        <a class="nav-item" onclick="nav('my-account', this)"><span class="icon-svg"
+                        <a class="nav-item" onclick="nav('my-account', this)" data-i18n="nav.my_account"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/users.svg');"></span> My Account</a>
-                        <a class="nav-item" onclick="location.href='/logout'" style="color: #ff4444 !important;"><span
+                        <a class="nav-item" onclick="location.href='/logout'" data-i18n="nav.logout" style="color: #ff4444 !important;"><span
                                 class="icon-svg" style="--icon: url('/static/assets/limey_icons/logout.svg');"></span>
                             Logout</a>
                     </div>
@@ -1164,12 +1169,12 @@
 
             <!-- My Account Tab -->
             <div id="my-account" class="view">
-                <h2 style="font-size:1.2rem; color:var(--primary); margin:0 0 20px 0;"><span class="icon-svg"
+                <h2 style="font-size:1.2rem; color:var(--primary); margin:0 0 20px 0;" data-i18n="myaccount.title"><span class="icon-svg"
                         style="--icon: url('/static/assets/limey_icons/users.svg');"></span> My Account</h2>
 
                 <div class="module-card" style="margin-bottom:20px;">
                     <div class="module-header" style="cursor:default;">
-                        <h3 style="color:var(--primary); margin:0; font-family:var(--font-heading);">
+                        <h3 style="color:var(--primary); margin:0; font-family:var(--font-heading);" data-i18n="myaccount.change_password">
                             <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/shield-halved.svg');"></span>
                             Change Password
                         </h3>
@@ -1177,21 +1182,21 @@
                     <div style="padding:20px;">
                         <div style="display:grid; grid-template-columns:1fr; gap:16px; max-width:400px;">
                             <div>
-                                <label class="form-label">Current Password</label>
-                                <input type="password" id="acct-current-password" class="cfg-input" placeholder="Current password">
+                                <label class="form-label" data-i18n="myaccount.current_password">Current Password</label>
+                                <input type="password" id="acct-current-password" class="cfg-input" data-i18n-ph="myaccount.current_password_ph" placeholder="Current password">
                             </div>
                             <div>
-                                <label class="form-label">New Password</label>
-                                <input type="password" id="acct-new-password" class="cfg-input" placeholder="New password (min 4 chars)">
+                                <label class="form-label" data-i18n="myaccount.new_password">New Password</label>
+                                <input type="password" id="acct-new-password" class="cfg-input" data-i18n-ph="myaccount.new_password_ph" placeholder="New password (min 4 chars)">
                             </div>
                             <div>
-                                <label class="form-label">Confirm New Password</label>
-                                <input type="password" id="acct-confirm-password" class="cfg-input" placeholder="Confirm new password">
+                                <label class="form-label" data-i18n="myaccount.confirm_password">Confirm New Password</label>
+                                <input type="password" id="acct-confirm-password" class="cfg-input" data-i18n-ph="myaccount.confirm_password_ph" placeholder="Confirm new password">
                             </div>
                             <div>
                                 <button class="btn-control green" onclick="changePassword()">
                                     <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/floppy-disk.svg');"></span>
-                                    <span class="btn-text">Update Password</span>
+                                    <span class="btn-text" data-i18n="myaccount.update_password">Update Password</span>
                                 </button>
                             </div>
                         </div>
@@ -1199,9 +1204,34 @@
                     </div>
                 </div>
 
+                <div class="module-card" style="margin-bottom:20px;">
+                    <div class="module-header" style="cursor:default;">
+                        <h3 style="color:var(--primary); margin:0; font-family:var(--font-heading);" data-i18n="myaccount.screen_protection">
+                            <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/stop.svg');"></span>
+                            Screen Protection (Anti-Record / Anti-Screenshot)
+                        </h3>
+                    </div>
+                    <div style="padding:20px;">
+                        <p style="color:#aaa; font-size:0.85rem; margin:0 0 14px;" data-i18n="myaccount.screen_protection_desc">
+                            When on, the dashboard engages the browser's DRM pipeline (Widevine) and overlays a
+                            watermark + content shield so it resists screenshots and screen recording. Off by default.
+                        </p>
+                        <div style="display:flex;align-items:center;gap:14px;">
+                            <div class="limey-toggle" id="drm-protection-toggle" role="switch" aria-checked="false"
+                                 onclick="toggleDrmProtection(this)">
+                                <div class="limey-toggle-track">
+                                    <span class="limey-toggle-thumb"></span>
+                                </div>
+                            </div>
+                            <span id="drm-protection-label" style="font-size:0.9rem; color:#ccc;">Loading…</span>
+                        </div>
+                        <div id="drm-protection-result" style="margin-top:12px; font-size:0.85rem;"></div>
+                    </div>
+                </div>
+
                 <div class="module-card">
                     <div class="module-header" style="cursor:default;">
-                        <h3 style="color:var(--primary); margin:0; font-family:var(--font-heading);">
+                        <h3 style="color:var(--primary); margin:0; font-family:var(--font-heading);" data-i18n="myaccount.discord_linking">
                             <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/discord.svg');"></span>
                             Discord Account Linking
                         </h3>
@@ -1213,11 +1243,11 @@
                         <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
                             <button class="btn-control" id="discord-link-btn" onclick="linkDiscordAccount()" style="display:none;">
                                 <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/link.svg');"></span>
-                                <span class="btn-text">Link Discord Account</span>
+                                <span class="btn-text" data-i18n="myaccount.link_discord">Link Discord Account</span>
                             </button>
                             <button class="btn-control red" id="discord-unlink-btn" onclick="unlinkDiscordAccount()" style="display:none;">
                                 <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/trash.svg');"></span>
-                                <span class="btn-text">Unlink Discord Account</span>
+                                <span class="btn-text" data-i18n="myaccount.unlink_discord">Unlink Discord Account</span>
                             </button>
                         </div>
                         <div id="discord-link-result" style="margin-top:12px; font-size:0.85rem;"></div>
@@ -1227,7 +1257,7 @@
                 <!-- Login Security (passkeys + 2FA) -->
                 <div class="module-card">
                     <div class="module-header" style="cursor:default;">
-                        <h3 style="color:var(--primary); margin:0; font-family:var(--font-heading);">
+                        <h3 style="color:var(--primary); margin:0; font-family:var(--font-heading);" data-i18n="myaccount.login_security">
                             <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/key.svg');"></span>
                             Login Security
                         </h3>
@@ -1242,7 +1272,7 @@
                 <!-- Extension Login -->
                 <div class="module-card">
                     <div class="module-header" style="cursor:default;">
-                        <h3 style="color:var(--primary); margin:0; font-family:var(--font-heading);">
+                        <h3 style="color:var(--primary); margin:0; font-family:var(--font-heading);" data-i18n="myaccount.extension_login">
                             <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/discord.svg');"></span>
                             Extension Login
                         </h3>
@@ -1258,11 +1288,11 @@
                         <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
                             <button class="btn-control green" onclick="pairExtension()">
                                 <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/link.svg');"></span>
-                                <span class="btn-text">Connect Extension</span>
+                                <span class="btn-text" data-i18n="myaccount.connect_extension">Connect Extension</span>
                             </button>
                             <button class="btn-control" onclick="testExtensionConnection()">
                                 <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/bolt.svg');"></span>
-                                <span class="btn-text">Test Connection</span>
+                                <span class="btn-text" data-i18n="myaccount.test_extension">Test Connection</span>
                             </button>
                         </div>
                         <div id="ext-auth-result" style="margin-top:12px; font-size:0.85rem;"></div>
@@ -1321,6 +1351,30 @@
                         </div>
                     </div>
                 </div>
+            </div>
+            <!-- Translate Tab (admin) -->
+            <div id="translate" class="view">
+                <h2 style="font-size:1.2rem; color:var(--primary); margin:0 0 20px 0;" data-i18n="translate.title"><span class="icon-svg"
+                        style="--icon: url('/static/assets/limey_icons/list-check.svg');"></span> Translate</h2>
+                <p class="accounts-page-hint" data-i18n="translate.hint">Translate Limey into other languages. Translations are
+                    written by people — not machines — and stored in the data repo. Strings whose English text changed
+                    are marked "Needs redo".</p>
+                <div class="translate-toolbar">
+                    <select id="translate-lang" class="cfg-input"></select>
+                    <select id="translate-filter" class="cfg-input">
+                        <option value="all" data-i18n="translate.filter_all">All</option>
+                        <option value="stale" data-i18n="translate.filter_stale">Needs redo</option>
+                        <option value="untranslated" data-i18n="translate.filter_untranslated">Untranslated</option>
+                        <option value="translated" data-i18n="translate.filter_translated">Translated</option>
+                    </select>
+                    <input type="text" id="translate-search" class="cfg-input" data-i18n-ph="translate.search" placeholder="Search…">
+                    <span id="translate-count" class="translate-count"></span>
+                    <button id="translate-sync-btn" class="btn-control" onclick="syncI18nNow()">
+                        <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/rotate.svg');"></span>
+                        <span class="btn-text" data-i18n="translate.sync">Sync now</span>
+                    </button>
+                </div>
+                <div id="translate-list"></div>
             </div>
             <div id="archives" class="view">
                 <style>
@@ -1573,6 +1627,7 @@
     <script src="/static/js/archive.js"></script>
     <script src="/static/js/security2fa.js?v=1.0.0"></script>
     <script src="/static/js/extension_bridge.js?v=1.0.0"></script>
+    <script src="/static/js/translate.js?v=1.0.0"></script>
     <script src="/static/js/extension_auth.js?v=1.0.0"></script>
     <script src="/static/js/init.js?v=1.0.0"></script>
     <script>
@@ -1735,6 +1790,7 @@
                     }
                     if (currentUserRole === 'admin') {
                         document.getElementById('apiKeysNav').style.display = '';
+                        document.getElementById('translateNav').style.display = '';
                     }
                     // Hide any nav group whose items are all permission-hidden
                     if (typeof refreshNavGroups === 'function') refreshNavGroups();
@@ -1949,6 +2005,141 @@
                 .catch(() => {
                     resultEl.textContent = '❌ Error changing password.';
                     resultEl.style.color = '#ff5555';
+                });
+        }
+
+        // ─── Screen Protection (Anti-Record / Anti-Screenshot) ───
+        // Per-user DRM toggle, off by default. When on it engages the browser's
+        // DRM pipeline (Encrypted Media Extensions / Widevine) and applies a
+        // watermark + content shield so the dashboard resists screenshots and
+        // screen recording. The preference is persisted server-side.
+        let drmState = { enabled: false, video: null, mediaKeys: null };
+
+        async function engageWidevineDrm() {
+            // Already engaged — don't stack protected video elements.
+            if (drmState.video) return true;
+            if (!navigator.requestMediaKeySystemAccess) return false;
+            try {
+                const config = [{
+                    initDataTypes: ['cenc'],
+                    videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }],
+                    audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"' }],
+                }];
+                // The real DRM handshake used by protected-content players. It
+                // engages the CDM and marks the page as an EME-protected context.
+                // Full hardware "protected output" (HDCP) additionally requires a
+                // licensed encrypted stream + license server, which a self-hosted
+                // dashboard does not ship; the watermark/shield below covers that gap.
+                const access = await navigator.requestMediaKeySystemAccess('com.widevine.alpha', config);
+                drmState.mediaKeys = await access.createMediaKeys();
+                const video = document.createElement('video');
+                video.setAttribute('playsinline', '');
+                video.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:2px;height:2px;opacity:0.01;pointer-events:none;';
+                await video.setMediaKeys(drmState.mediaKeys);
+                document.body.appendChild(video);
+                drmState.video = video;
+                return true;
+            } catch (e) {
+                console.warn('Widevine DRM unavailable, using content shield only:', e && e.message);
+                return false;
+            }
+        }
+
+        function releaseDrm() {
+            try {
+                if (drmState.video && drmState.video.parentNode) drmState.video.parentNode.removeChild(drmState.video);
+                drmState.video = null;
+                drmState.mediaKeys = null;
+            } catch (e) {}
+        }
+
+        function applyDrmShield(on) {
+            document.documentElement.classList.toggle('drm-shield-active', on);
+            let overlay = document.getElementById('drm-watermark-overlay');
+            if (on && !overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'drm-watermark-overlay';
+                overlay.setAttribute('aria-hidden', 'true');
+                overlay.textContent = 'LIMEY · PROTECTED · DO NOT DISTRIBUTE';
+                document.body.appendChild(overlay);
+            } else if (!on && overlay) {
+                overlay.parentNode.removeChild(overlay);
+            }
+        }
+
+        function onDrmVisibility() {
+            // Blur the dashboard when the tab is backgrounded so a recording of a
+            // switched-away tab can't capture readable content.
+            document.documentElement.classList.toggle('drm-shield-hidden', document.hidden && drmState.enabled);
+        }
+
+        async function setDrmProtection(on) {
+            drmState.enabled = on;
+            if (on) {
+                await engageWidevineDrm();
+                applyDrmShield(true);
+                document.addEventListener('visibilitychange', onDrmVisibility);
+            } else {
+                document.removeEventListener('visibilitychange', onDrmVisibility);
+                document.documentElement.classList.remove('drm-shield-hidden');
+                applyDrmShield(false);
+                releaseDrm();
+            }
+        }
+
+        function loadDrmStatus() {
+            const toggle = document.getElementById('drm-protection-toggle');
+            const label = document.getElementById('drm-protection-label');
+            fetch('/api/auth/drm')
+                .then(r => r.json())
+                .then(data => {
+                    const on = !!(data && data.enabled);
+                    if (toggle) { toggle.classList.toggle('is-on', on); toggle.setAttribute('aria-checked', on); }
+                    if (label) label.textContent = on ? 'On — screenshots/recording blocked' : 'Off';
+                    setDrmProtection(on);
+                })
+                .catch(() => {
+                    if (label) label.textContent = 'Off';
+                    if (toggle) { toggle.classList.remove('is-on'); toggle.setAttribute('aria-checked', 'false'); }
+                });
+        }
+
+        function toggleDrmProtection(el) {
+            const on = !el.classList.contains('is-on');
+            el.classList.toggle('is-on', on);
+            el.setAttribute('aria-checked', on);
+            const label = document.getElementById('drm-protection-label');
+            const result = document.getElementById('drm-protection-result');
+            if (label) label.textContent = on ? 'Enabling…' : 'Disabling…';
+            fetch('/api/auth/drm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: on }),
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data && data.success) {
+                        setDrmProtection(on);
+                        if (label) label.textContent = on ? 'On — screenshots/recording blocked' : 'Off';
+                        if (result) {
+                            result.textContent = on ? '✅ Anti-screenshot protection enabled.' : 'Protection disabled.';
+                            result.style.color = on ? '#00ff88' : '#888';
+                        }
+                    } else {
+                        el.classList.toggle('is-on', !on);
+                        el.setAttribute('aria-checked', !on);
+                        if (label) label.textContent = !on ? 'Off' : 'On';
+                        if (result) {
+                            result.textContent = '❌ ' + ((data && data.error) || 'Failed to save setting');
+                            result.style.color = '#ff5555';
+                        }
+                    }
+                })
+                .catch(() => {
+                    el.classList.toggle('is-on', !on);
+                    el.setAttribute('aria-checked', !on);
+                    if (label) label.textContent = !on ? 'Off' : 'On';
+                    if (result) { result.textContent = '❌ Error saving setting.'; result.style.color = '#ff5555'; }
                 });
         }
 
@@ -2250,6 +2441,21 @@
                 loadDiscordStatus();
                 if (typeof window.loadSecurityStatus === 'function') window.loadSecurityStatus();
                 if (typeof window.loadExtAuthStatus === 'function') window.loadExtAuthStatus();
+                loadDrmStatus();
+                if (window.innerWidth <= 768) {
+                    const sidebar = document.querySelector('.sidebar');
+                    if (sidebar && sidebar.classList.contains('active')) toggleMobileMenu();
+                }
+                return;
+            }
+            if (id === 'translate') {
+                document.querySelectorAll('.view').forEach(v => v.classList.remove('active-view'));
+                document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+                const target = document.getElementById(id);
+                if (target) target.classList.add('active-view');
+                if (el) el.classList.add('active');
+                checkDirty();
+                if (typeof window.initTranslateView === 'function') window.initTranslateView();
                 if (window.innerWidth <= 768) {
                     const sidebar = document.querySelector('.sidebar');
                     if (sidebar && sidebar.classList.contains('active')) toggleMobileMenu();

@@ -24,6 +24,8 @@
     <link
         href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600&family=Outfit:wght@300;400;600&display=swap"
         rel="stylesheet">
+    <script src="/static/js/i18n.js"></script>
+    <link rel="stylesheet" href="/static/css/pages/translate.css?v=1.0.0">
     <style>
         *,
         *::before,
@@ -468,6 +470,7 @@
 
 <body>
 
+    <select class="limey-lang-select" style="position:fixed; top:16px; right:16px; z-index:9999; max-width:170px;" title="Language" aria-label="Language"></select>
     <canvas id="bgCanvas"></canvas>
 
     <div class="wrapper">
@@ -476,27 +479,27 @@
             <span class="corner-bl"></span>
 
             <h1 class="card__title" id="heading"><span class="cursor" id="cur"></span></h1>
-            <p class="card__sub">SECURE ACCESS</p>                <div class="error-msg" id="error-display"></div>
+            <p class="card__sub" data-i18n="login.secure_access">SECURE ACCESS</p>                <div class="error-msg" id="error-display"></div>
                 <div class="oauth-msg" id="oauth-msg-display"></div>
 
             <form id="loginForm">
                 <div class="field">
                     <input type="text" id="username" placeholder=" " required autocomplete="username">
-                    <label for="username">Username</label>
+                    <label for="username" data-i18n="login.username">Username</label>
                 </div>
                 <div class="field">
                     <input type="password" id="password" placeholder=" " required autocomplete="current-password">
-                    <label for="password">Password</label>
+                    <label for="password" data-i18n="login.password">Password</label>
                 </div>
-                <button type="submit" id="loginBtn">Authenticate</button>
+                <button type="submit" id="loginBtn" data-i18n="login.authenticate">Authenticate</button>
             </form>
 
-            <button type="button" id="passkeyBtn" class="discord-btn" style="background:#111; border:1px solid rgba(255,0,0,0.3); box-shadow:0 0 16px rgba(255,0,0,0.15); margin-top:6px;">
+            <button type="button" id="passkeyBtn" class="discord-btn" data-i18n="login.passkey" style="background:#111; border:1px solid rgba(255,0,0,0.3); box-shadow:0 0 16px rgba(255,0,0,0.15); margin-top:6px;">
                 <span class="passkey-icon"></span>
                 Sign in with Passkey
             </button>
 
-            <button type="button" id="extLoginBtn" class="discord-btn" style="display:none; background:#0d1b12; border:1px solid rgba(0,255,136,0.35); box-shadow:0 0 16px rgba(0,255,136,0.12); margin-top:6px;">
+            <button type="button" id="extLoginBtn" class="discord-btn" data-i18n="login.extension" style="display:none; background:#0d1b12; border:1px solid rgba(0,255,136,0.35); box-shadow:0 0 16px rgba(0,255,136,0.12); margin-top:6px;">
                 <span class="ext-icon"></span>
                 Sign in with Extension
             </button>
@@ -504,26 +507,26 @@
                 Extension detected — link it in My Account to enable this.
             </p>
 
-            <div class="divider"><span>or</span></div>
+            <div class="divider"><span data-i18n="login.or">or</span></div>
 
-            <a href="/api/auth/discord/login" id="discordLoginBtn" class="discord-btn">
+            <a href="/api/auth/discord/login" id="discordLoginBtn" class="discord-btn" data-i18n="login.discord">
                 <span class="discord-icon"></span>
                 Login with Discord
             </a>
 
             <!-- 2FA step (shown after correct password when 2FA is enabled) -->
             <div id="twofa-section" style="display:none;">
-                <p class="card__sub" style="margin-bottom:18px;">2FA VERIFICATION</p>
+                <p class="card__sub" style="margin-bottom:18px;" data-i18n="login.twofa_title">2FA VERIFICATION</p>
                 <div class="field">
                     <input type="text" id="twofa-code" placeholder=" " inputmode="numeric" autocomplete="one-time-code"
                            onkeydown="if(event.key==='Enter'){submit2fa();}">
-                    <label for="twofa-code">6-Digit Code</label>
+                    <label for="twofa-code" data-i18n="login.code">6-Digit Code</label>
                 </div>
-                <button type="button" id="twofaBtn" onclick="submit2fa()">Verify Code</button>
-                <p style="font-family:var(--mono); font-size:0.7rem; color:rgba(255,80,80,0.5); text-align:center; margin-top:14px; letter-spacing:1px;">
+                <button type="button" id="twofaBtn" onclick="submit2fa()" data-i18n="login.verify">Verify Code</button>
+                <p style="font-family:var(--mono); font-size:0.7rem; color:rgba(255,80,80,0.5); text-align:center; margin-top:14px; letter-spacing:1px;" data-i18n="login.backup_hint">
                     No authenticator? Use a backup code instead.
                 </p>
-                <button type="button" id="backToLoginBtn" onclick="backToPasswordLogin()"
+                <button type="button" id="backToLoginBtn" onclick="backToPasswordLogin()" data-i18n="login.back"
                         style="width:100%; margin-top:8px; padding:10px; background:transparent; border:1px solid rgba(255,0,0,0.25); color:#ff7777; font-family:var(--mono); font-size:0.75rem; letter-spacing:2px; cursor:pointer;">
                     ← Back to password login
                 </button>

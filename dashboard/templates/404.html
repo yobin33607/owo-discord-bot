@@ -22,6 +22,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;800;900&family=Exo+2:wght@300;400;600;800&family=Rajdhani:wght@400;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="/static/js/i18n.js"></script>
+    <link rel="stylesheet" href="/static/css/pages/translate.css?v=1.0.0">
     <style>
         *,
         *::before,
@@ -436,6 +438,7 @@
 </head>
 <body>
 
+    <select class="limey-lang-select" style="position:fixed; top:16px; right:16px; z-index:9999; max-width:170px;" title="Language" aria-label="Language"></select>
     <canvas id="bgCanvas"></canvas>
     <div class="scanline"></div>
 
@@ -445,7 +448,7 @@
             <div class="glitch" data-text="404">404</div>
         </div>
 
-        <div class="error-badge">
+        <div class="error-badge" data-i18n="e404.badge">
             <span class="dot"></span>
             ERROR — PAGE NOT FOUND
         </div>
@@ -482,8 +485,8 @@
         </div>
 
         <div class="actions">
-            <a href="/" class="btn-primary">← Back to Home</a>
-            <a href="javascript:history.back()" class="btn-secondary">Go Back</a>
+            <a href="/" class="btn-primary" data-i18n="e404.home">← Back to Home</a>
+            <a href="javascript:history.back()" class="btn-secondary" data-i18n="e404.back">Go Back</a>
         </div>
 
         <div class="footer-note">

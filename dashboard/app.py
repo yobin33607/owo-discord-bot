@@ -953,6 +953,79 @@ def auth_security():
     })
 
 
+@app.route('/api/auth/drm')
+@login_required
+def auth_drm_status():
+    """Get the current user's anti-record/anti-screenshot (DRM) preference.
+
+    Off by default. When enabled, the client engages the browser's DRM
+    (Encrypted Media Extensions / Widevine) pipeline and overlays a
+    screenshot/recording deterrent (watermark + content shield).
+    """
+    cfg = load_auth_config()
+    user = _auth_get_user(cfg, session.get('username'))
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    return jsonify({'success': True, 'enabled': bool(user.get('drm_protection'))})
+
+
+@app.route('/api/auth/drm', methods=['POST'])
+@login_required
+def auth_drm_set():
+    """Enable/disable the current user's anti-record/anti-screenshot (DRM) mode."""
+    enabled = bool((request.json or {}).get('enabled'))
+    cfg = load_auth_config()
+    user = _auth_get_user(cfg, session.get('username'))
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    user['drm_protection'] = enabled
+    if cfg:
+        ghd.write_json("config/auth.json", cfg, message="Update DRM protection")
+    _log_config_change(
+        "Anti-screenshot (DRM) protection " + ("enabled" if enabled else "disabled"),
+        f"'{session.get('username')}'",
+    )
+    return jsonify({'success': True, 'enabled': enabled})
+
+
+# ── i18n (multilingual dashboard support) ───────────────
+# Human-contributed translations, stored in the data repo. The default
+# language is English; translations are authored in the dashboard's
+# Translate section (admin only) — never machine-generated.
+
+from utils import i18n as i18n_mod
+
+
+@app.route('/api/i18n/catalog')
+def i18n_catalog():
+    """Public catalog of languages + strings + translations for the client."""
+    return jsonify(i18n_mod.public_catalog())
+
+
+@app.route('/api/i18n/translate', methods=['POST'])
+@require_permission('admin')
+def i18n_translate():
+    """Save a human translation for one string key + language."""
+    data = request.json or {}
+    ok, err = i18n_mod.set_translation(
+        data.get('key', ''),
+        data.get('language', ''),
+        data.get('value', ''),
+    )
+    if not ok:
+        return jsonify({'success': False, 'error': err}), 400
+    _log_config_change("Translation updated", f"{data.get('key')} ({data.get('language')})")
+    return jsonify({'success': True})
+
+
+@app.route('/api/i18n/sync', methods=['POST'])
+@require_permission('admin')
+def i18n_sync():
+    """Force a re-sync of the catalog + template snapshots (admin)."""
+    i18n_mod.sync_catalog(force=True)
+    return jsonify({'success': True, 'catalog': i18n_mod.public_catalog()})
+
+
 # ── Extension Login (browser-extension credential) ─────
 # The Limey browser extension can act as a sign-in device: pairing (My
 # Account) hands the extension a high-entropy token (stored only as a SHA-256

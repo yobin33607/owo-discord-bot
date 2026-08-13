@@ -22,6 +22,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;800;900&family=Exo+2:wght@300;400;600;800&family=Rajdhani:wght@400;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="/static/js/i18n.js"></script>
+    <link rel="stylesheet" href="/static/css/pages/translate.css?v=1.0.0">
     <style>
         *,
         *::before,
@@ -682,15 +684,16 @@
     <canvas id="bgCanvas"></canvas>
 
     <!-- Navbar -->
+    <select class="limey-lang-select" style="position:fixed; top:16px; right:16px; z-index:9999; max-width:170px;" title="Language" aria-label="Language"></select>
     <nav class="navbar" id="navbar">
         <a href="/" class="nav-brand">
             <div class="nav-brand-icon">L</div>
             <span class="nav-brand-text">LIMEY</span>
         </a>
         <div class="nav-links">
-            <a href="#features">Features</a>
+            <a href="#features" data-i18n="home.features">Features</a>
             <a href="https://github.com/yobin33607" target="_blank">GitHub</a>
-            <a href="/login" class="nav-btn">Sign In</a>
+            <a href="/login" class="nav-btn" data-i18n="home.sign_in">Sign In</a>
         </div>
     </nav>
 
@@ -698,42 +701,42 @@
 
         <!-- Hero -->
         <section class="hero">
-            <div class="hero-badge">
+            <div class="hero-badge" data-i18n="home.badge">
                 <span class="dot"></span>
                 v2.5.0 — Moderation & Automation Platform
             </div>
 
             <h1>
                 <span class="highlight">Limey</span><br>
-                <span class="highlight-green">Manage. Moderate. Automate.</span>
+                <span class="highlight-green" data-i18n="home.tagline">Manage. Moderate. Automate.</span>
             </h1>
 
-            <p class="hero-sub">
+            <p class="hero-sub" data-i18n="home.hero_sub">
                 A complete Discord bot ecosystem with moderation tools, appeals management,
                 Discord AutoMod integration, and a powerful web dashboard.
             </p>
 
             <div class="hero-actions">
-                <a href="/login" class="btn-primary">Launch Dashboard</a>
-                <a href="#features" class="btn-secondary">Explore Features</a>
+                <a href="/login" class="btn-primary" data-i18n="home.launch">Launch Dashboard</a>
+                <a href="#features" class="btn-secondary" data-i18n="home.explore">Explore Features</a>
             </div>
 
             <div class="hero-stats" id="heroStats">
                 <div class="hero-stat">
                     <div class="hero-stat-number">30+</div>
-                    <div class="hero-stat-label">Slash Commands</div>
+                    <div class="hero-stat-label" data-i18n="home.stat_commands">Slash Commands</div>
                 </div>
                 <div class="hero-stat">
                     <div class="hero-stat-number">24/7</div>
-                    <div class="hero-stat-label">Uptime</div>
+                    <div class="hero-stat-label" data-i18n="home.stat_uptime">Uptime</div>
                 </div>
                 <div class="hero-stat">
                     <div class="hero-stat-number">Web</div>
-                    <div class="hero-stat-label">Dashboard</div>
+                    <div class="hero-stat-label" data-i18n="home.stat_dashboard">Dashboard</div>
                 </div>
                 <div class="hero-stat">
                     <div class="hero-stat-number">Multi</div>
-                    <div class="hero-stat-label">Account Support</div>
+                    <div class="hero-stat-label" data-i18n="home.stat_accounts">Account Support</div>
                 </div>
             </div>
 
@@ -746,69 +749,69 @@
         <section class="features" id="features">
             <div class="section-header reveal">
                 <h2>Built for <span class="highlight">Power</span></h2>
-                <p>Everything you need to moderate and manage your Discord server</p>
+                <p data-i18n="home.features_sub">Everything you need to moderate and manage your Discord server</p>
             </div>
 
             <div class="features-grid">
                 <div class="feature-card reveal">
                     <div class="feature-icon">🛡️</div>
-                    <h3>Moderation Suite</h3>
+                    <h3 data-i18n="home.feature_moderation">Moderation Suite</h3>
                     <p>Full moderation toolkit with warn, kick, ban, timeout, mute, purge, lockdown, and slowmode. All actions tracked with a violations system.</p>
                     <span class="feature-tag">Core</span>
                 </div>
 
                 <div class="feature-card reveal">
                     <div class="feature-icon">🤖</div>
-                    <h3>Discord AutoMod</h3>
+                    <h3 data-i18n="home.feature_automod">Discord AutoMod</h3>
                     <p>Integrates with Discord's native AutoMod to send DM warnings when users trigger rules. Fetches rule names for clear notifications.</p>
                     <span class="feature-tag">Integration</span>
                 </div>
 
                 <div class="feature-card reveal">
                     <div class="feature-icon">📋</div>
-                    <h3>Appeals System</h3>
+                    <h3 data-i18n="home.feature_appeals">Appeals System</h3>
                     <p>Users can appeal bans/mutes via Discord commands. Mods review, approve, or reject appeals from the dashboard with full violation history.</p>
                     <span class="feature-tag">Management</span>
                 </div>
 
                 <div class="feature-card reveal">
                     <div class="feature-icon">📊</div>
-                    <h3>Web Dashboard</h3>
+                    <h3 data-i18n="home.feature_dashboard">Web Dashboard</h3>
                     <p>Live moderation dashboard with appeal management, account controls, settings editor, proxy manager, captcha solving, and analytics.</p>
                     <span class="feature-tag">UI</span>
                 </div>
 
                 <div class="feature-card reveal">
                     <div class="feature-icon">🎯</div>
-                    <h3>Auto Hunt & Battle</h3>
+                    <h3 data-i18n="home.feature_hunt">Auto Hunt & Battle</h3>
                     <p>Intelligent hunting and battle automation with configurable strategies, cooldown management, and real-time performance tracking.</p>
                     <span class="feature-tag">Automation</span>
                 </div>
 
                 <div class="feature-card reveal">
                     <div class="feature-icon">🎭</div>
-                    <h3>Stealth Mode</h3>
+                    <h3 data-i18n="home.feature_stealth">Stealth Mode</h3>
                     <p>Human-like typing delays, configurable speed presets, random reaction times, and smart cooldown management to avoid detection.</p>
                     <span class="feature-tag">Stealth</span>
                 </div>
 
                 <div class="feature-card reveal">
                     <div class="feature-icon">🔐</div>
-                    <h3>Role-Based Access</h3>
+                    <h3 data-i18n="home.feature_roles">Role-Based Access</h3>
                     <p>Granular permission system with View, Manage, and Admin roles. Discord OAuth login and API key authentication supported.</p>
                     <span class="feature-tag">Security</span>
                 </div>
 
                 <div class="feature-card reveal">
                     <div class="feature-icon">🌐</div>
-                    <h3>Proxy Support</h3>
+                    <h3 data-i18n="home.feature_proxies">Proxy Support</h3>
                     <p>Full proxy management with HTTP/SOCKS5, bulk import, auto-testing, health monitoring, and automatic assignment to accounts.</p>
                     <span class="feature-tag">Network</span>
                 </div>
 
                 <div class="feature-card reveal">
                     <div class="feature-icon">⚡</div>
-                    <h3>Quest Automation</h3>
+                    <h3 data-i18n="home.feature_quests">Quest Automation</h3>
                     <p>Automatic quest tracking and solving. Handles social quests via alt accounts, auto-claims rewards, rarity quest gem optimization.</p>
                     <span class="feature-tag">Utility</span>
                 </div>
@@ -819,10 +822,10 @@
         <section class="cta-section">
             <div class="reveal">
                 <h2>Ready to <span class="highlight">take control</span>?</h2>
-                <p>Manage your Discord server with Limey's powerful moderation tools and automation platform.</p>
+                <p data-i18n="home.cta_sub">Manage your Discord server with Limey's powerful moderation tools and automation platform.</p>
                 <div class="cta-buttons">
-                    <a href="/login" class="btn-primary">Launch Dashboard</a>
-                    <a href="https://github.com/yobin33607" target="_blank" class="btn-secondary">View on GitHub</a>
+                    <a href="/login" class="btn-primary" data-i18n="home.launch">Launch Dashboard</a>
+                    <a href="https://github.com/yobin33607" target="_blank" class="btn-secondary" data-i18n="home.github">View on GitHub</a>
                 </div>
             </div>
         </section>

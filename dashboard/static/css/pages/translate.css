@@ -1,0 +1,123 @@
+/* 
+# This file is part of Limey.
+# Copyright (c) 2025-Present Limey
+#
+# Limey is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# You should have received a copy of the GNU General Public License
+# along with Limey. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+/* ── Language selector (top bar / standalone) ─────────────── */
+.limey-lang-select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    color: var(--text, #e0e0e0);
+    font: 600 0.8rem var(--font-mono, monospace);
+    padding: 6px 30px 6px 10px;
+    cursor: pointer;
+    max-width: 180px;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+.limey-lang-select:hover,
+.limey-lang-select:focus {
+    border-color: var(--primary, #8b8cff);
+    background: rgba(255, 255, 255, 0.07);
+    outline: none;
+}
+.limey-lang-select option {
+    background: #14151d;
+    color: #e0e0e0;
+}
+
+/* ── Translate editor ─────────────────────────────────────── */
+.translate-toolbar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 14px;
+}
+.translate-toolbar .cfg-input {
+    flex: 0 0 auto;
+    min-width: 160px;
+}
+.translate-toolbar #translate-search {
+    flex: 1 1 200px;
+}
+.translate-count {
+    color: var(--text-muted, #8892a0);
+    font-size: 0.8rem;
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.translate-row {
+    display: grid;
+    grid-template-columns: 1fr auto minmax(200px, 320px) auto;
+    gap: 14px;
+    align-items: center;
+    padding: 12px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    margin-bottom: 10px;
+    background: rgba(255, 255, 255, 0.03);
+}
+.translate-row-meta {
+    min-width: 0;
+}
+.translate-key {
+    font: 500 0.72rem var(--font-mono, monospace);
+    color: var(--primary, #8b8cff);
+    margin-bottom: 3px;
+    word-break: break-all;
+}
+.translate-en {
+    font-size: 0.9rem;
+    color: #dfe3ee;
+    word-break: break-word;
+}
+.translate-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+.translate-badge.untranslated {
+    background: rgba(255, 255, 255, 0.06);
+    color: #8892a0;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.translate-badge.stale {
+    background: rgba(255, 180, 84, 0.12);
+    color: #ffb454;
+    border: 1px solid rgba(255, 180, 84, 0.35);
+}
+.translate-badge.translated {
+    background: rgba(80, 220, 155, 0.12);
+    color: #50dc9b;
+    border: 1px solid rgba(80, 220, 155, 0.35);
+}
+.translate-input {
+    width: 100%;
+}
+.translate-save {
+    white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+    .translate-row {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+    .translate-badge {
+        justify-self: start;
+    }
+}

@@ -839,3 +839,37 @@ textarea:focus {
     from { box-shadow: 0 0 30px var(--fabled-glow), inset 0 0 10px var(--fabled-glow); }
     to { box-shadow: 0 0 60px var(--fabled-glow), inset 0 0 20px var(--fabled-glow); }
 }
+
+/* ── Screen protection (anti-record / anti-screenshot DRM) ── */
+html.drm-shield-active,
+html.drm-shield-active body {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+}
+
+#drm-watermark-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483000;
+    pointer-events: none;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    color: rgba(255, 255, 255, 0.09);
+    font: 700 1.5rem var(--font-heading);
+    letter-spacing: 2px;
+    background: repeating-linear-gradient(-45deg,
+        transparent 0 90px,
+        rgba(255, 71, 87, 0.04) 90px 180px);
+    transform: rotate(-14deg) scale(1.7);
+}
+
+html.drm-shield-hidden .app-shell,
+html.drm-shield-hidden .top-bar-fixed {
+    filter: blur(18px);
+    opacity: 0.35;
+    transition: filter 0.2s ease, opacity 0.2s ease;
+}

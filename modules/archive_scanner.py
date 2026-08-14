@@ -166,6 +166,8 @@ async def run_scan(bot, user_id, message_limit=200, include_guilds=True, include
                     "id": str(dc.id),
                     "name": _channel_name(dc),
                     "recipient_id": str(recipient.id) if recipient else None,
+                    "account": state.get("username") or "Unknown",
+                    "account_id": str(user_id),
                     "messages": msgs,
                 })
                 state["dms_done"] += 1
@@ -280,7 +282,7 @@ a{{color:#4da3ff;text-decoration:none;}}
 </style></head><body>{body}</body></html>"""
 
 
-def _render_index_html(meta, guilds, dms):
+def _render_index_html(meta, guilds, dm_sections):
     scope_name = meta.get("scope_name") or meta.get("username") or "Unknown"
     scope_type = meta.get("scope_type")
     if scope_type == "dm":
@@ -292,9 +294,10 @@ def _render_index_html(meta, guilds, dms):
         link = f"guilds/{_safe_name(g['name'])}_{g['id']}/index.html"
         rows.append(f"<li>📁 <a href='{_escape(link)}'>{_escape(g['name'])}</a> "
                     f"<span class='count'>({len(g['channels'])} channels)</span></li>")
-    for d in dms:
-        link = f"dms/{_safe_name(d['name'])}_{d['id']}.html"
-        rows.append(f"<li>💬 <a href='{_escape(link)}'>{_escape(d['name'])}</a></li>")
+    for s in dm_sections:
+        link = f"dms/{_safe_name(s.get('account') or 'account')}_{_safe_name(s.get('id') or '')}.html"
+        rows.append(f"<li>💬 <a href='{_escape(link)}'>DM as {_escape(s.get('account') or 'Unknown')}</a> "
+                    f"<span class='count'>({len(s.get('messages') or [])} messages)</span></li>")
     list_html = "\n".join(rows) if rows else "<li class='empty'>Nothing scanned.</li>"
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>Archive Index</title>
@@ -504,9 +507,10 @@ def _remove_repo_archive(name):
 # ── Archive scope helpers ──────────────────────────────
 # Archives are organized per conversation: every server gets its own archive
 # and every DM conversation gets its own archive (named after the other
-# user). Each archive carries a scope_key so re-archiving the same server /
-# DM — even from a different selfbot — replaces the previous archive (the
-# latest scan wins).
+# user). A DM archive carries a scope_key so re-archiving the same person —
+# even from a different selfbot — merges that account's DM history into the
+# existing archive instead of replacing it. Each selfbot's messages live in
+# their own "section" of the archive, like a Discord chat.
 
 
 def _scope_key_for_guild(g):
@@ -517,6 +521,131 @@ def _scope_key_for_dm(d):
     if d.get("recipient_id"):
         return f"dm:{d['recipient_id']}"
     return f"dm_group:{d['id']}"
+
+
+def _dm_section_id(account_id, channel_id):
+    """Stable identifier for one selfbot's DM channel with the same person."""
+    return f"dm:{channel_id}:{account_id}"
+
+
+def _extract_dm_sections(dms):
+    """Normalize scan DM entries into per-account section dicts.
+
+    A scan always reports DM channels through the account that scanned them,
+    so each entry becomes its own section labeled with the account name.
+    """
+    sections = []
+    for d in dms or []:
+        if not isinstance(d, dict):
+            continue
+        channel_id = d.get("id") or d.get("channel_id") or ""
+        account_id = d.get("account_id") or ""
+        sections.append({
+            "id": _dm_section_id(account_id, channel_id),
+            "channel_id": str(channel_id),
+            "account_id": str(account_id),
+            "account": d.get("account") or "Unknown",
+            "name": d.get("name") or "DM",
+            "messages": d.get("messages") or [],
+        })
+    return sections
+
+
+def _normalise_dm_section_authors(sections, scope_name):
+    """Rewrite each section's message authors into the chat display.
+
+    In a DM archive each message is from either the person (scope_name) or
+    from the selfbot account that section belongs to — the two participants
+    of that account's DM with the person.
+    """
+    person = str(scope_name or "Person")
+    out = []
+    for sec in sections:
+        if not isinstance(sec, dict):
+            out.append(sec)
+            continue
+        sec = dict(sec)
+        account = str(sec.get("account") or "Unknown")
+        messages = []
+        for m in sec.get("messages") or []:
+            if not isinstance(m, dict):
+                messages.append(m)
+                continue
+            m = dict(m)
+            author = str(m.get("author") or "")
+            if author and author.casefold() == account.casefold():
+                m["author"] = account
+            elif author:
+                m["author"] = person
+            messages.append(m)
+        sec["messages"] = messages
+        out.append(sec)
+    return out
+
+
+def _sections_from_archive_data(data):
+    """Per-account DM sections stored in an archive's index.json.
+
+    New archives store ``dm_sections``; older archives only had one DM per
+    archive and are converted into a single section labeled with the account
+    that scanned it.
+    """
+    sections = data.get("dm_sections") if isinstance(data, dict) else None
+    if sections:
+        return sections
+    return _extract_dm_sections((data or {}).get("dms") or [])
+
+
+def _merge_dm_sections(scope_type, scope_name, scope_key, dm_sections):
+    """Merge DM sections for the same person across selfbot accounts.
+
+    Loads every existing archive that belongs to this DM conversation (same
+    scope key, or same person name) and appends its sections so a second
+    selfbot's archive keeps the first selfbot's history. Newer scans of the
+    same account replace that account's older section.
+
+    Returns the merged list of sections (new scan first).
+    """
+    if scope_type != "dm":
+        return dm_sections
+
+    name_key = (scope_name or "").casefold()
+    merged = list(dm_sections)
+    seen = set()
+    for sec in merged:
+        seen.add(str(sec.get("id")))
+
+    for entry in list_archives():
+        if not entry.get("scope_type") == "dm":
+            continue
+        same_key = entry.get("scope_key") == scope_key
+        same_person = name_key and (entry.get("scope_name") or "").casefold() == name_key
+        if not (same_key or same_person):
+            continue
+        data, err = load_archive_index(entry.get("name", ""))
+        if err or not isinstance(data, dict):
+            continue
+        for sec in _sections_from_archive_data(data):
+            if not isinstance(sec, dict) or not sec.get("messages"):
+                continue
+            sid = str(sec.get("id"))
+            if sid in seen:
+                continue
+            seen.add(sid)
+            merged.append(sec)
+
+    return merged
+
+
+def _remove_archives_with_scope(scope_key, scope_name):
+    """Delete every existing archive for the same DM person / server scope."""
+    name_key = (scope_name or "").casefold()
+    for entry in list_archives():
+        if entry.get("scope_key") == scope_key:
+            delete_archive(entry.get("name", ""))
+        elif entry.get("scope_type") == "dm" and name_key \
+                and (entry.get("scope_name") or "").casefold() == name_key:
+            delete_archive(entry.get("name", ""))
 
 
 def _archive_name_exists(name):
@@ -536,18 +665,17 @@ def _unique_archive_name(base):
     return name
 
 
-def _remove_archives_with_scope(scope_key):
-    """Delete every existing archive with the same scope key (latest wins)."""
-    for entry in list_archives():
-        if entry.get("scope_key") == scope_key:
-            delete_archive(entry.get("name", ""))
-
-
 def _build_scope_archive(scope_type, scope_name, scope_key, username, user_id,
                          guilds, dms, push_to_github, message_limit, finished_at):
-    """Build one archive for a single scope (one server or one DM)."""
-    # Latest scan wins: drop any previous archive for the same server / DM.
-    _remove_archives_with_scope(scope_key)
+    """Build one archive for a single scope (one server or one DM).
+
+    DM archives merge every selfbot account's history with the same person:
+    sections from existing archives for this conversation are folded in so a
+    later scan by a different account doesn't replace the earlier chat.
+    """
+    dm_sections = _extract_dm_sections(dms) if scope_type == "dm" else []
+    dm_sections = _merge_dm_sections(scope_type, scope_name, scope_key, dm_sections)
+    dm_sections = _normalise_dm_section_authors(dm_sections, scope_name)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     base = _safe_name(scope_name) or f"{scope_type}_{timestamp}"
@@ -556,7 +684,7 @@ def _build_scope_archive(scope_type, scope_name, scope_key, username, user_id,
 
     message_count = sum(len(ch.get("messages") or [])
                         for g in guilds for ch in g.get("channels") or [])
-    message_count += sum(len(d.get("messages") or []) for d in dms)
+    message_count += sum(len(s.get("messages") or []) for s in dm_sections)
 
     try:
         os.makedirs(ARCHIVE_DIR, exist_ok=True)
@@ -587,14 +715,16 @@ def _build_scope_archive(scope_type, scope_name, scope_key, username, user_id,
                 with open(os.path.join(g_folder, ch_base + ".html"), "w", encoding="utf-8") as f:
                     f.write(_render_chat_page(f"{g['name']} — {ch['name']}", ch["messages"], ch["name"]))
 
-        # Per-DM JSON + HTML (DM archives)
-        for d in dms:
-            dm_base = f"{_safe_name(d['name'])}_{d['id']}"
+        # Per-account DM JSON + HTML (DM archives) — one section per selfbot
+        for s in dm_sections:
+            dm_base = f"{_safe_name(s.get('account') or 'account')}_{_safe_name(s.get('id') or '')}"
             with open(os.path.join(dm_dir, dm_base + ".json"), "w", encoding="utf-8") as f:
-                json.dump({"name": d["name"], "id": d["id"], "messages": d["messages"]},
+                json.dump({"name": scope_name, "account": s.get("account"),
+                           "id": s.get("id"), "messages": s.get("messages") or []},
                           f, indent=2, ensure_ascii=False)
             with open(os.path.join(dm_dir, dm_base + ".html"), "w", encoding="utf-8") as f:
-                f.write(_render_chat_page(f"DM — {d['name']}", d["messages"], d["name"]))
+                f.write(_render_chat_page(f"DM — {scope_name} (as {s.get('account', 'Unknown')})",
+                                          s.get("messages") or [], scope_name))
 
         # Index files
         meta = {
@@ -608,13 +738,15 @@ def _build_scope_archive(scope_type, scope_name, scope_key, username, user_id,
                 .isoformat(timespec="seconds"),
             "message_limit": message_limit,
             "guild_count": len(guilds),
-            "dm_count": len(dms),
+            "dm_count": len(dm_sections),
+            "account_count": len({str(s.get("account")) for s in dm_sections}),
             "message_count": message_count,
         }
         with open(os.path.join(root, "index.json"), "w", encoding="utf-8") as f:
-            json.dump({"meta": meta, "guilds": guilds, "dms": dms}, f, indent=2, ensure_ascii=False)
+            json.dump({"meta": meta, "guilds": guilds, "dms": dms,
+                       "dm_sections": dm_sections}, f, indent=2, ensure_ascii=False)
         with open(os.path.join(root, "index.html"), "w", encoding="utf-8") as f:
-            f.write(_render_index_html(meta, guilds, dms))
+            f.write(_render_index_html(meta, guilds, dm_sections))
 
         # Zip it for download
         zip_path = os.path.join(ARCHIVE_DIR, name + ".zip")
@@ -635,6 +767,7 @@ def _build_scope_archive(scope_type, scope_name, scope_key, username, user_id,
             "created_at": meta["created_at"],
             "guild_count": meta["guild_count"],
             "dm_count": meta["dm_count"],
+            "account_count": meta["account_count"],
             "message_count": meta["message_count"],
             "size_bytes": os.path.getsize(zip_path),
             "download": f"/api/archive/download/{name}",
@@ -661,6 +794,11 @@ def _build_scope_archive(scope_type, scope_name, scope_key, username, user_id,
                 _update_repo_index(info)
 
         _update_index(info)
+
+        # Old per-account archives for this person are now superseded by the
+        # merged archive — drop them (local + GitHub) once it is safely in.
+        _remove_archives_with_scope(scope_key, scope_name)
+
         return info, None
     except Exception as e:
         return None, f"Failed to build archive: {e}"
@@ -1013,10 +1151,16 @@ def archive_file_bytes(name, kind):
         try:
             data = json.loads(content)
             meta = data.get("meta") or {}
-            html_doc = _render_index_html(meta, data.get("guilds") or [], data.get("dms") or [])
+            html_doc = _render_index_html(meta, data.get("guilds") or [],
+                                          _sections_from_archive_data(data))
             return html_doc.encode("utf-8"), "text/html; charset=utf-8", None
         except Exception as e:
             return None, None, f"Failed to render archive HTML: {e}"
+    try:
+        normalised = json.loads(content)
+        content = json.dumps(normalised, indent=2, ensure_ascii=False)
+    except (TypeError, ValueError):
+        pass
     return content.encode("utf-8"), "application/json", None
 
 
@@ -1112,16 +1256,25 @@ def archive_detail(name):
             "channels": [_channel_summary(ch) for ch in (g.get("channels") or [])],
         })
     dms = [_channel_summary(ch) for ch in (data.get("dms") or [])]
+    sections = [{
+        "id": str(sec.get("id", "")),
+        "account": sec.get("account") or "Unknown",
+        "channel_id": str(sec.get("channel_id", "")),
+        "account_id": str(sec.get("account_id", "")),
+        "message_count": len(sec.get("messages") or []),
+    } for sec in (_sections_from_archive_data(data)) if isinstance(sec, dict)]
 
     total_messages = sum(len(ch.get("messages") or [])
                          for g in data.get("guilds") or []
                          for ch in (g.get("channels") or []))
-    total_messages += sum(len(ch.get("messages") or []) for ch in (data.get("dms") or []))
+    total_messages += sum(len(sec.get("messages") or [])
+                          for sec in _sections_from_archive_data(data))
 
     return {
         "meta": meta,
         "guilds": guilds,
         "dms": dms,
+        "dm_sections": sections,
         "total_messages": total_messages,
     }, None
 
@@ -1129,7 +1282,8 @@ def archive_detail(name):
 def archive_channel_messages(name, loc):
     """Messages for one channel of an archive.
 
-    loc is 'guild:<guild_id>:<channel_id>' or 'dm:<channel_id>'.
+    loc is 'guild:<guild_id>:<channel_id>', 'dm:<channel_id>' (legacy) or
+    'dm:<channel_id>:<account_id>' (per-account sections).
     Returns (channel_name, messages, error_str).
     """
     data, err = load_archive_index(name)
@@ -1153,6 +1307,15 @@ def archive_channel_messages(name, loc):
             if str(ch.get("id")) == str(channel_id):
                 return ch.get("name") or f"dm_{channel_id}", ch.get("messages") or [], None
         return None, None, "DM not found in archive."
+
+    if len(parts) == 3 and parts[0] == "dm":
+        _, channel_id, account_id = parts
+        for sec in _sections_from_archive_data(data):
+            if (str(sec.get("channel_id")) == str(channel_id)
+                    and str(sec.get("account_id")) == str(account_id)):
+                label = sec.get("account") or sec.get("name") or f"dm_{channel_id}"
+                return str(label), sec.get("messages") or [], None
+        return None, None, "DM section not found in archive."
 
     return None, None, "Invalid location."
 
@@ -1215,9 +1378,13 @@ def search_archives(query, limit=200, max_archives=15):
                         _append("guild", label, guild.get("name", "Unknown"),
                                 ch.get("name", "channel"), msg)
 
-        for ch in data.get("dms") or []:
-            for msg in ch.get("messages") or []:
+        # DM messages live in per-account sections (legacy archives are
+        # converted into a single section on read), so scanning sections only
+        # covers every DM once — no duplicate matches for new archives.
+        for sec in _sections_from_archive_data(data):
+            for msg in sec.get("messages") or []:
                 if _matches(msg):
-                    _append("dm", label, "Direct Messages", ch.get("name", "DM"), msg)
+                    _append("dm", label, sec.get("account") or "DM",
+                            sec.get("name", "DM"), msg)
 
     return results, total

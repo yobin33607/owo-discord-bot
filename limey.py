@@ -25,6 +25,18 @@ _PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 from utils.platform import exec_venv_or_continue  # type: ignore[import-untyped]
 exec_venv_or_continue()
 
+# ── Silence Python 3.14's SyntaxWarning from discord.py-self ──
+# discord.py-self (a third-party dependency) has a `return` inside a `finally`
+# block in gateway.py. Python 3.14 (PEP 765) flags that pattern at import time.
+# It's harmless and not our code, so suppress just that specific warning so it
+# doesn't look like a startup error in the logs.
+import warnings
+warnings.filterwarnings(
+    "ignore",
+    message="'return' in a 'finally' block",
+    category=SyntaxWarning,
+)
+
 if sys.stdout.encoding != 'utf-8':
     try:
         sys.stdout.reconfigure(encoding='utf-8')

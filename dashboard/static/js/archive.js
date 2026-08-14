@@ -593,7 +593,20 @@ function renderArchiveBrowser() {
                 `<span class="tree-count">${(ch.message_count || 0).toLocaleString()}</span></div>`);
         });
     });
-    if ((d.dms || []).length) {
+    const sections = d.dm_sections || [];
+    if (sections.length) {
+        // Per-account sections: one row per selfbot account that DM'd this
+        // person, like a Discord chat where each account is a participant.
+        treeRows.push('<div class="tree-group">💬 ' + escapeHtml(meta.scope_name || 'Direct Messages') + '</div>');
+        sections.forEach(sec => {
+            const loc = 'dm:' + sec.channel_id + ':' + sec.account_id;
+            const active = _archiveBrowserLoc === loc ? ' active' : '';
+            treeRows.push(
+                `<div class="arch-tree-row${active}" onclick="archiveSelectChannel(this, '${loc}')">` +
+                `<span>👤</span><span class="tree-name">${escapeHtml(sec.account)}</span>` +
+                `<span class="tree-count">${(sec.message_count || 0).toLocaleString()}</span></div>`);
+        });
+    } else if ((d.dms || []).length) {
         const dmGroup = meta.scope_type === 'dm' ? ('💬 ' + escapeHtml(meta.scope_name || 'Direct Messages')) : '💬 Direct Messages';
         treeRows.push('<div class="tree-group">' + dmGroup + '</div>');
         (d.dms || []).forEach(ch => {
@@ -660,7 +673,10 @@ async function archiveLoadChannelMessages(loc) {
             view.innerHTML = '<div class="view-empty">No messages in this channel.</div>';
             return;
         }
-        view.innerHTML = msgs.map(m => {
+        const header = data.channel && (loc || '').split(':')[0] === 'dm' && (loc || '').split(':').length === 3
+            ? `<div class="arch-msg-section">👤 ${escapeHtml(data.channel)}</div>`
+            : '';
+        view.innerHTML = header + msgs.map(m => {
             const ts = escapeHtml((m.timestamp || '').replace('T', ' ').slice(0, 16));
             const atts = (m.attachments || []).map(u =>
                 '<div class="arch-msg-attach">📎 <a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(u) + '</a></div>').join('');

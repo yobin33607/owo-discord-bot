@@ -31,3 +31,40 @@ jobs:
           curl -fsS --max-time 120 -X POST "$DEPLOY_HOOK_URL" \
             -H "Content-Type: application/json" \
             -d "{\"ref\": \"$GITHUB_REF\", \"commit\": \"$COMMIT_SHA\"}"
+
+  deploy-workers:
+    name: Deploy worker ${{ matrix.worker }}
+    runs-on: ubuntu-latest
+
+    # Each worker has its own concurrency group so one worker deploy does not
+    # cancel another worker deploy. Missing worker secrets are intentionally
+    # skipped below instead of failing the workflow.
+    concurrency:
+      group: deploy-worker-${{ matrix.worker }}
+      cancel-in-progress: true
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Add more numbers here if the deployment needs more than 20 workers.
+        worker: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+
+    steps:
+      - name: Trigger worker deploy hook if configured
+        env:
+          # Preferred name: DEPLOY_HOOK_URL_WORKER1, WORKER2, ...
+          DEPLOY_HOOK_URL_WORKER: ${{ secrets[format('DEPLOY_HOOK_URL_WORKER{0}', matrix.worker)] }}
+          # Also accept DEPLOY_HOOK_URL_WORKER_1, WORKER_2, ...
+          DEPLOY_HOOK_URL_WORKER_UNDERSCORE: ${{ secrets[format('DEPLOY_HOOK_URL_WORKER_{0}', matrix.worker)] }}
+          COMMIT_SHA: ${{ github.event.client_payload.commit || github.sha }}
+        run: |
+          WORKER_HOOK="${DEPLOY_HOOK_URL_WORKER:-$DEPLOY_HOOK_URL_WORKER_UNDERSCORE}"
+          if [ -z "$WORKER_HOOK" ]; then
+            echo "No deploy hook configured for worker${{ matrix.worker }} — skipping."
+            exit 0
+          fi
+
+          echo "Deploying worker${{ matrix.worker }} at commit ${COMMIT_SHA} via deploy hook..."
+          curl -fsS --max-time 120 -X POST "$WORKER_HOOK" \
+            -H "Content-Type: application/json" \
+            -d "{\"ref\": \"$GITHUB_REF\", \"commit\": \"$COMMIT_SHA\"}"

@@ -236,6 +236,21 @@ The worker protocol includes a generic authenticated job queue for additional
 workloads such as proxy testing. It is intentionally not an arbitrary shell
 executor: new workload types must be implemented as explicit worker handlers.
 
+### Automatic worker deployments
+
+The GitHub Actions deploy workflow always uses `DEPLOY_HOOK_URL` for the main
+server. It also scans worker numbers 1 through 20 and triggers only configured
+worker hooks. Add repository secrets using either naming style:
+
+```text
+DEPLOY_HOOK_URL_WORKER1
+DEPLOY_HOOK_URL_WORKER2
+DEPLOY_HOOK_URL_WORKER_3
+```
+
+Missing worker hook secrets are skipped and do not fail the workflow. Each hook
+receives the same commit payload as the main server deploy.
+
 ### Manager Bot gateway shards
 
 The regular Manager Bot supports Discord gateway sharding. To distribute its

@@ -50,7 +50,7 @@ except ImportError:
 console = Console()
 SETUP_LOG = os.path.join(state.DATA_DIR, "setup.log")
 DEFAULT_PASSWORD = "limey_default_password_change_me"
-REQUIRED_VERSION_SUFFIX = "+g20ae80b3"
+REQUIRED_VERSION_SUFFIX = "+g2ba64a9"
 
 class LimeySetupEngine:
     def __init__(self):
@@ -292,7 +292,7 @@ class LimeySetupEngine:
             "-m",
             "pip",
             "install",
-            "git+https://github.com/dolfies/discord.py-self@20ae80b398ec83fa272f0a96812140e14868c88",
+            "git+https://github.com/dolfies/discord.py-self@2ba64a9a997e151a9c259984e0a179b1fdf4aff4",
             "--force-reinstall",
             "--no-cache-dir",
         ]

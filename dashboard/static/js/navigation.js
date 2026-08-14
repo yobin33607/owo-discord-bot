@@ -14,8 +14,53 @@
 
 
 */
-window.nav = function(id, el) {
+
+const DASHBOARD_VIEW_PATHS = {
+    'accounts': 'overview/accounts',
+    'dash': 'overview/dashboard',
+    'history': 'overview/history',
+    'orb-grinder': 'automation/orb-grinder',
+    'mass-dismantle': 'automation/mass-dismantle',
+    'proxies': 'automation/proxies',
+    'config': 'tools/configuration',
+    'extension': 'tools/extension',
+    'archives': 'tools/archives',
+    'logs': 'tools/logs',
+    'security': 'security',
+    'admin-users': 'admin/login-users',
+    'api-keys': 'admin/api-keys',
+    'appeals': 'admin/appeals',
+    'moderation': 'admin/moderation',
+    'tickets': 'admin/tickets',
+    'translate': 'admin/translate',
+    'my-account': 'account/my-account'
+};
+
+function dashboardViewPath(id) {
+    return DASHBOARD_VIEW_PATHS[id] || DASHBOARD_VIEW_PATHS.accounts;
+}
+
+window.dashboardPathForView = function(id) {
+    return '/dashboard/' + dashboardViewPath(id);
+};
+
+window.dashboardViewFromPath = function(pathname) {
+    const path = (pathname || '').replace(/^\/+|\/+$/g, '');
+    if (!path || path === 'dashboard') return 'accounts';
+    if (!path.startsWith('dashboard/')) return null;
+    const viewPath = path.slice('dashboard/'.length);
+    return Object.keys(DASHBOARD_VIEW_PATHS).find(id => DASHBOARD_VIEW_PATHS[id] === viewPath) || null;
+};
+
+window.updateDashboardUrl = function(id, replace = false) {
+    const nextPath = window.dashboardPathForView(id);
+    if (window.location.pathname === nextPath) return;
+    window.history[replace ? 'replaceState' : 'pushState']({ dashboardView: id }, '', nextPath);
+};
+
+window.nav = function(id, el, options = {}) {
     console.log(`Navigating to: ${id}`);
+    if (!options.skipUrl) window.updateDashboardUrl(id, !!options.replaceUrl);
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active-view'));
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     const target = document.getElementById(id);
@@ -87,6 +132,48 @@ window.nav = function(id, el) {
         window.loadSecurityStatus();
     }
 };
+
+function initDashboardLinks() {
+    document.querySelectorAll('a.nav-item').forEach(item => {
+        const onclick = item.getAttribute('onclick') || '';
+        const match = onclick.match(/nav\('([^']+)'/);
+        if (match && DASHBOARD_VIEW_PATHS[match[1]]) {
+            item.setAttribute('href', window.dashboardPathForView(match[1]));
+        }
+    });
+}
+
+document.addEventListener('click', event => {
+    const link = event.target.closest('a.nav-item[href^="/dashboard/"]');
+    if (link) event.preventDefault();
+});
+
+function dashboardNavElement(id) {
+    return Array.from(document.querySelectorAll('.nav-item')).find(item => {
+        const onclick = item.getAttribute('onclick') || '';
+        return onclick.includes(`nav('${id}'`);
+    });
+}
+
+function applyDashboardPath(pathname, replaceUrl = false) {
+    const id = window.dashboardViewFromPath(pathname) || 'accounts';
+    const current = document.getElementById(id);
+    if (!current) return;
+    window.nav(id, dashboardNavElement(id), { skipUrl: true });
+    if (replaceUrl) window.updateDashboardUrl(id, true);
+}
+
+window.addEventListener('popstate', () => applyDashboardPath(window.location.pathname));
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        initDashboardLinks();
+        applyDashboardPath(window.location.pathname, window.location.pathname === '/dashboard');
+    });
+} else {
+    initDashboardLinks();
+    applyDashboardPath(window.location.pathname, window.location.pathname === '/dashboard');
+}
 
 window.toggleMobileMenu = function() {
     const s = document.querySelector('.sidebar'), o = document.querySelector('.sidebar-overlay'), t = document.querySelector('.mobile-menu-toggle');

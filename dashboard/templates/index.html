@@ -1299,6 +1299,47 @@
                     </div>
                 </div>
 
+                <!-- One-Time Login Links (admin only) -->
+                <div class="module-card" id="otl-card" style="display:none;">
+                    <div class="module-header" style="cursor:default;">
+                        <h3 style="color:var(--primary); margin:0; font-family:var(--font-heading);" data-i18n="myaccount.one_time_links">
+                            <span class="icon-svg" style="--icon: url('/static/assets/limey_icons/key.svg');"></span>
+                            One-Time Login Links
+                        </h3>
+                    </div>
+                    <div style="padding:20px;">
+                        <p style="color:#aaa; font-size:0.85rem; margin:0 0 14px;">
+                            Generate a single-use magic link that signs the chosen user in exactly once, then dies.
+                            Hand it out for temporary access — it cannot be reused.
+                        </p>
+                        <div id="otl-generate" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:14px;">
+                            <div style="flex:1; min-width:150px;">
+                                <label class="form-label" for="otl-username">User</label>
+                                <select id="otl-username" class="cfg-input"></select>
+                            </div>
+                            <div style="flex:1; min-width:150px;">
+                                <label class="form-label" for="otl-label">Label</label>
+                                <input type="text" id="otl-label" class="cfg-input" placeholder="e.g. Temp access for Alice">
+                            </div>
+                            <div style="min-width:140px;">
+                                <label class="form-label" for="otl-ttl">Expires</label>
+                                <select id="otl-ttl" class="cfg-input">
+                                    <option value="1">1 hour</option>
+                                    <option value="24" selected>24 hours</option>
+                                    <option value="168">7 days</option>
+                                    <option value="720">30 days</option>
+                                    <option value="">Never</option>
+                                </select>
+                            </div>
+                            <button class="btn-control green" onclick="generateOneTimeLink()">Generate Link</button>
+                        </div>
+                        <div id="otl-result" style="margin-bottom:14px; font-size:0.85rem;"></div>
+                        <div id="otl-list">
+                            <div class="no-data">Loading one-time links...</div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 2FA Setup Modal -->
                 <div id="twofa-setup-modal" class="proxy-modal">
                     <div class="proxy-modal-inner" style="max-width:420px;">
@@ -1630,6 +1671,7 @@
     <script src="/static/js/extension_bridge.js?v=1.0.0"></script>
     <script src="/static/js/translate.js?v=1.0.0"></script>
     <script src="/static/js/extension_auth.js?v=1.0.0"></script>
+    <script src="/static/js/one_time_login.js?v=1.0.0"></script>
     <script src="/static/js/init.js?v=1.0.0"></script>
     <script>
         // ─── API Key Management ────────────────────────────
@@ -2400,7 +2442,11 @@
 
         // Override nav to handle appeals, api-keys, and my-account tabs
         const origNav = window.nav;
-        window.nav = function(id, el) {
+        window.nav = function(id, el, options = {}) {
+            const specialNav = ['appeals', 'api-keys', 'my-account', 'translate'].includes(id);
+            if (specialNav && !options.skipUrl && typeof window.updateDashboardUrl === 'function') {
+                window.updateDashboardUrl(id, !!options.replaceUrl);
+            }
             if (id === 'appeals') {
                 document.querySelectorAll('.view').forEach(v => v.classList.remove('active-view'));
                 document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -2442,6 +2488,7 @@
                 loadDiscordStatus();
                 if (typeof window.loadSecurityStatus === 'function') window.loadSecurityStatus();
                 if (typeof window.loadExtAuthStatus === 'function') window.loadExtAuthStatus();
+                if (typeof window.loadOneTimeLinks === 'function') window.loadOneTimeLinks();
                 loadDrmStatus();
                 if (window.innerWidth <= 768) {
                     const sidebar = document.querySelector('.sidebar');
@@ -2463,7 +2510,7 @@
                 }
                 return;
             }
-            origNav(id, el);
+            origNav(id, el, options);
         };
     </script>
 </body>

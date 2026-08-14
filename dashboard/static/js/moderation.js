@@ -83,6 +83,7 @@ function renderModUsers(users) {
     let html = '';
     users.forEach(u => {
         const uid = u.user_id || '?';
+        const username = u.username || uid;
         const totalV = u.total_violations || 0;
         const guildCount = Object.keys(u.guilds || {}).length;
         const lastType = u.last_type || 'unknown';
@@ -104,7 +105,7 @@ function renderModUsers(users) {
                         '<span>' + emoji + '</span>' +
                     '</div>' +
                     '<div style="min-width:0;">' +
-                        '<div class="mod-user-name">' + escapeHtml(uid) + '</div>' +
+                        '<div class="mod-user-name">' + escapeHtml(username) + '</div>' +
                         '<div class="mod-user-id">ID: ' + escapeHtml(uid) + ' · ' + guildCount + ' guild(s)</div>' +
                     '</div>' +
                 '</div>' +
@@ -134,6 +135,7 @@ function filterModUsers(query) {
     const q = query.toLowerCase().trim();
     const filtered = _modUsersData.filter(u => 
         (u.user_id && u.user_id.toLowerCase().includes(q)) ||
+        (u.username && u.username.toLowerCase().includes(q)) ||
         (u.last_type && u.last_type.toLowerCase().includes(q)) ||
         (u.last_reason && u.last_reason.toLowerCase().includes(q))
     );
@@ -159,6 +161,7 @@ function openModUserDetail(userId) {
         
         // Find user summary data
         const userSum = _modUsersData.find(u => u.user_id === userId) || {};
+        const username = userSum.username || userId;
         const guildCount = Object.keys(userSum.guilds || {}).length;
         
         let html = '';
@@ -167,7 +170,7 @@ function openModUserDetail(userId) {
         html += '<div class="mod-detail-header">' +
             '<div class="mod-detail-avatar"><span>👤</span></div>' +
             '<div class="mod-detail-info">' +
-                '<h3>User Details</h3>' +
+                '<h3>' + escapeHtml(username) + '</h3>' +
                 '<div class="user-id-small">ID: ' + escapeHtml(userId) + ' · ' + guildCount + ' guild(s)</div>' +
             '</div>' +
         '</div>';
@@ -228,6 +231,15 @@ function openModUserDetail(userId) {
                 '<button class="btn-control green" onclick="showModActionForm(\'' + escapeHtml(userId) + '\', \'unban\')">🔓 Unban</button>' +
             '</div>' +
         '</div>';
+
+        // ── Direct Message ───────────────────────────
+        html += '<div class="mod-action-bar" style="margin-top:14px;">' +
+            '<div class="mod-action-bar-title">✉️ Message User</div>' +
+            '<textarea id="mod-dm-message" class="cfg-input" maxlength="2000" rows="4" placeholder="Write a direct message…" style="width:100%;resize:vertical;"></textarea>' +
+            '<div style="display:flex;justify-content:flex-end;margin-top:8px;">' +
+                '<button class="btn-control" id="mod-dm-submit" onclick="sendModerationDM(\'' + escapeHtml(userId) + '\')">✉️ Send DM</button>' +
+            '</div>' +
+        '</div>';
         
         // ── Action Form (hidden) ──────────────────────
         html += '<div id="mod-action-form-container" class="mod-action-form-container" style="display:none;">' +
@@ -274,6 +286,50 @@ function openModUserDetail(userId) {
 
 function closeModUserDetail() {
     document.getElementById('mod-user-detail-modal').style.display = 'none';
+}
+
+async function sendModerationDM(userId) {
+    const input = document.getElementById('mod-dm-message');
+    const button = document.getElementById('mod-dm-submit');
+    const message = input ? input.value.trim() : '';
+    const guildSelect = document.getElementById('mod-action-guild');
+    const guildId = guildSelect ? guildSelect.value : getFirstGuildId(userId);
+
+    if (!message) {
+        showToast('Enter a message first', 'error');
+        return;
+    }
+    if (message.length > 2000) {
+        showToast('Message cannot exceed 2000 characters', 'error');
+        return;
+    }
+    if (!confirm('Send this direct message to the user?')) return;
+
+    if (button) {
+        button.disabled = true;
+        button.textContent = '⏳ Sending…';
+    }
+    try {
+        const response = await fetch('/api/moderation/dm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, guild_id: guildId, message })
+        });
+        const data = await response.json();
+        if (!data.success) {
+            showToast(data.error || 'Failed to send DM', 'error');
+            return;
+        }
+        input.value = '';
+        showToast('DM sent successfully', 'success');
+    } catch (e) {
+        showToast('Failed to send DM', 'error');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.textContent = '✉️ Send DM';
+        }
+    }
 }
 
 // Close modal on overlay click

@@ -26,6 +26,7 @@ from utils.github_data_store import ghd
 # ── Staff gate for admin commands ─────────────────────
 
 from modules.staff_gate import staff_required, slash_staff_required, StaffRoleRequired
+from utils.discord_messaging import send_user_dm
 
 
 # ── Data Helpers ───────────────────────────────────────
@@ -511,6 +512,45 @@ class Moderation(commands.Cog):
         lines.append("─" * 60)
 
         await interaction.response.send_message(f"```{chr(10).join(lines)}```")
+
+    @app_commands.command(name="dm", description="Send a direct message to a Discord user")
+    @app_commands.describe(
+        user="The user to message",
+        message="The message to send (up to 2000 characters)",
+    )
+    @app_commands.check(slash_staff_required)
+    async def slash_dm(self, interaction: discord.Interaction, user: discord.User, message: str):
+        """Send a direct message to a user (staff only)."""
+        message = (message or '').strip()
+        if not message:
+            await interaction.response.send_message("❌ Message cannot be empty.", ephemeral=True)
+            return
+        if len(message) > 2000:
+            await interaction.response.send_message("❌ Message cannot exceed 2000 characters.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        try:
+            recipient = await send_user_dm(self.bot, user.id, message)
+        except discord.Forbidden:
+            await interaction.followup.send("❌ I couldn't DM that user. Their DMs may be closed or I may be blocked.", ephemeral=True)
+            return
+        except discord.HTTPException as exc:
+            _log.warning("Failed to send DM to %s: %s", user.id, exc)
+            await interaction.followup.send("❌ Discord rejected the DM. Please try again later.", ephemeral=True)
+            return
+        except ValueError as exc:
+            await interaction.followup.send(f"❌ {exc}", ephemeral=True)
+            return
+
+        await self._store_mod_action(
+            interaction.guild_id,
+            "dm",
+            recipient,
+            interaction.user,
+            "Direct message sent",
+        )
+        await interaction.followup.send(f"✅ DM sent to **{recipient}**.", ephemeral=True)
 
     # ── Internal Logging ──────────────────────────────
 

@@ -43,6 +43,7 @@ import re
 
 from utils.github_data_store import ghd
 from utils import guild_scanner
+from utils.discord_messaging import send_user_dm
 
 import discord
 
@@ -1119,6 +1120,150 @@ def ext_login():
     return jsonify({'success': True, 'role': user.get('role', 'view'), 'username': user['username']})
 
 
+# ── One-Time Login Links ────────────────────────────────
+# Admin-generated magic links. Each link carries a high-entropy single-use
+# token (only its SHA-256 hash is stored); visiting /login/otl/<token> logs
+# the chosen user in exactly once, then the link is consumed. Like passkeys
+# and extension credentials, possession of the token is the factor — the
+# TOTP step is skipped.
+
+OTL_MAX_ACTIVE = 25
+
+
+def _otl_public(link):
+    """A link record without the token hash (safe for the API)."""
+    return {
+        'id': link.get('id'),
+        'username': link.get('username'),
+        'label': link.get('label'),
+        'created_at': link.get('created_at'),
+        'expires_at': link.get('expires_at'),
+        'created_by': link.get('created_by'),
+    }
+
+
+def _otl_load():
+    """Load (cfg, active_links), pruning expired links along the way."""
+    cfg = load_auth_config() or {}
+    links = cfg.get('one_time_links') or []
+    now = time.time()
+    active = [l for l in links if not l.get('expires_at') or l['expires_at'] > now]
+    if len(active) != len(links):
+        cfg['one_time_links'] = active
+        ghd.write_json("config/auth.json", cfg)
+    return cfg, active
+
+
+def _otl_external_url(token):
+    """Absolute login-link URL, honoring X-Forwarded-Proto/Host so it works
+    behind the TLS-terminating reverse proxy (same logic as WebAuthn)."""
+    return f"{_webauthn_origin()}{url_for('one_time_login', token=token)}"
+
+
+@app.route('/api/auth/one-time-links', methods=['GET', 'POST'])
+@require_permission('admin')
+def manage_one_time_links():
+    """List or create one-time login links (admin only)."""
+    if request.method == 'POST':
+        data = request.json or {}
+        username = (data.get('username') or '').strip()
+        label = (data.get('label') or '').strip()[:40]
+        ttl_hours = data.get('ttl_hours')
+
+        cfg, links = _otl_load()
+        if not cfg:
+            return jsonify({'success': False, 'error': 'Auth config missing'}), 500
+        user = _auth_get_user(cfg, username)
+        if not user:
+            return jsonify({'success': False, 'error': f'Unknown user "{username}"'}), 400
+
+        if len(links) >= OTL_MAX_ACTIVE:
+            return jsonify({'success': False, 'error': f'Maximum of {OTL_MAX_ACTIVE} active links — revoke one first.'}), 400
+
+        expires_at = None
+        if ttl_hours not in (None, '', 0):
+            try:
+                ttl_hours = float(ttl_hours)
+            except (TypeError, ValueError):
+                return jsonify({'success': False, 'error': 'Invalid expiry'}), 400
+            if ttl_hours <= 0:
+                return jsonify({'success': False, 'error': 'Expiry must be positive'}), 400
+            expires_at = time.time() + ttl_hours * 3600
+
+        raw = sec_auth.generate_ext_token()
+        link = {
+            'id': secrets.token_urlsafe(8),
+            'hash': sec_auth.hash_ext_token(raw),
+            'username': username,
+            'label': label or f'Login link for {username}',
+            'created_at': time.time(),
+            'expires_at': expires_at,
+            'created_by': session.get('username', 'unknown'),
+        }
+        cfg.setdefault('one_time_links', []).append(link)
+        ghd.write_json("config/auth.json", cfg)
+
+        _log_config_change("One-time login link created", f"'{link['label']}' for '{username}'")
+        return jsonify({'success': True, 'url': _otl_external_url(raw), 'link': _otl_public(link)})
+
+    cfg, links = _otl_load()
+    return jsonify({'success': True, 'links': [_otl_public(l) for l in links]})
+
+
+@app.route('/api/auth/one-time-links/<link_id>', methods=['DELETE'])
+@require_permission('admin')
+def revoke_one_time_link(link_id):
+    """Revoke a one-time login link before it is used (admin only)."""
+    cfg = load_auth_config()
+    if not cfg:
+        return jsonify({'success': False, 'error': 'Auth config missing'}), 500
+    links = cfg.get('one_time_links') or []
+    before = len(links)
+    cfg['one_time_links'] = [l for l in links if l.get('id') != link_id]
+    if len(cfg['one_time_links']) == before:
+        return jsonify({'success': False, 'error': 'Link not found'}), 404
+    ghd.write_json("config/auth.json", cfg)
+    _log_config_change("One-time login link revoked", link_id)
+    return jsonify({'success': True})
+
+
+@app.route('/login/otl/<token>')
+def one_time_login(token):
+    """Consume a one-time login link: log the user in once, then kill the link.
+
+    Errors redirect to /login with the existing `oauth_error` flash param so
+    the login page shows a readable message.
+    """
+    cfg = load_auth_config()
+    if not cfg:
+        return redirect(url_for('login', oauth_error='Auth configuration missing'))
+
+    hashed = sec_auth.hash_ext_token(token)
+    links = cfg.get('one_time_links') or []
+    link = next((l for l in links if l.get('hash') == hashed), None)
+
+    if not link:
+        return redirect(url_for('login', oauth_error='This login link is invalid or has already been used.'))
+
+    now = time.time()
+    if link.get('expires_at') and link['expires_at'] <= now:
+        cfg['one_time_links'] = [l for l in links if l.get('hash') != hashed]
+        ghd.write_json("config/auth.json", cfg)
+        return redirect(url_for('login', oauth_error='This login link has expired.'))
+
+    user = _auth_get_user(cfg, link.get('username'))
+    if not user:
+        cfg['one_time_links'] = [l for l in links if l.get('hash') != hashed]
+        ghd.write_json("config/auth.json", cfg)
+        return redirect(url_for('login', oauth_error='The user this link was issued for no longer exists.'))
+
+    # Consume the link (single use) and log the user in.
+    cfg['one_time_links'] = [l for l in links if l.get('hash') != hashed]
+    ghd.write_json("config/auth.json", cfg)
+    _auth_complete_login(user)
+    return redirect(url_for('dashboard'))
+
+
 # ── API Key Management ──────────────────────────────────
 
 @app.route('/api/api-keys', methods=['GET', 'POST'])
@@ -1490,8 +1635,11 @@ def home():
     return render_template('homepage.html')
 
 @app.route('/dashboard')
+@app.route('/dashboard/<path:section>')
 @login_required
-def dashboard():
+def dashboard(section=None):
+    # The dashboard is a client-side app; nested paths are deep links to its
+    # views (for example /dashboard/overview/accounts).
     return render_template('index.html')
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -3139,6 +3287,33 @@ def _get_mod_config():
     return cfg.get("manager_bot", {}).get("moderation", {})
 
 
+def _lookup_mod_user_name(user_id, guild_ids=()):
+    """Resolve a moderation target's Discord username from connected bot caches."""
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return None
+
+    for bot in state.bot_instances:
+        if not getattr(bot, 'is_ready', False):
+            continue
+        for guild_id in guild_ids:
+            try:
+                guild = bot.get_guild(int(guild_id))
+                member = guild.get_member(user_id) if guild else None
+                if member:
+                    return getattr(member, 'name', None) or getattr(member, 'display_name', None)
+            except (TypeError, ValueError):
+                continue
+        try:
+            user = bot.get_user(user_id)
+            if user:
+                return getattr(user, 'name', None) or getattr(user, 'display_name', None)
+        except (TypeError, ValueError):
+            pass
+    return None
+
+
 @app.route('/api/moderation/users')
 @require_permission('manage')
 def api_moderation_users():
@@ -3171,6 +3346,8 @@ def api_moderation_users():
                     users_map[user_key]['last_reason'] = v.get('reason', '')
     
     users_list = list(users_map.values())
+    for user in users_list:
+        user['username'] = _lookup_mod_user_name(user['user_id'], user['guilds'].keys())
     users_list.sort(key=lambda u: u['last_violation'], reverse=True)
     
     return jsonify({'success': True, 'users': users_list, 'total': len(users_list)})
@@ -3437,6 +3614,69 @@ def api_moderation_action():
 
     state.log_command("MOD", f"Dashboard {action} on user {user_id} in guild {guild_id}: {reason}", "warning")
     return jsonify({'success': True, 'message': f'{action.capitalize()} completed successfully.'})
+
+
+@app.route('/api/moderation/dm', methods=['POST'])
+@require_permission('manage')
+def api_moderation_dm():
+    """Send a direct message through a ready bot connected to the target guild."""
+    payload = request.json or {}
+    user_id = str(payload.get('user_id', '')).strip()
+    guild_id = str(payload.get('guild_id', '')).strip()
+    message = payload.get('message', '')
+    if not isinstance(message, str):
+        message = str(message or '')
+    message = message.strip()
+
+    if not user_id or not message:
+        return jsonify({'success': False, 'error': 'User ID and message are required'}), 400
+    if len(message) > 2000:
+        return jsonify({'success': False, 'error': 'Message cannot exceed 2000 characters'}), 400
+    try:
+        int(user_id)
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Invalid user ID format'}), 400
+
+    guild_id_int = None
+    if guild_id:
+        try:
+            guild_id_int = int(guild_id)
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid guild ID format'}), 400
+
+    bot = None
+    for candidate in state.bot_instances:
+        if not getattr(candidate, 'is_ready', False):
+            continue
+        if guild_id_int is None or candidate.get_guild(guild_id_int):
+            bot = candidate
+            break
+    if not bot:
+        return jsonify({'success': False, 'error': 'No ready bot is connected to the target guild'}), 400
+
+    loop = getattr(bot, 'loop_ref', None)
+    if loop is None:
+        return jsonify({'success': False, 'error': 'Bot is still connecting — try again shortly'}), 503
+
+    future = asyncio.run_coroutine_threadsafe(send_user_dm(bot, user_id, message), loop)
+    try:
+        recipient = future.result(timeout=30)
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except discord.Forbidden:
+        return jsonify({'success': False, 'error': "Couldn't send the DM. The user's DMs may be closed or you may be blocked."}), 403
+    except discord.HTTPException:
+        return jsonify({'success': False, 'error': 'Discord rejected the DM. Please try again later.'}), 502
+    except Exception as exc:
+        app.logger.warning("Dashboard DM failed for user %s: %s", user_id, exc)
+        return jsonify({'success': False, 'error': 'Failed to send the DM'}), 500
+
+    moderator = session.get('username', 'Dashboard')
+    if getattr(g, 'api_key_auth', False):
+        moderator = getattr(g, 'api_key_user', 'API')
+    _store_mod_action_data(guild_id or 'dashboard', 'dm', user_id, f'{moderator} (Dashboard)', 'Direct message sent')
+    state.log_command("MOD", f"Dashboard DM sent to user {user_id}", "info")
+    return jsonify({'success': True, 'recipient': str(recipient)})
 
 
 def _save_mod_data(data):

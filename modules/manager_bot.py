@@ -1072,6 +1072,7 @@ class ManagerCommands(commands.Cog):
                 "`/quarantine <user> [reason]` — Strip roles & quarantine a member\n"
                 "`/unquarantine <user> [reason]` — Release from quarantine & restore roles\n"
                 "`/modlog [count]` — View moderation log\n"
+                "`/dm <user> <message>` — Send a direct message (staff only)\n"
             ),
             inline=False,
         )
@@ -1380,6 +1381,7 @@ class ManagerCommands(commands.Cog):
                 "`/quarantine <user> [reason]` — Strip roles & quarantine a member\n"
                 "`/unquarantine <user> [reason]` — Release from quarantine & restore roles\n"
                 "`/modlog [count]` — View moderation log\n"
+                "`/dm <user> <message>` — Send a direct message (staff only)\n"
             ),
             inline=False,
         )

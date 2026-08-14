@@ -192,16 +192,17 @@ Features:
 ## Distributed Workers (Render)
 
 Limey can split selfbot accounts and worker jobs across multiple machines or
-Render Background Workers. The main Render Web Service remains the dashboard
-(control plane); workers make outbound HTTPS requests and do not expose a
-public port.
+Render services. The main Render Web Service remains the dashboard
+(control plane); workers make outbound HTTPS control-plane requests and expose
+only a small health endpoint on Render's assigned port.
 
 ### Link a worker
 
 1. Open **Dashboard → Admin → Workers** and generate an enrollment token.
-2. Create a Render **Background Worker** from this repository.
+2. Create a Render **Web Service** from this repository.
 3. Use `pip install -r requirements.txt` as the build command and
-   `python worker_agent.py` as the start command.
+   `python worker_agent.py` as the start command. Set the health-check path
+   to `/health`.
 4. Add these environment variables to the worker:
 
 ```text
@@ -213,7 +214,8 @@ LIMEY_WORKER_ENROLLMENT_TOKEN=<token from the dashboard>
 The enrollment token is single-use and expires after 15 minutes. The worker
 exchanges it for a revocable credential and stores that credential in its local
 `data/worker.json` file. Revoke workers from the dashboard immediately if a
-worker environment is compromised.
+worker environment is compromised. Render should detect the listener on
+`PORT`; `/health` returns the worker's readiness state.
 
 ### Assign work
 
@@ -223,10 +225,36 @@ authenticated worker over HTTPS. The worker starts, stops, and reconciles its
 assigned selfbots as the dashboard configuration changes. The worker also
 reports CPU, memory, capabilities, and account status through heartbeats.
 
+The worker connection uses authenticated HTTPS long-polling. A worker opens a
+request to the server, and the server holds it until a job, account assignment,
+proxy assignment, or shard configuration changes. This gives near-immediate
+server-to-worker task delivery while the worker's required `/health` endpoint
+satisfies Web Service port checks. The worker reconnects automatically after
+timeouts or connection failures.
+
 The worker protocol includes a generic authenticated job queue for additional
 workloads such as proxy testing. It is intentionally not an arbitrary shell
 executor: new workload types must be implemented as explicit worker handlers.
 
+### Manager Bot gateway shards
+
+The regular Manager Bot supports Discord gateway sharding. To distribute its
+shards across linked workers, open **Tools → Configuration → manager_bot** and
+set:
+
+```json
+{
+  "distributed_shards": true,
+  "shard_count": 0
+}
+```
+
+With `shard_count` set to `0`, the control plane asks Discord for the
+recommended shard count. Set a positive number to pin the count. Workers with
+the `manager_shards` capability automatically receive different shard IDs and
+run them in a separate standard `discord.py` process. Shard 0 performs command
+sync; the other shard processes handle their assigned gateway traffic. The
+main server does not start a duplicate Manager Bot in distributed mode.
 
 Every enabled selfbot account runs a full discord.py-self client in the same
 process, so on memory-constrained hosts (like **Render's 512 MB free tier**)

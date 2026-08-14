@@ -110,6 +110,17 @@ def run_dashboard():
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 
+def _manager_bot_distributed():
+    """Whether the Manager Bot is owned by linked worker shard processes."""
+    if os.environ.get("LIMEY_MANAGER_BOT_DISTRIBUTED") == "1":
+        return True
+    try:
+        cfg = ghd.read_json("config/settings.json", default={}) or {}
+        return bool((cfg.get("manager_bot") or {}).get("distributed_shards", False))
+    except Exception:
+        return False
+
+
 def _start_manager_bot_subprocess():
     """Launch the manager bot as a subprocess (uses standard discord.py)."""
     global _manager_bot_proc
@@ -292,9 +303,11 @@ async def start_limey(switch_servers=False):
     dashboard_thread.start()
 
     # Start the manager bot as a separate subprocess (uses standard discord.py)
-    if _manager_bot_available:
+    if _manager_bot_available and not _manager_bot_distributed():
         console.print("[dim]Starting Manager Bot subprocess...[/dim]")
         _start_manager_bot_subprocess()
+    elif _manager_bot_distributed():
+        console.print("[dim]Manager Bot distributed-shard mode enabled — workers will own its gateway shards.[/dim]")
 
     valid_accounts = [
         a for a in accounts

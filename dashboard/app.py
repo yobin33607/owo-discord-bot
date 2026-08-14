@@ -169,6 +169,17 @@ def _authenticate_request():
                 g.api_key_user = "manager_bot"
                 return True
         return False
+    # A worker with the explicit manager_shards capability may call the
+    # dashboard APIs needed by its Manager Bot shard process. This is separate
+    # from normal API keys and does not grant worker credentials access to
+    # arbitrary dashboard users.
+    worker = worker_manager.authenticate(api_key)
+    if worker and 'manager_shards' in (worker.get('capabilities') or []):
+        g.api_key_auth = True
+        g.api_key_role = 'manage'
+        g.api_key_user = worker.get('name') or worker.get('id') or 'worker'
+        return True
+
     key_info = api_key_manager.validate_key(api_key)
     if key_info:
         g.api_key_auth = True
@@ -2120,6 +2131,7 @@ def settings():
             
             if save_to_all:
                 ghd.write_json("config/settings.json", new_config, message="Update global settings from dashboard")
+                worker_manager.notify_workers()
                 
                 # Update all per-user settings files as well
                 settings_files = ghd.list_files("config")
@@ -2142,6 +2154,8 @@ def settings():
                 
                 old_config = ghd.read_json(config_path, default={})
                 ghd.write_json(config_path, new_config, message=f"Update settings from dashboard")
+                if not account_id:
+                    worker_manager.notify_workers()
                 
                 for bot in state.bot_instances:
                     if (not account_id) or (bot.user and str(bot.user.id) == str(account_id)):
@@ -2173,11 +2187,17 @@ def settings():
             if 'manager_bot' not in data:
                 data['manager_bot'] = {
                     'token': '',
-                    'prefix': '!'
+                    'prefix': '!',
+                    'distributed_shards': False,
+                    'shard_count': 0,
                 }
             mb = data.get('manager_bot', {})
             if not isinstance(mb, dict):
                 mb = data['manager_bot'] = {}
+            if 'distributed_shards' not in mb:
+                mb['distributed_shards'] = False
+            if 'shard_count' not in mb:
+                mb['shard_count'] = 0
             if 'announcements' not in mb:
                 mb['announcements'] = {
                     'channel_id': '',
@@ -2221,6 +2241,8 @@ def settings():
                 'manager_bot': {
                     'token': '',
                     'prefix': '!',
+                    'distributed_shards': False,
+                    'shard_count': 0,
                     'announcements': {
                         'channel_id': '',
                         'auto_post': False,
@@ -2255,6 +2277,75 @@ def _worker_token_from_request():
 def _worker_authenticate():
     token = _worker_token_from_request()
     return worker_manager.authenticate(token) if token else None
+
+
+_MANAGER_SHARD_CACHE = {'expires_at': 0, 'token': None, 'count': 1}
+
+
+def _manager_shard_config():
+    """Return (distributed, shard_count, bot_token) for Manager Bot workers.
+
+    A configured shard_count wins. When it is zero/missing, ask Discord for the
+    recommended count once per five minutes so workers can use the current
+    gateway limit without storing another setting.
+    """
+    cfg = ghd.read_json('config/settings.json', default={}) or {}
+    manager_cfg = cfg.get('manager_bot') or {}
+    if not isinstance(manager_cfg, dict):
+        return False, 1, ''
+    token = str(manager_cfg.get('token') or '').strip()
+    distributed = bool(manager_cfg.get('distributed_shards', False))
+    try:
+        configured_count = int(manager_cfg.get('shard_count') or 0)
+    except (TypeError, ValueError):
+        configured_count = 0
+    if configured_count > 0:
+        return distributed, configured_count, token
+    if not token:
+        return distributed, 1, token
+
+    now = time.time()
+    if (_MANAGER_SHARD_CACHE.get('token') == token
+            and _MANAGER_SHARD_CACHE.get('expires_at', 0) > now):
+        return distributed, _MANAGER_SHARD_CACHE.get('count', 1), token
+    count = 1
+    try:
+        response = requests.get(
+            'https://discord.com/api/v10/gateway/bot',
+            headers={'Authorization': f'Bot {token}'},
+            timeout=8,
+        )
+        if response.ok:
+            count = max(1, int(response.json().get('shards') or 1))
+    except (TypeError, ValueError, requests.RequestException):
+        pass
+    _MANAGER_SHARD_CACHE.update({'token': token, 'count': count, 'expires_at': now + 300})
+    return distributed, count, token
+
+
+def _worker_manager_shard_assignment(worker_id):
+    """Return the Manager Bot shard slice for one eligible worker."""
+    distributed, shard_count, token = _manager_shard_config()
+    if not distributed or not token:
+        return None
+    eligible = [
+        worker for worker in worker_manager.list_workers()
+        if worker.get('online') and not worker.get('revoked')
+        and 'manager_shards' in (worker.get('capabilities') or [])
+    ]
+    eligible.sort(key=lambda worker: str(worker.get('id') or ''))
+    if not eligible or not any(str(worker.get('id')) == str(worker_id) for worker in eligible):
+        return None
+    position = next(i for i, worker in enumerate(eligible)
+                    if str(worker.get('id')) == str(worker_id))
+    shard_ids = list(range(position, shard_count, len(eligible)))
+    if not shard_ids:
+        return None
+    return {
+        'token': token,
+        'shard_count': shard_count,
+        'shard_ids': shard_ids,
+    }
 
 
 def _worker_account_assignments(worker_id):
@@ -2349,6 +2440,33 @@ def worker_enroll():
 
 @app.route('/api/worker/poll', methods=['GET'])
 def worker_poll():
+    """Long-poll the control plane for work or assignment changes.
+
+    Workers still initiate this outbound HTTPS request, which works for Render
+    Background Workers. The server holds it briefly and returns as soon as a
+    queued job/config change wakes the control plane, approximating a server
+    ping without requiring an inbound worker port.
+    """
+    worker = _worker_authenticate()
+    if not worker:
+        return jsonify({'success': False, 'error': 'Invalid worker token'}), 401
+
+    try:
+        wait_seconds = min(20.0, max(0.0, float(request.args.get('wait', 0))))
+    except (TypeError, ValueError):
+        wait_seconds = 0.0
+    client_version = request.headers.get('X-Worker-Wake')
+    current_version = worker_manager.wake_version()
+    if client_version is not None:
+        try:
+            client_version = int(client_version)
+        except ValueError:
+            client_version = None
+    if wait_seconds and client_version == current_version:
+        worker_manager.wait_for_wake(current_version, wait_seconds)
+
+    # Re-check after the wait so revocation takes effect before any task is
+    # returned, even if it happened while this request was held open.
     worker = _worker_authenticate()
     if not worker:
         return jsonify({'success': False, 'error': 'Invalid worker token'}), 401
@@ -2358,7 +2476,9 @@ def worker_poll():
     return jsonify({
         'success': True,
         'assignments': _worker_account_assignments(worker['id']),
+        'manager_shards': _worker_manager_shard_assignment(worker['id']),
         'job': job,
+        'wake_version': worker_manager.wake_version(),
         'server_time': time.time(),
     })
 
@@ -2464,6 +2584,7 @@ def accounts_config_api():
         accounts = payload.get('accounts', payload if isinstance(payload, list) else [])
         try:
             ghd.write_json("config/accounts.json", {"accounts": accounts}, message="Update accounts from dashboard")
+            worker_manager.notify_workers()
             from utils import proxy_manager
             proxy_manager.sync_proxy_assignments()
             for bot in state.bot_instances:
@@ -2496,6 +2617,7 @@ def accounts_api():
         new_accounts = request.json
         try:
             ghd.write_json("config/accounts.json", new_accounts, message="Update accounts from dashboard")
+            worker_manager.notify_workers()
 
             for bot in state.bot_instances:
                 bot.accounts = new_accounts.get('accounts', new_accounts) if isinstance(new_accounts, dict) else new_accounts
@@ -2526,6 +2648,7 @@ def proxies_api():
         proxies = payload.get('proxies', [])
         proxy_manager.save_proxies(proxies)
         proxy_manager.sync_proxy_assignments()
+        worker_manager.notify_workers()
         state.log_command("SYS", "Proxy pool saved", "success")
         _log_config_change("Proxy pool saved", f"{len(proxies)} proxy/proxies")
         return jsonify({"status": "success", "proxies": proxy_manager.load_proxies()})
@@ -2538,6 +2661,7 @@ def proxies_bulk():
     from utils import proxy_manager
     text = (request.json or {}).get('text', '')
     result = proxy_manager.bulk_import(text)
+    worker_manager.notify_workers()
     state.log_command("SYS", f"Bulk imported {len(result['added'])} proxies", "success")
     _log_config_change("Bulk imported proxies", f"{len(result['added'])} added, {len(result['errors'])} error(s)")
     return jsonify({
@@ -2597,6 +2721,7 @@ def proxies_test():
 def proxies_assign():
     from utils import proxy_manager
     assigned = proxy_manager.auto_assign()
+    worker_manager.notify_workers()
     state.log_command("SYS", f"Auto-assigned {len(assigned)} proxies to accounts", "success")
     _log_config_change("Proxy assignments updated", f"{len(assigned)} assignment(s)")
     return jsonify({"status": "success", "assigned": assigned, "proxies": proxy_manager.load_proxies()})
@@ -2607,6 +2732,7 @@ def proxies_assign():
 def proxies_delete(proxy_id):
     from utils import proxy_manager
     proxy_manager.remove_proxy(proxy_id)
+    worker_manager.notify_workers()
     state.log_command("SYS", f"Removed proxy {proxy_id}", "info")
     _log_config_change("Removed proxy", proxy_id)
     return jsonify({"status": "success", "proxies": proxy_manager.load_proxies()})
@@ -2617,6 +2743,7 @@ def proxies_delete(proxy_id):
 def proxies_delete_all():
     from utils import proxy_manager
     proxy_manager.remove_all_proxies()
+    worker_manager.notify_workers()
     state.log_command("SYS", "Deleted ALL proxies", "info")
     _log_config_change("Deleted ALL proxies")
     return jsonify({"status": "success", "proxies": []})
@@ -2627,6 +2754,7 @@ def proxies_delete_all():
 def proxies_delete_failed():
     from utils import proxy_manager
     count = proxy_manager.remove_failed_proxies()
+    worker_manager.notify_workers()
     state.log_command("SYS", f"Deleted {count} failed proxies", "info")
     _log_config_change("Deleted failed proxies", f"{count} removed")
     return jsonify({"status": "success", "count": count, "proxies": proxy_manager.load_proxies()})

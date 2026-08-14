@@ -18,10 +18,36 @@ HEARTBEAT_TTL = 45
 _JOB_REQUEUE_TTL = 120
 
 _lock = threading.RLock()
+_wake_condition = threading.Condition(_lock)
+_wake_version = 0
 _loaded = False
 _data = {"workers": [], "enrollment_tokens": []}
 _jobs = deque()
 _job_history = deque(maxlen=200)
+
+
+def notify_workers() -> int:
+    """Wake long-polling workers after a server-side state change."""
+    global _wake_version
+    with _wake_condition:
+        _wake_version += 1
+        _wake_condition.notify_all()
+        return _wake_version
+
+
+def wake_version() -> int:
+    with _lock:
+        return _wake_version
+
+
+def wait_for_wake(version: int, timeout: float) -> bool:
+    """Wait until the worker state changes or the long-poll timeout expires."""
+    timeout = max(0.0, min(float(timeout), 25.0))
+    with _wake_condition:
+        if _wake_version != version:
+            return True
+        _wake_condition.wait_for(lambda: _wake_version != version, timeout=timeout)
+        return _wake_version != version
 
 
 def _hash(value: str) -> str:
@@ -85,6 +111,7 @@ def create_enrollment(label: str = "") -> dict:
         }
         _data["enrollment_tokens"].append(entry)
         _save_locked()
+        notify_workers()
         return {
             "token": raw,
             "label": entry["label"],
@@ -119,6 +146,7 @@ def enroll(raw_token: str, name: str, capabilities=None, resources=None) -> dict
         _data["workers"].append(worker)
         _data["enrollment_tokens"] = [x for x in _data["enrollment_tokens"] if x is not entry]
         _save_locked()
+        notify_workers()
         return {"worker_id": worker_id, "worker_token": worker_raw, "name": worker["name"]}
 
 
@@ -164,6 +192,7 @@ def revoke(worker_id: str) -> bool:
             return False
         worker["revoked"] = True
         _save_locked()
+        notify_workers()
         return True
 
 
@@ -181,6 +210,7 @@ def enqueue(kind: str, payload: dict, target_worker: str | None = None) -> dict:
             "result": None,
         }
         _jobs.append(job)
+        notify_workers()
         return {k: v for k, v in job.items() if k != "result"}
 
 

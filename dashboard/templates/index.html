@@ -853,12 +853,13 @@
                 <div class="mod-header">
                     <h2 style="font-size:1.2rem; color:var(--primary); margin:0;"><span class="icon-svg"
                             style="--icon: url('/static/assets/limey_icons/layers.svg');"></span> Distributed Workers</h2>
-                    <p class="accounts-page-hint">Link Render Background Workers to split selfbot accounts and worker jobs across more CPU and memory.</p>
+                    <p class="accounts-page-hint">Link Render Web Services to split selfbot accounts and worker jobs across more CPU and memory.</p>
                 </div>
                 <div class="module-card" style="margin-bottom:16px;">
                     <div style="padding:18px;">
                         <h3 style="color:var(--primary);margin:0 0 8px;">Link a worker</h3>
-                        <p style="color:#aaa;font-size:0.82rem;margin:0 0 12px;">Create a one-time enrollment token, then set it as <code>LIMEY_WORKER_ENROLLMENT_TOKEN</code> on a Render Background Worker running <code>python worker_agent.py</code>.</p>
+                        <p style="color:#aaa;font-size:0.82rem;margin:0 0 12px;">Create a one-time enrollment token, then set it as <code>LIMEY_WORKER_ENROLLMENT_TOKEN</code> on a Render Web Service running <code>python worker_agent.py</code>. Set its health-check path to <code>/health</code>.</p>
+                        <p style="color:#aaa;font-size:0.82rem;margin:0 0 12px;"><strong style="color:var(--primary);">Manager Bot shards:</strong> enable <code>manager_bot.distributed_shards</code> in Tools → Configuration. Leave <code>manager_bot.shard_count</code> at <code>0</code> to use Discord's recommended count, or set it explicitly. Linked workers then receive separate gateway shard IDs automatically.</p>
                         <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;">
                             <div style="flex:1;min-width:220px;">
                                 <label class="form-label" for="worker-link-label">Worker label</label>

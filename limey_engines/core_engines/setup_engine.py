@@ -202,7 +202,9 @@ class LimeySetupEngine:
                 "gambling": {"bet_strategy": "flat", "max_bet": 100000},
                 "manager_bot": {
                     "token": "",
-                    "prefix": "!"
+                    "prefix": "!",
+                    "distributed_shards": False,
+                    "shard_count": 0
                 },
                 # Memory safety on constrained hosts (e.g. Render's 512 MB):
                 # accounts are only started while they fit inside this budget,

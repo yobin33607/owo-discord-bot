@@ -49,7 +49,14 @@ from utils.github_data_store import ghd
 from modules.staff_gate import StaffRoleRequired
 
 def _dashboard_url():
-    """The dashboard URL — same port logic as limey.py's run_dashboard()."""
+    """Return the dashboard URL used by this Manager Bot process.
+
+    Worker-hosted shard processes must call the public control plane; the
+    original subprocess on the main server can continue using localhost.
+    """
+    configured = os.environ.get("LIMEY_MANAGER_DASHBOARD_URL") or os.environ.get("LIMEY_SERVER_URL")
+    if configured:
+        return configured.rstrip("/")
     try:
         port = int(os.environ.get("PORT", "8000"))
     except (TypeError, ValueError):
@@ -66,6 +73,9 @@ DEFAULT_APPEAL_GUILD_ID = 1514802189606977736
 _HEADERS = {"Content-Type": "application/json"}
 if INTERNAL_KEY:
     _HEADERS["X-Internal-Key"] = INTERNAL_KEY
+_worker_token = os.environ.get("LIMEY_WORKER_TOKEN", "").strip()
+if _worker_token:
+    _HEADERS["Authorization"] = f"Bearer {_worker_token}"
 
 
 def _load_appeals():
@@ -165,10 +175,10 @@ def load_manager_config():
 # ── Bot Class ──────────────────────────────────────────
 
 
-class ManagerBot(commands.Bot):
-    def __init__(self):
+class ManagerBot(commands.AutoShardedBot):
+    def __init__(self, token_override=None, shard_count=None, shard_ids=None):
         cfg = load_manager_config()
-        token = cfg.get("token", "")
+        token = token_override or cfg.get("token", "")
         prefix = cfg.get("prefix", "!")
         auto_sync = cfg.get("auto_sync", True)
         sync_guilds = cfg.get("sync_guilds", [])
@@ -184,7 +194,13 @@ class ManagerBot(commands.Bot):
         if hasattr(intents, 'moderation'):
             intents.moderation = True
 
-        super().__init__(command_prefix=prefix, intents=intents, help_command=None)
+        shard_kwargs = {}
+        if shard_count is not None:
+            shard_kwargs["shard_count"] = int(shard_count)
+        if shard_ids is not None:
+            shard_kwargs["shard_ids"] = [int(shard_id) for shard_id in shard_ids]
+        super().__init__(command_prefix=prefix, intents=intents, help_command=None, **shard_kwargs)
+        self.manager_shard_ids = list(shard_ids) if shard_ids is not None else None
 
     async def setup_hook(self):
         # Route unhandled slash errors (tickets/verification/manager commands)
@@ -245,7 +261,11 @@ class ManagerBot(commands.Bot):
         print(f"[Manager Bot]   Prefix: {self.command_prefix}")
 
         # ── Auto-sync slash commands on startup ────────
-        if self.auto_sync:
+        # Only the process owning shard 0 performs global/guild command sync;
+        # every shard process still loads the commands and handles events.
+        assigned_shards = getattr(self, "manager_shard_ids", None)
+        is_primary_shard_process = not assigned_shards or 0 in assigned_shards
+        if self.auto_sync and is_primary_shard_process:
             await self._sync_all_commands()
 
         print(f"[Manager Bot]   Ready! Responds in any channel.\n")
@@ -2202,15 +2222,34 @@ class AutoRole(commands.Cog):
 
 
 def create_manager_bot():
-    """Create and return a ManagerBot instance, or None if not configured."""
+    """Create a ManagerBot, optionally restricted to worker-owned shards."""
     cfg = load_manager_config()
-    token = cfg.get("token", "")
+    token = os.environ.get("LIMEY_MANAGER_BOT_TOKEN", "").strip() or cfg.get("token", "")
 
     if not token:
         _log.info("Manager Bot not configured — skipping")
         return None
 
-    return ManagerBot()
+    shard_count = os.environ.get("LIMEY_MANAGER_SHARD_COUNT")
+    shard_ids_raw = os.environ.get("LIMEY_MANAGER_SHARD_IDS")
+    shard_ids = None
+    if shard_ids_raw is not None:
+        try:
+            shard_ids = [int(value) for value in shard_ids_raw.split(",") if value.strip()]
+        except ValueError:
+            _log.error("Invalid LIMEY_MANAGER_SHARD_IDS=%r", shard_ids_raw)
+            return None
+    try:
+        shard_count = int(shard_count) if shard_count else None
+    except ValueError:
+        _log.error("Invalid LIMEY_MANAGER_SHARD_COUNT=%r", shard_count)
+        return None
+
+    return ManagerBot(
+        token_override=token,
+        shard_count=shard_count,
+        shard_ids=shard_ids,
+    )
 
 
 async def run_manager_bot():

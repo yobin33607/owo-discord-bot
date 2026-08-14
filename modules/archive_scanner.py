@@ -18,7 +18,7 @@ Flow:
   9. GET  /api/archive/download-json / -html -> serve index.json / readable HTML
 
 Finished archives are stored in the GitHub data repo under ``archives/``
-(yobin33607/data). The local data/archives/ folder is used only as a build
+(limeyself/data). The local data/archives/ folder is used only as a build
 space and as a fallback when a push fails or the repo is unreachable.
 """
 
@@ -355,7 +355,7 @@ def _raw_github_url(path):
     except ImportError:
         quote = lambda s: s
     store = _ghd()
-    repo = getattr(store, "repo", "yobin33607/data")
+    repo = getattr(store, "repo", "limeyself/data")
     branch = getattr(store, "branch", "main")
     return f"https://raw.githubusercontent.com/{repo}/{branch}/{quote(path)}"
 
@@ -368,7 +368,7 @@ def fetch_github_file(path):
     """
     store = _ghd()
     try:
-        api_base = getattr(store, "api_base", None) or f"https://api.github.com/repos/{getattr(store, 'repo', 'yobin33607/data')}/contents"
+        api_base = getattr(store, "api_base", None) or f"https://api.github.com/repos/{getattr(store, 'repo', 'limeyself/data')}/contents"
         headers = dict(getattr(store, "headers", {}) or {})
         headers["Accept"] = "application/vnd.github.v3.raw"
         request = getattr(store, "request", None)

@@ -96,13 +96,13 @@ The dashboard's **Archives** page lets you capture and manage chat history from 
 ### Windows
 
 ```bash
-curl -o "%TEMP%\install_limey.bat" https://raw.githubusercontent.com/yobin33607/owo-discord-bot/main/install_limey.bat && "%TEMP%\install_limey.bat"
+curl -o "%TEMP%\install_limey.bat" https://raw.githubusercontent.com/limeyself/owo-discord-bot/main/install_limey.bat && "%TEMP%\install_limey.bat"
 ```
 
 ### Termux / Linux / MacOS
 
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/yobin33607/owo-discord-bot/main/install_limey.sh)
+bash <(curl -s https://raw.githubusercontent.com/limeyself/owo-discord-bot/main/install_limey.sh)
 ```
 
 ---

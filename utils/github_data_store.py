@@ -2,7 +2,7 @@
 Limey GitHub Data Store
 =======================
 Centralized module that stores all bot configuration and data
-in the GitHub repo yobin33607/data instead of local files.
+in the GitHub repo limeyself/data instead of local files.
 
 The GitHub access token is encrypted at rest and decrypted at
 runtime using a Fernet key. The key must be provided via the
@@ -126,7 +126,7 @@ _load_env()
 
 
 GITHUB_TOKEN = _resolve_token()
-GITHUB_REPO = "yobin33607/data"
+GITHUB_REPO = "limeyself/data"
 GITHUB_BRANCH = "main"
 API_BASE = f"https://api.github.com/repos/{GITHUB_REPO}/contents"
 

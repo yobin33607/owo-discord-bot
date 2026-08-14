@@ -11,7 +11,7 @@
 
 """
 Author: Limey
-Limey - https://github.com/yobin33607/owo-discord-bot
+Limey - https://github.com/limeyself/owo-discord-bot
 """
 
 

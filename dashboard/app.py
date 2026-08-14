@@ -43,6 +43,7 @@ import re
 
 from utils.github_data_store import ghd
 from utils import guild_scanner
+from utils import workers as worker_manager
 from utils.discord_messaging import send_user_dm
 
 import discord
@@ -2244,6 +2245,161 @@ def _scan_proxy(proxy_id):
     return proxy_manager.build_proxy_url(proxy), proxy_manager.get_proxy_auth(proxy)
 
 
+def _worker_token_from_request():
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        return auth[7:].strip()
+    return request.headers.get('X-Worker-Token', '').strip()
+
+
+def _worker_authenticate():
+    token = _worker_token_from_request()
+    return worker_manager.authenticate(token) if token else None
+
+
+def _worker_account_assignments(worker_id):
+    """Build private account assignments for one authenticated worker.
+
+    Account tokens and proxy credentials are never returned by dashboard-facing
+    endpoints; they are only sent over an authenticated worker connection.
+    """
+    from utils import proxy_manager
+
+    account_data = ghd.read_json('config/accounts.json', default={'accounts': []}) or {}
+    accounts = account_data.get('accounts', []) if isinstance(account_data, dict) else []
+    assignments = []
+    for index, account in enumerate(accounts):
+        if not isinstance(account, dict) or str(account.get('worker_id') or '') != str(worker_id):
+            continue
+        if account.get('enabled', True) is False or not account.get('token'):
+            continue
+        assignment = {
+            'id': str(account.get('id') or account.get('name') or f'account_{index}'),
+            'name': account.get('name') or f'Account {index + 1}',
+            'token': account.get('token'),
+            'channels': list(account.get('channels') or []),
+            'guild_id': account.get('guild_id'),
+            'guild_name': account.get('guild_name'),
+            'proxy_id': account.get('proxy_id'),
+        }
+        proxy = proxy_manager.get_proxy_by_id(account.get('proxy_id'))
+        if proxy:
+            assignment['proxy'] = {
+                'url': proxy_manager.build_proxy_url(proxy),
+                'username': proxy.get('username') or '',
+                'password': proxy.get('password') or '',
+                'label': proxy.get('label') or proxy.get('id'),
+            }
+        assignments.append(assignment)
+    return assignments
+
+
+# ── Distributed Workers ────────────────────────────────
+
+@app.route('/api/workers', methods=['GET', 'POST'])
+@require_permission('manage')
+def workers_api():
+    """List workers or create a one-time worker enrollment token."""
+    if request.method == 'POST':
+        label = ((request.json or {}).get('label') or 'Worker').strip()[:80]
+        return jsonify({'success': True, 'enrollment': worker_manager.create_enrollment(label)})
+    return jsonify({'success': True, 'workers': worker_manager.list_workers(), 'jobs': worker_manager.recent_jobs()})
+
+
+@app.route('/api/workers/<worker_id>', methods=['DELETE'])
+@require_permission('manage')
+def revoke_worker(worker_id):
+    if not worker_manager.revoke(worker_id):
+        return jsonify({'success': False, 'error': 'Worker not found'}), 404
+    _log_config_change('Worker revoked', worker_id)
+    return jsonify({'success': True})
+
+
+@app.route('/api/workers/jobs', methods=['POST'])
+@require_permission('manage')
+def create_worker_job():
+    data = request.json or {}
+    kind = (data.get('kind') or 'generic').strip()
+    payload = data.get('payload') if isinstance(data.get('payload'), dict) else {}
+    target = (data.get('target_worker') or '').strip() or None
+    if kind == 'proxy_test' and payload.get('proxy_id'):
+        from utils import proxy_manager
+        proxy = proxy_manager.get_proxy_by_id(payload['proxy_id'])
+        if not proxy:
+            return jsonify({'success': False, 'error': 'Proxy not found or disabled'}), 404
+        payload = {'proxy': proxy}
+    if target and not any(w.get('id') == target and not w.get('revoked') for w in worker_manager.list_workers()):
+        return jsonify({'success': False, 'error': 'Target worker not found or revoked'}), 404
+    return jsonify({'success': True, 'job': worker_manager.enqueue(kind, payload, target)})
+
+
+@app.route('/api/worker/enroll', methods=['POST'])
+def worker_enroll():
+    data = request.json or {}
+    result = worker_manager.enroll(
+        data.get('enrollment_token', ''),
+        data.get('name', ''),
+        data.get('capabilities'),
+        data.get('resources'),
+    )
+    if not result:
+        return jsonify({'success': False, 'error': 'Enrollment token is invalid or expired'}), 401
+    return jsonify({'success': True, **result})
+
+
+@app.route('/api/worker/poll', methods=['GET'])
+def worker_poll():
+    worker = _worker_authenticate()
+    if not worker:
+        return jsonify({'success': False, 'error': 'Invalid worker token'}), 401
+    token = _worker_token_from_request()
+    worker_manager.heartbeat(token, {})
+    job = worker_manager.claim(worker['id'], worker.get('capabilities'))
+    return jsonify({
+        'success': True,
+        'assignments': _worker_account_assignments(worker['id']),
+        'job': job,
+        'server_time': time.time(),
+    })
+
+
+@app.route('/api/worker/heartbeat', methods=['POST'])
+def worker_heartbeat():
+    token = _worker_token_from_request()
+    updated = worker_manager.heartbeat(token, request.json or {})
+    if not updated:
+        return jsonify({'success': False, 'error': 'Invalid worker token'}), 401
+    return jsonify({'success': True, 'worker': updated})
+
+
+@app.route('/api/worker/jobs/<job_id>/result', methods=['POST'])
+def worker_job_result(job_id):
+    worker = _worker_authenticate()
+    if not worker:
+        return jsonify({'success': False, 'error': 'Invalid worker token'}), 401
+    data = request.json or {}
+    completed = worker_manager.complete(
+        worker['id'], job_id, bool(data.get('success')),
+        data.get('result'), data.get('error', ''),
+    )
+    if not completed:
+        return jsonify({'success': False, 'error': 'Job not found or not assigned to this worker'}), 404
+
+    if completed.get('kind') == 'proxy_test' and data.get('success'):
+        proxy_result = (data.get('result') or {}).get('proxy') if isinstance(data.get('result'), dict) else None
+        if isinstance(proxy_result, dict) and proxy_result.get('id'):
+            from utils import proxy_manager
+            proxies = proxy_manager.load_proxies()
+            for proxy in proxies:
+                if proxy.get('id') == proxy_result.get('id'):
+                    for key in ('status', 'last_check', 'last_attempts'):
+                        if key in proxy_result:
+                            proxy[key] = proxy_result[key]
+                    break
+            proxy_manager.save_proxies(proxies)
+    return jsonify({'success': True})
+
+
 @app.route('/api/accounts/scan-guilds', methods=['POST'])
 @require_permission('manage')
 def accounts_scan_guilds():
@@ -2398,6 +2554,18 @@ def proxies_test():
     from utils import proxy_manager
     payload = request.json or {}
     proxy_id = payload.get('id')
+    target_worker = (payload.get('worker_id') or '').strip()
+
+    if target_worker:
+        if not proxy_id:
+            return jsonify({'status': 'error', 'error': 'Select a proxy when testing on a worker'}), 400
+        if not any(w.get('id') == target_worker and w.get('online') and not w.get('revoked') for w in worker_manager.list_workers()):
+            return jsonify({'status': 'error', 'error': 'Worker is offline or unavailable'}), 400
+        proxy = proxy_manager.get_proxy_by_id(proxy_id)
+        if not proxy:
+            return jsonify({'status': 'error', 'error': 'Proxy not found'}), 404
+        job = worker_manager.enqueue('proxy_test', {'proxy': proxy}, target_worker)
+        return jsonify({'status': 'success', 'queued': True, 'ok': True, 'id': proxy_id, 'job_id': job['id'], 'worker_id': target_worker})
 
     async def _run():
         if proxy_id:

@@ -50,7 +50,7 @@ except ImportError:
 console = Console()
 SETUP_LOG = os.path.join(state.DATA_DIR, "setup.log")
 DEFAULT_PASSWORD = "limey_default_password_change_me"
-REQUIRED_VERSION_SUFFIX = "+g2ba64a9"
+REQUIRED_VERSION_MARKER = "g2ba64a9"
 
 class LimeySetupEngine:
     def __init__(self):
@@ -257,7 +257,10 @@ class LimeySetupEngine:
     def _discord_self_ok(self):
         try:
             ver = version("discord.py-self")
-            return ver.endswith(REQUIRED_VERSION_SUFFIX)
+            # Setuptools may include a different number of commit characters
+            # in the local version (for example +g2ba64a9a). Match the pinned
+            # commit marker instead of requiring an exact suffix length.
+            return REQUIRED_VERSION_MARKER in ver
         except PackageNotFoundError:
             return False
 

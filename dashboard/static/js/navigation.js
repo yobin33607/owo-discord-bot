@@ -29,6 +29,7 @@ const DASHBOARD_VIEW_PATHS = {
     'security': 'security',
     'admin-users': 'admin/login-users',
     'api-keys': 'admin/api-keys',
+    'workers': 'admin/workers',
     'appeals': 'admin/appeals',
     'moderation': 'admin/moderation',
     'tickets': 'admin/tickets',
@@ -111,6 +112,9 @@ window.nav = function(id, el, options = {}) {
     }
     if (id === 'admin-users') {
         if (typeof fetchUsers === 'function') fetchUsers();
+    }
+    if (id === 'workers' && typeof window.loadWorkers === 'function') {
+        window.loadWorkers();
     }
     if (id === 'extension' && typeof window.loadExtensionInfo === 'function') {
         window.loadExtensionInfo();

@@ -189,7 +189,44 @@ Features:
 
 ---
 
-## Memory Management (`resource_limits`)
+## Distributed Workers (Render)
+
+Limey can split selfbot accounts and worker jobs across multiple machines or
+Render Background Workers. The main Render Web Service remains the dashboard
+(control plane); workers make outbound HTTPS requests and do not expose a
+public port.
+
+### Link a worker
+
+1. Open **Dashboard → Admin → Workers** and generate an enrollment token.
+2. Create a Render **Background Worker** from this repository.
+3. Use `pip install -r requirements.txt` as the build command and
+   `python worker_agent.py` as the start command.
+4. Add these environment variables to the worker:
+
+```text
+LIMEY_SERVER_URL=https://limeyself.onrender.com
+LIMEY_WORKER_NAME=render-worker-1
+LIMEY_WORKER_ENROLLMENT_TOKEN=<token from the dashboard>
+```
+
+The enrollment token is single-use and expires after 15 minutes. The worker
+exchanges it for a revocable credential and stores that credential in its local
+`data/worker.json` file. Revoke workers from the dashboard immediately if a
+worker environment is compromised.
+
+### Assign work
+
+Open **Dashboard → Accounts → Edit**, choose a linked worker, and save. The
+server then sends that account's token and proxy assignment only to the
+authenticated worker over HTTPS. The worker starts, stops, and reconciles its
+assigned selfbots as the dashboard configuration changes. The worker also
+reports CPU, memory, capabilities, and account status through heartbeats.
+
+The worker protocol includes a generic authenticated job queue for additional
+workloads such as proxy testing. It is intentionally not an arbitrary shell
+executor: new workload types must be implemented as explicit worker handlers.
+
 
 Every enabled selfbot account runs a full discord.py-self client in the same
 process, so on memory-constrained hosts (like **Render's 512 MB free tier**)

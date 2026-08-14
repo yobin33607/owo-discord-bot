@@ -25,6 +25,7 @@ window.fetchProxies = async function() {
         renderProxyStats();
         renderProxyTable();
         populateAccountProxyDropdown();
+        if (typeof window.populateWorkerSelectors === 'function') window.populateWorkerSelectors();
     } catch (e) {
         console.error('Failed to fetch proxies', e);
         _proxyRowCache.clear();
@@ -255,14 +256,16 @@ function markProxyFail(p) {
 
 // Test a single proxy via the API (used by the pool and the row button)
 async function testProxyRequest(p, persist) {
+    const workerSelect = document.getElementById('proxy-test-worker');
+    const worker_id = workerSelect ? workerSelect.value : '';
     const res = await fetch('/api/proxies/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: p.id, persist: persist }),
+        body: JSON.stringify({ id: p.id, persist: persist, worker_id }),
     });
     const data = await res.json();
-    if (res.ok && data.ok) return { ok: true, data };
-    return { ok: false, data };
+    if (res.ok && data.ok) return { ok: true, queued: !!data.queued, data };
+    return { ok: false, queued: false, data };
 }
 
 // Test many proxies in PARALLEL, up to PROXY_TEST_CONCURRENCY at a time.
@@ -305,6 +308,7 @@ async function testProxiesParallel(filter, limit) {
 
     proxyTestStopRequested = false;
     let okCount = 0;
+    let queuedCount = 0;
     let completedCount = 0;
     let stopped = false;
     showProgress(true);
@@ -332,10 +336,13 @@ async function testProxiesParallel(filter, limit) {
                 const p = targets[i];
                 setProgress(`Testing ${p.host}:${p.port}...`, completedCount / targets.length);
                 try {
-                    const { ok, data } = await testProxyRequest(p, false);
-                    if (ok) okCount++;
-                    applyProxyTestResult(data);
-                    if (!ok) markProxyFail(p);
+                    const { ok, queued, data } = await testProxyRequest(p, false);
+                    if (ok && queued) queuedCount++;
+                    else if (ok) okCount++;
+                    if (!queued) {
+                        applyProxyTestResult(data);
+                        if (!ok) markProxyFail(p);
+                    }
                 } catch (e) {
                     markProxyFail(p);
                 }
@@ -352,7 +359,7 @@ async function testProxiesParallel(filter, limit) {
 
         // Persist the results collected so far in a single write
         // (avoids one GitHub commit per proxy; skipped if nothing was tested)
-        if (completedCount > 0) {
+        if (completedCount > 0 && queuedCount === 0) {
             try {
                 const persistRes = await fetch('/api/proxies', {
                     method: 'POST',
@@ -380,7 +387,8 @@ async function testProxiesParallel(filter, limit) {
         const scope = (limit && limit > 0 && targets.length < matches.length)
             ? ` (first ${targets.length} of ${matches.length})`
             : '';
-        showToast(`Test complete: ${okCount}/${targets.length} OK${scope}`, okCount === targets.length ? 'success' : 'info');
+        const queuedText = queuedCount ? `, ${queuedCount} queued on worker` : '';
+        showToast(`Test complete: ${okCount}/${targets.length} OK${queuedText}${scope}`, queuedCount || okCount === targets.length ? 'success' : 'info');
     }
 }
 
@@ -450,7 +458,11 @@ window.testProxy = async function(id) {
     try {
         const p = proxyList.find(x => x.id === id);
         if (!p) return;
-        const { ok, data } = await testProxyRequest(p, true);
+        const { ok, queued, data } = await testProxyRequest(p, true);
+        if (queued) {
+            showToast('Proxy test queued on worker', 'info');
+            return;
+        }
         applyProxyTestResult(data);
         renderProxyStats();
         updateProxyRow(proxyList.find(x => x.id === id));

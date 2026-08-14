@@ -161,6 +161,8 @@
                                 style="--icon: url('/static/assets/limey_icons/users.svg');"></span> Login Users</a>
                         <a class="nav-item" id="apiKeysNav" onclick="nav('api-keys', this)" data-i18n="nav.api_keys" style="display:none;"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/key.svg');"></span> API Keys</a>
+                        <a class="nav-item" id="workersNav" onclick="nav('workers', this)" style="display:none;"><span class="icon-svg"
+                                style="--icon: url('/static/assets/limey_icons/layers.svg');"></span> Workers</a>
                         <a class="nav-item" id="appealsNav" onclick="nav('appeals', this)" data-i18n="nav.appeals" style="display:none;"><span class="icon-svg"
                                 style="--icon: url('/static/assets/limey_icons/check-to-slot.svg');"></span> Appeals</a>
                         <a class="nav-item" id="moderationNav" onclick="nav('moderation', this)" data-i18n="nav.moderation" style="display:none;"><span class="icon-svg"
@@ -237,6 +239,10 @@
                         <select id="acct-form-proxy" class="cfg-input">
                             <option value="">None (direct)</option>
                         </select>
+                        <label class="form-label">Worker (optional)</label>
+                        <select id="acct-form-worker" class="cfg-input">
+                            <option value="">Run on main server</option>
+                        </select>
                         <label class="form-label"><input type="checkbox" id="acct-form-enabled" checked> Enabled</label>
                         <div class="proxy-modal-actions">
                             <button class="btn-control" onclick="hideAccountForm()">Cancel</button>
@@ -261,6 +267,9 @@
                     <button class="btn-control green" onclick="showAddProxyModal()"><span class="icon-svg"
                             style="--icon: url('/static/assets/limey_icons/plus.svg');"></span> <span
                             class="btn-text">Add Proxy</span></button>
+                    <select id="proxy-test-worker" class="cfg-input" title="Run proxy tests on this worker" style="max-width:190px;">
+                        <option value="">Test on main server</option>
+                    </select>
                     <button class="btn-control" id="testAllProxiesBtn" onclick="testAllProxies()"><span class="icon-svg"
                             style="--icon: url('/static/assets/limey_icons/rotate.svg');"></span> <span
                             class="btn-text">Test All</span></button>
@@ -836,6 +845,32 @@
                     <div class="proxy-modal-inner mod-modal-inner">
                         <div id="mod-user-detail-content"></div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Distributed Workers Tab -->
+            <div id="workers" class="view">
+                <div class="mod-header">
+                    <h2 style="font-size:1.2rem; color:var(--primary); margin:0;"><span class="icon-svg"
+                            style="--icon: url('/static/assets/limey_icons/layers.svg');"></span> Distributed Workers</h2>
+                    <p class="accounts-page-hint">Link Render Background Workers to split selfbot accounts and worker jobs across more CPU and memory.</p>
+                </div>
+                <div class="module-card" style="margin-bottom:16px;">
+                    <div style="padding:18px;">
+                        <h3 style="color:var(--primary);margin:0 0 8px;">Link a worker</h3>
+                        <p style="color:#aaa;font-size:0.82rem;margin:0 0 12px;">Create a one-time enrollment token, then set it as <code>LIMEY_WORKER_ENROLLMENT_TOKEN</code> on a Render Background Worker running <code>python worker_agent.py</code>.</p>
+                        <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;">
+                            <div style="flex:1;min-width:220px;">
+                                <label class="form-label" for="worker-link-label">Worker label</label>
+                                <input id="worker-link-label" class="cfg-input" placeholder="e.g. render-worker-1">
+                            </div>
+                            <button class="btn-control green" onclick="createWorkerEnrollment()">Generate Enrollment Token</button>
+                        </div>
+                        <div id="worker-enrollment-result" style="display:none;margin-top:14px;"></div>
+                    </div>
+                </div>
+                <div id="workers-list" class="account-config-list">
+                    <div class="no-data">Loading workers…</div>
                 </div>
             </div>
 
@@ -1666,6 +1701,7 @@
     <script src="/static/js/weapons.js"></script>
     <script src="/static/js/history.js"></script>
     <script src="/static/js/moderation.js"></script>
+    <script src="/static/js/workers.js"></script>
     <script src="/static/js/archive.js"></script>
     <script src="/static/js/security2fa.js?v=1.0.0"></script>
     <script src="/static/js/extension_bridge.js?v=1.0.0"></script>
@@ -1830,6 +1866,7 @@
                         document.getElementById('appealsNav').style.display = '';
                         document.getElementById('moderationNav').style.display = '';
                         document.getElementById('ticketsNav').style.display = '';
+                        document.getElementById('workersNav').style.display = '';
                     }
                     if (currentUserRole === 'admin') {
                         document.getElementById('apiKeysNav').style.display = '';

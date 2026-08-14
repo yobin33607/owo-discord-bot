@@ -245,25 +245,29 @@ async def start_limey(switch_servers=False):
     """
     try:
         acc_data = ghd.read_json("config/accounts.json", default={"accounts": []})
-        if acc_data:
-            accounts = [a for a in acc_data.get('accounts', []) if a.get('enabled', True)]
-        else:
-            accounts = []
+        all_accounts = [a for a in (acc_data or {}).get('accounts', []) if a.get('enabled', True)]
+        # Accounts linked to a worker are intentionally not started in the
+        # control-plane process; their assigned worker owns their gateway.
+        accounts = [a for a in all_accounts if not a.get('worker_id')]
     except Exception:
-        accounts = []
-    if not accounts:
+        all_accounts, accounts = [], []
+    if not all_accounts:
         console.print("[bold red]No active accounts? Add some in the Account Manager (Option 2).[/bold red]")
         return False
+    if not accounts:
+        console.print("[yellow]All active accounts are assigned to distributed workers; starting dashboard control plane only.[/yellow]")
 
     if switch_servers:
         await maybe_switch_servers()
         # Reload — bindings may have changed above
         try:
             acc_data = ghd.read_json("config/accounts.json", default={"accounts": []})
-            accounts = [a for a in acc_data.get('accounts', []) if a.get('enabled', True)]
+            all_accounts = [a for a in acc_data.get('accounts', []) if a.get('enabled', True)]
+            accounts = [a for a in all_accounts if not a.get('worker_id')]
         except Exception:
-            accounts = [a for a in accounts if a.get('enabled', True)]
-        if not accounts:
+            all_accounts = [a for a in accounts if a.get('enabled', True)]
+            accounts = [a for a in accounts if a.get('enabled', True) and not a.get('worker_id')]
+        if not all_accounts:
             console.print("[bold red]No active accounts after server selection.[/bold red]")
             return False
 

@@ -21,6 +21,24 @@ let _lastAccountsFailAt = 0;
 // Server-binding state for the account form (scan -> pick -> bind)
 let accountGuilds = [];
 
+async function populateAccountWorkerDropdown(selectedId = '') {
+    const sel = document.getElementById('acct-form-worker');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Run on main server</option>';
+    try {
+        const response = await fetch('/api/workers');
+        const data = await response.json();
+        if (!response.ok || !data.success) return;
+        const workers = (data.workers || []).filter(w => !w.revoked);
+        sel.innerHTML += workers.map(w =>
+            `<option value="${accountEsc(w.id)}">${accountEsc(w.name)}${w.online ? ' (online)' : ' (offline)'}</option>`
+        ).join('');
+        sel.value = selectedId || '';
+    } catch (error) {
+        // Worker linking is optional; keep the main-server option available.
+    }
+}
+
 function accountEsc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -287,12 +305,13 @@ function renderAccountConfigList() {
         const proxy = acc.proxy_id ? `Proxy: ${acc.proxy_id}` : 'Direct';
         const status = acc.enabled !== false ? 'Enabled' : 'Disabled';
         const server = acc.guild_name ? `Server: ${accountEsc(acc.guild_name)}` : 'All servers';
+        const worker = acc.worker_id ? `Worker: ${accountEsc(acc.worker_id)}` : 'Main server';
         return `
             <div class="account-config-card">
                 <div class="account-config-info">
                     <strong>${acc.name || 'Unnamed'}</strong>
                     <span class="mono">${token}</span>
-                    <span class="dim">${proxy} · ${status} · ${server}</span>
+                    <span class="dim">${proxy} · ${status} · ${server} · ${worker}</span>
                 </div>
                 <div class="account-config-actions">
                     <button class="btn-proxy-sm" onclick="editAccountConfig(${i})">Edit</button>
@@ -317,6 +336,7 @@ window.showAccountForm = function(index = -1) {
         document.getElementById('acct-form-enabled').checked = acc.enabled !== false;
         if (typeof populateAccountProxyDropdown === 'function') populateAccountProxyDropdown();
         document.getElementById('acct-form-proxy').value = acc.proxy_id || '';
+        populateAccountWorkerDropdown(acc.worker_id || '');
         populateGuildSelect(index);
     } else {
         title.textContent = 'Add Account';
@@ -327,6 +347,7 @@ window.showAccountForm = function(index = -1) {
         document.getElementById('acct-form-enabled').checked = true;
         if (typeof populateAccountProxyDropdown === 'function') populateAccountProxyDropdown();
         document.getElementById('acct-form-proxy').value = '';
+        populateAccountWorkerDropdown('');
         populateGuildSelect(-1);
     }
     if (modal) modal.classList.add('visible');
@@ -354,6 +375,8 @@ window.saveAccountForm = async function() {
     const channels = document.getElementById('acct-form-channels').value.trim().split(/\s+/).filter(Boolean);
     const proxy_id = document.getElementById('acct-form-proxy').value || null;
     const enabled = document.getElementById('acct-form-enabled').checked;
+    const workerSel = document.getElementById('acct-form-worker');
+    const worker_id = workerSel ? workerSel.value : '';
     const guildSel = document.getElementById('acct-form-guild');
     const guild_id = guildSel ? guildSel.value : '';
     let guild_name = '';
@@ -365,7 +388,7 @@ window.saveAccountForm = async function() {
         showToast('Account name is required', 'error');
         return;
     }
-    const entry = { name, channels, enabled, proxy_id, guild_id, guild_name };
+    const entry = { name, channels, enabled, proxy_id, worker_id, guild_id, guild_name };
     if (index >= 0 && accountConfigList[index]) {
         entry.token = accountConfigList[index].token;
         if (token) entry.token = token;
